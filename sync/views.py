@@ -1,0 +1,89 @@
+from django.db import IntegrityError, transaction
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from core.models import Device
+from sync.models import SyncEvent, SyncOutbox
+from sync.serializers import SyncPullSerializer, SyncPushSerializer
+
+
+class SyncPushView(APIView):
+    def post(self, request):
+        serializer = SyncPushSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device_id = serializer.validated_data["device_id"]
+        events = serializer.validated_data["events"]
+
+        device = Device.objects.get(id=device_id)
+        acknowledged = []
+        rejected = []
+
+        for event in events:
+            try:
+                with transaction.atomic():
+                    sync_event, created = SyncEvent.objects.get_or_create(
+                        event_id=event["event_id"],
+                        device=device,
+                        defaults={
+                            "branch": device.branch,
+                            "user": request.user,
+                            "event_type": event["event_type"],
+                            "payload": event["payload"],
+                        },
+                    )
+                    if created:
+                        # TODO: process event into domain models and emit outbox rows.
+                        pass
+                acknowledged.append(str(event["event_id"]))
+            except IntegrityError as exc:
+                rejected.append(
+                    {
+                        "event_id": str(event["event_id"]),
+                        "reason": "conflict",
+                        "details": {"error": str(exc)},
+                    }
+                )
+
+        latest_outbox = SyncOutbox.objects.order_by("-id").first()
+        server_cursor = latest_outbox.id if latest_outbox else 0
+
+        return Response(
+            {
+                "acknowledged": acknowledged,
+                "rejected": rejected,
+                "server_cursor": server_cursor,
+            }
+        )
+
+
+class SyncPullView(APIView):
+    def post(self, request):
+        serializer = SyncPullSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device_id = serializer.validated_data["device_id"]
+        cursor = serializer.validated_data["cursor"]
+        limit = serializer.validated_data["limit"]
+
+        device = Device.objects.get(id=device_id)
+        updates_qs = SyncOutbox.objects.filter(branch_id=device.branch_id, id__gt=cursor).order_by("id")
+        updates = list(updates_qs[:limit])
+        latest = updates[-1].id if updates else cursor
+        server_cursor = latest
+        has_more = updates_qs.count() > limit
+
+        return Response(
+            {
+                "server_cursor": server_cursor,
+                "updates": [
+                    {
+                        "cursor": update.id,
+                        "entity": update.entity,
+                        "op": update.op,
+                        "entity_id": str(update.entity_id),
+                        "payload": update.payload,
+                    }
+                    for update in updates
+                ],
+                "has_more": has_more,
+            }
+        )
