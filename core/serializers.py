@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from core.models import Branch, Device
 
@@ -21,6 +22,18 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get("last_name", ""),
         )
         return user
+
+
+class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        username = attrs.get("username", "")
+        if username and "@" in username:
+            try:
+                user = User.objects.get(email__iexact=username)
+                attrs["username"] = user.get_username()
+            except User.DoesNotExist:
+                pass
+        return super().validate(attrs)
 
 class BranchSerializer(serializers.ModelSerializer):
     class Meta:
