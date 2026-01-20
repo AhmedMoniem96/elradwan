@@ -7,7 +7,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = ["id", "branch", "name", "phone", "email", "created_at", "updated_at"]
-        read_only_fields = fields
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class InvoiceLineSerializer(serializers.ModelSerializer):
@@ -23,14 +23,14 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             "tax_rate",
             "line_total",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id"]
 
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = ["id", "invoice", "method", "amount", "paid_at"]
-        read_only_fields = fields
+        read_only_fields = ["id"]
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
@@ -58,4 +58,4 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "lines",
             "payments",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id", "created_at", "updated_at"]

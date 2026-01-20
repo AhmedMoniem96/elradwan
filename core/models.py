@@ -22,7 +22,7 @@ class User(AbstractUser):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT, null=True, blank=True)
-    role = models.CharField(max_length=32, choices=Role.choices, default=Role.CASHIER)
+    role = models.CharField(max_length=32, choices=Role, default=Role.CASHIER)
 
 
 class Device(models.Model):

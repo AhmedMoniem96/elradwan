@@ -15,7 +15,7 @@ class CategorySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -35,11 +35,11 @@ class ProductSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = fields
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class WarehouseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Warehouse
         fields = ["id", "branch", "name", "is_primary", "is_active", "created_at", "updated_at"]
-        read_only_fields = fields
+        read_only_fields = ["id", "created_at", "updated_at"]

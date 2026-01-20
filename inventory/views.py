@@ -5,19 +5,19 @@ from inventory.models import Category, Product, Warehouse
 from inventory.serializers import CategorySerializer, ProductSerializer, WarehouseSerializer
 
 
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated]
 
 
-class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
 
-class WarehouseViewSet(viewsets.ReadOnlyModelViewSet):
+class WarehouseViewSet(viewsets.ModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
     permission_classes = [IsAuthenticated]
