@@ -32,6 +32,30 @@ export default function Register() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const isHtmlResponse = (payload) => {
+    if (typeof payload !== 'string') {
+      return false;
+    }
+    const normalized = payload.trim().toLowerCase();
+    return normalized.startsWith('<!doctype html') || normalized.startsWith('<html');
+  };
+
+  const extractErrorMessage = (payload) => {
+    if (!payload) {
+      return '';
+    }
+    if (isHtmlResponse(payload)) {
+      return '';
+    }
+    if (typeof payload === 'string') {
+      return payload;
+    }
+    if (payload.detail) {
+      return payload.detail;
+    }
+    return Object.values(payload).flat().join(', ');
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     try {
@@ -41,7 +65,7 @@ export default function Register() {
       console.error(err);
       if (err.response && err.response.data) {
         // Display specific error from backend if available
-        const errorMsg = Object.values(err.response.data).flat().join(', ');
+        const errorMsg = extractErrorMessage(err.response.data);
         setError(errorMsg || 'Registration failed. Please try again.');
       } else {
         setError('Registration failed. Please try again.');
