@@ -6,6 +6,8 @@ const SyncContext = createContext(null);
 const OUTBOX_KEY = 'sync_outbox_events';
 const CURSOR_KEY = 'sync_server_cursor';
 const DEVICE_ID_KEY = 'active_device_id';
+const LAST_PUSH_SUCCESS_KEY = 'sync_last_push_success';
+const LAST_PULL_SUCCESS_KEY = 'sync_last_pull_success';
 
 const loadOutbox = () => {
   try {
@@ -22,11 +24,26 @@ const persistOutbox = (events) => {
 
 const loadCursor = () => Number(localStorage.getItem(CURSOR_KEY) || 0);
 const persistCursor = (cursor) => localStorage.setItem(CURSOR_KEY, String(cursor));
+const loadTimestamp = (key) => localStorage.getItem(key) || null;
+const persistTimestamp = (key, value) => {
+  if (value) {
+    localStorage.setItem(key, value);
+  }
+};
 
 export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
   const [outbox, setOutbox] = useState(loadOutbox);
+  const [serverCursor, setServerCursor] = useState(loadCursor);
+  const [lastPushSuccessAt, setLastPushSuccessAt] = useState(() => loadTimestamp(LAST_PUSH_SUCCESS_KEY));
+  const [lastPullSuccessAt, setLastPullSuccessAt] = useState(() => loadTimestamp(LAST_PULL_SUCCESS_KEY));
+  const [failedEvents, setFailedEvents] = useState([]);
   const pushInFlight = useRef(false);
   const pullInFlight = useRef(false);
+
+  const updateServerCursor = useCallback((cursor) => {
+    persistCursor(cursor);
+    setServerCursor(cursor);
+  }, []);
 
   useEffect(() => {
     persistOutbox(outbox);
@@ -53,15 +70,44 @@ export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
       if (completed.size > 0) {
         setOutbox((prev) => prev.filter((event) => !completed.has(event.event_id)));
       }
-      if (typeof response.data?.server_cursor === 'number') {
-        persistCursor(response.data.server_cursor);
+
+      if (response.data?.rejected?.length) {
+        const failedAt = new Date().toISOString();
+        setFailedEvents((prev) => [
+          ...response.data.rejected.map((item) => ({
+            eventId: item.event_id,
+            reason: item.reason || 'rejected',
+            failedAt,
+          })),
+          ...prev,
+        ]);
       }
+
+      if (typeof response.data?.server_cursor === 'number') {
+        updateServerCursor(response.data.server_cursor);
+      }
+
+      const successfulAt = new Date().toISOString();
+      setLastPushSuccessAt(successfulAt);
+      persistTimestamp(LAST_PUSH_SUCCESS_KEY, successfulAt);
     } catch (error) {
+      const reason = error?.response?.data?.detail || error?.message || 'push_failed';
+      if (outbox.length > 0) {
+        const failedAt = new Date().toISOString();
+        setFailedEvents((prev) => [
+          ...outbox.slice(0, 50).map((event) => ({
+            eventId: event.event_id,
+            reason,
+            failedAt,
+          })),
+          ...prev,
+        ]);
+      }
       console.error('Sync push failed', error);
     } finally {
       pushInFlight.current = false;
     }
-  }, [canSync, outbox, runtimeContext]);
+  }, [canSync, outbox, runtimeContext, updateServerCursor]);
 
   const pullNow = useCallback(async () => {
     if (!canSync || pullInFlight.current) {
@@ -88,16 +134,20 @@ export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
         hasMore = Boolean(payload.has_more);
       } while (hasMore);
 
-      persistCursor(cursor);
+      updateServerCursor(cursor);
       if (allUpdates.length > 0 && onServerUpdates) {
         onServerUpdates(allUpdates);
       }
+
+      const successfulAt = new Date().toISOString();
+      setLastPullSuccessAt(successfulAt);
+      persistTimestamp(LAST_PULL_SUCCESS_KEY, successfulAt);
     } catch (error) {
       console.error('Sync pull failed', error);
     } finally {
       pullInFlight.current = false;
     }
-  }, [canSync, onServerUpdates, runtimeContext]);
+  }, [canSync, onServerUpdates, runtimeContext, updateServerCursor]);
 
   const enqueueEvent = useCallback(
     ({ eventType, payload }) => {
@@ -150,12 +200,19 @@ export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
   const value = useMemo(
     () => ({
       outbox,
+      serverCursor,
+      lastPushSuccessAt,
+      lastPullSuccessAt,
+      failedEvents,
       enqueueEvent,
       pushNow,
       pullNow,
+      clearFailedEvent: (eventId) => {
+        setFailedEvents((prev) => prev.filter((item) => item.eventId !== eventId));
+      },
       canSync,
     }),
-    [outbox, enqueueEvent, pushNow, pullNow, canSync],
+    [outbox, serverCursor, lastPushSuccessAt, lastPullSuccessAt, failedEvents, enqueueEvent, pushNow, pullNow, canSync],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
