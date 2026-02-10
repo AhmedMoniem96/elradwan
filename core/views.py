@@ -1,6 +1,8 @@
 from rest_framework import generics, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
+
+from common.permissions import RoleCapabilityPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from core.models import Branch, Device
@@ -37,7 +39,15 @@ class EmailOrUsernameTokenObtainPairView(TokenObtainPairView):
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
     serializer_class = BranchSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "device.read",
+        "retrieve": "device.read",
+        "create": "admin.records.manage",
+        "update": "admin.records.manage",
+        "partial_update": "admin.records.manage",
+        "destroy": "admin.records.manage",
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -53,7 +63,15 @@ class BranchViewSet(viewsets.ModelViewSet):
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.all()
     serializer_class = DeviceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "device.read",
+        "retrieve": "device.read",
+        "create": "device.manage",
+        "update": "device.manage",
+        "partial_update": "device.manage",
+        "destroy": "device.manage",
+    }
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)

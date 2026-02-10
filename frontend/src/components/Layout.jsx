@@ -86,7 +86,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { toggleColorMode, mode } = useThemeContext();
-  const { logout } = useAuth();
+  const { logout, can } = useAuth();
   const { outbox, failedEvents } = useSync();
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [unreadAlerts, setUnreadAlerts] = React.useState(0);
@@ -196,35 +196,43 @@ export default function Layout() {
             </ListItemIcon>
             <ListItemText primary={t('dashboard')} />
           </ListItemButton>
-          <ListItemButton onClick={() => navigate('/pos')}>
-            <ListItemIcon>
-              <ShoppingCartIcon />
-            </ListItemIcon>
-            <ListItemText primary={t('pos')} />
-          </ListItemButton>
-          <ListItemButton onClick={() => navigate('/customers')}>
-            <ListItemIcon>
-              <PeopleIcon />
-            </ListItemIcon>
-            <ListItemText primary={t('customers')} />
-          </ListItemButton>
-          <ListItemButton onClick={() => navigate('/inventory')}>
-            <ListItemIcon>
-              <BarChartIcon />
-            </ListItemIcon>
-            <ListItemText primary={t('inventory')} />
-          </ListItemButton>
-          <ListItemButton onClick={() => navigate('/sync')}>
-            <ListItemIcon>
-              <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
-                <LayersIcon />
-              </Badge>
-            </ListItemIcon>
-            <ListItemText
-              primary={t('sync_status')}
-              secondary={failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running')}
-            />
-          </ListItemButton>
+          {can('sales.pos.access') && (
+            <ListItemButton onClick={() => navigate('/pos')}>
+              <ListItemIcon>
+                <ShoppingCartIcon />
+              </ListItemIcon>
+              <ListItemText primary={t('pos')} />
+            </ListItemButton>
+          )}
+          {can('sales.customers.view') && (
+            <ListItemButton onClick={() => navigate('/customers')}>
+              <ListItemIcon>
+                <PeopleIcon />
+              </ListItemIcon>
+              <ListItemText primary={t('customers')} />
+            </ListItemButton>
+          )}
+          {can('inventory.view') && (
+            <ListItemButton onClick={() => navigate('/inventory')}>
+              <ListItemIcon>
+                <BarChartIcon />
+              </ListItemIcon>
+              <ListItemText primary={t('inventory')} />
+            </ListItemButton>
+          )}
+          {can('sync.view') && (
+            <ListItemButton onClick={() => navigate('/sync')}>
+              <ListItemIcon>
+                <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
+                  <LayersIcon />
+                </Badge>
+              </ListItemIcon>
+              <ListItemText
+                primary={t('sync_status')}
+                secondary={failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running')}
+              />
+            </ListItemButton>
+          )}
         </List>
       </Drawer>
       <Box

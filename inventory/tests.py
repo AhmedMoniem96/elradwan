@@ -310,3 +310,55 @@ class StockIntelligenceTests(TestCase):
         pdf_res = self.client.get("/api/v1/reorder-suggestions/export/?format=pdf")
         self.assertEqual(pdf_res.status_code, 200)
         self.assertIn("Reorder Suggestions", pdf_res.content.decode())
+
+
+class RolePermissionInventoryTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.branch = Branch.objects.create(code="RI", name="Role Inventory")
+        self.cashier = self.user_model.objects.create_user(
+            username="inv-cashier",
+            password="pass1234",
+            branch=self.branch,
+            role="cashier",
+        )
+        self.supervisor = self.user_model.objects.create_user(
+            username="inv-supervisor",
+            password="pass1234",
+            branch=self.branch,
+            role="supervisor",
+        )
+        self.product = Product.objects.create(branch=self.branch, sku="INV-R-1", name="RBAC Product", price=Decimal("5.00"), cost=Decimal("2.00"))
+        self.src = Warehouse.objects.create(branch=self.branch, name="Src", is_primary=True)
+        self.dst = Warehouse.objects.create(branch=self.branch, name="Dst", is_primary=False)
+        StockMove.objects.create(
+            branch=self.branch,
+            warehouse=self.src,
+            product=self.product,
+            quantity=Decimal("10.00"),
+            unit_cost=Decimal("2.00"),
+            reason=StockMove.Reason.ADJUSTMENT,
+            source_ref_type="seed",
+            source_ref_id=uuid.uuid4(),
+            event_id=uuid.uuid4(),
+        )
+        self.transfer = StockTransfer.objects.create(
+            branch=self.branch,
+            transfer_number="TR-RBAC-1",
+            source_warehouse=self.src,
+            destination_warehouse=self.dst,
+            status=StockTransfer.Status.DRAFT,
+            requires_supervisor_approval=False,
+        )
+        self.transfer.lines.create(product=self.product, quantity=Decimal("2.00"))
+
+    def test_cashier_cannot_approve_stock_transfer(self):
+        self.client.force_authenticate(user=self.cashier)
+        response = self.client.post(f"/api/v1/admin/stock-transfers/{self.transfer.id}/approve/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_supervisor_can_approve_stock_transfer(self):
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.post(f"/api/v1/admin/stock-transfers/{self.transfer.id}/approve/", {}, format="json")
+        self.assertEqual(response.status_code, 200)

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { getStoredDeviceId } from './sync/SyncContext';
+import { hasCapability } from './permissions';
 
 const AuthContext = createContext(null);
 
@@ -48,6 +49,8 @@ export const AuthProvider = ({ children }) => {
           id: claims.user_id || claims.sub || null,
           branch_id: branch?.id || null,
           device_id: selectedDevice?.id || null,
+          role: claims.role || ((claims.is_superuser || claims.is_staff) ? 'admin' : 'cashier'),
+          is_superuser: Boolean(claims.is_superuser),
         });
       } catch (error) {
         console.error('Failed to load runtime auth context', error);
@@ -56,6 +59,8 @@ export const AuthProvider = ({ children }) => {
           id: claims.user_id || claims.sub || null,
           branch_id: null,
           device_id: null,
+          role: claims.role || ((claims.is_superuser || claims.is_staff) ? 'admin' : 'cashier'),
+          is_superuser: Boolean(claims.is_superuser),
         });
       } finally {
         setLoading(false);
@@ -88,7 +93,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, can: (capability) => hasCapability(user, capability) }}>
       {!loading && children}
     </AuthContext.Provider>
   );

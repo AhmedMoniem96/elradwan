@@ -12,10 +12,13 @@ import { ThemeContextProvider } from './ThemeContext';
 import { AuthProvider, useAuth } from './AuthContext';
 import { SyncProvider } from './sync/SyncContext';
 
-const ProtectedRoute = () => {
-  const { user } = useAuth();
+const ProtectedRoute = ({ capability }) => {
+  const { user, can } = useAuth();
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  if (capability && !can(capability)) {
+    return <Navigate to="/" replace />;
   }
   return <Outlet />;
 };
@@ -40,10 +43,18 @@ function RoutedApp() {
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Layout />}>
               <Route index element={<Dashboard />} />
-              <Route path="pos" element={<POS />} />
-              <Route path="customers" element={<Customers />} />
-              <Route path="inventory" element={<Inventory />} />
-              <Route path="sync" element={<Sync />} />
+              <Route element={<ProtectedRoute capability="sales.pos.access" />}>
+                <Route path="pos" element={<POS />} />
+              </Route>
+              <Route element={<ProtectedRoute capability="sales.customers.view" />}>
+                <Route path="customers" element={<Customers />} />
+              </Route>
+              <Route element={<ProtectedRoute capability="inventory.view" />}>
+                <Route path="inventory" element={<Inventory />} />
+              </Route>
+              <Route element={<ProtectedRoute capability="sync.view" />}>
+                <Route path="sync" element={<Sync />} />
+              </Route>
             </Route>
           </Route>
         </Routes>
