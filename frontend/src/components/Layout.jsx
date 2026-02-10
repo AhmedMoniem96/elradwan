@@ -32,6 +32,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
 import { useAuth } from '../AuthContext';
+import { useSync } from '../sync/SyncContext';
 
 const drawerWidth = 240;
 
@@ -85,6 +86,7 @@ export default function Layout() {
   const { t, i18n } = useTranslation();
   const { toggleColorMode, mode } = useThemeContext();
   const { logout } = useAuth();
+  const { outbox, failedEvents } = useSync();
   const [anchorEl, setAnchorEl] = React.useState(null);
 
   const toggleDrawer = () => {
@@ -208,9 +210,14 @@ export default function Layout() {
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/sync')}>
             <ListItemIcon>
-              <LayersIcon />
+              <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
+                <LayersIcon />
+              </Badge>
             </ListItemIcon>
-            <ListItemText primary={t('sync_status')} />
+            <ListItemText
+              primary={t('sync_status')}
+              secondary={failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running')}
+            />
           </ListItemButton>
         </List>
       </Drawer>
