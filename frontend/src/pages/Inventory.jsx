@@ -15,9 +15,11 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { useSync } from '../sync/SyncContext';
 
 export default function Inventory() {
   const { t } = useTranslation();
+  const { enqueueEvent, pushNow, pullNow } = useSync();
   const [products, setProducts] = useState([]);
   const [draftStatus, setDraftStatus] = useState({});
   const [error, setError] = useState('');
@@ -45,9 +47,15 @@ export default function Inventory() {
 
   const saveStatus = async (product) => {
     try {
-      await axios.patch(`/api/v1/products/${product.id}/`, {
-        stock_status: draftStatus[product.id] || '',
+      enqueueEvent({
+        eventType: 'product.stock_status.set',
+        payload: {
+          product_id: product.id,
+          stock_status: draftStatus[product.id] || '',
+        },
       });
+      await pushNow();
+      await pullNow();
       await fetchProducts();
     } catch (err) {
       console.error('Failed to save status', err);
