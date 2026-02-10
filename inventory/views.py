@@ -1,7 +1,9 @@
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from common.utils import emit_outbox
+from core.views import scoped_queryset_for_user
 from inventory.models import Category, Product, Warehouse
 from inventory.serializers import CategorySerializer, ProductSerializer, WarehouseSerializer
 
@@ -19,7 +21,11 @@ class OutboxMutationMixin:
         )
 
     def perform_create(self, serializer):
-        instance = serializer.save()
+        user = self.request.user
+        if not getattr(user, "branch_id", None):
+            raise ValidationError("Authenticated user must belong to a branch to create records.")
+
+        instance = serializer.save(branch_id=user.branch_id)
         self._emit(instance, "upsert")
 
     def perform_update(self, serializer):
@@ -36,17 +42,26 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
 
 class WarehouseViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
 
 class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
@@ -55,6 +70,9 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAdminUser]
     outbox_entity = "category"
 
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
 
 class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Product.objects.all()
@@ -62,9 +80,15 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAdminUser]
     outbox_entity = "product"
 
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
 
 class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
     permission_classes = [IsAdminUser]
     outbox_entity = "warehouse"
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
