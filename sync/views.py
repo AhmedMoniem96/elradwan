@@ -3,8 +3,11 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.models import Device
 from sync.models import SyncEvent, SyncOutbox
+from sync.permissions import (
+    get_permitted_device,
+    validation_failed_response,
+)
 from sync.serializers import SyncPullSerializer, SyncPushSerializer
 from sync.services import process_sync_event
 
@@ -12,15 +15,31 @@ from sync.services import process_sync_event
 class SyncPushView(APIView):
     def post(self, request):
         serializer = SyncPushSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return validation_failed_response(serializer.errors)
+
         device_id = serializer.validated_data["device_id"]
         events = serializer.validated_data["events"]
 
-        device = Device.objects.get(id=device_id)
+        device, error_response = get_permitted_device(request.user, device_id)
+        if error_response is not None:
+            return error_response
+
         acknowledged = []
         rejected = []
 
         for event in events:
+            payload_branch_id = str(event["payload"].get("branch_id", ""))
+            if payload_branch_id != str(device.branch_id):
+                rejected.append(
+                    {
+                        "event_id": str(event["event_id"]),
+                        "reason": "validation_failed",
+                        "details": {"branch_id": "Payload branch_id does not match device branch."},
+                    }
+                )
+                continue
+
             try:
                 with transaction.atomic():
                     sync_event, created = SyncEvent.objects.get_or_create(
@@ -76,12 +95,17 @@ class SyncPushView(APIView):
 class SyncPullView(APIView):
     def post(self, request):
         serializer = SyncPullSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return validation_failed_response(serializer.errors)
+
         device_id = serializer.validated_data["device_id"]
         cursor = serializer.validated_data["cursor"]
         limit = serializer.validated_data["limit"]
 
-        device = Device.objects.get(id=device_id)
+        device, error_response = get_permitted_device(request.user, device_id)
+        if error_response is not None:
+            return error_response
+
         updates_qs = SyncOutbox.objects.filter(branch_id=device.branch_id, id__gt=cursor).order_by("id")
         updates = list(updates_qs[:limit])
         latest = updates[-1].id if updates else cursor
