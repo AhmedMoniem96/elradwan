@@ -9,6 +9,17 @@ const DEVICE_ID_KEY = 'active_device_id';
 const LAST_PUSH_SUCCESS_KEY = 'sync_last_push_success';
 const LAST_PULL_SUCCESS_KEY = 'sync_last_pull_success';
 
+const ACTIVE_SHIFT_KEY = 'active_shift_summary';
+
+const loadActiveShiftSummary = () => {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SHIFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 const loadOutbox = () => {
   try {
     const raw = localStorage.getItem(OUTBOX_KEY);
@@ -155,6 +166,7 @@ export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
         throw new Error('Missing runtime sync context (branch/device/user).');
       }
 
+      const activeShift = loadActiveShiftSummary();
       const event = {
         event_id: crypto.randomUUID(),
         event_type: eventType,
@@ -163,6 +175,7 @@ export function SyncProvider({ children, runtimeContext, onServerUpdates }) {
           branch_id: runtimeContext.branchId,
           device_id: runtimeContext.deviceId,
           user_id: runtimeContext.userId,
+          shift_summary: activeShift,
         },
         created_at: new Date().toISOString(),
         device_id: runtimeContext.deviceId,
@@ -224,4 +237,13 @@ export function useSync() {
 
 export function getStoredDeviceId() {
   return localStorage.getItem(DEVICE_ID_KEY);
+}
+
+
+export function storeActiveShiftSummary(shiftSummary) {
+  if (!shiftSummary) {
+    localStorage.removeItem(ACTIVE_SHIFT_KEY);
+    return;
+  }
+  localStorage.setItem(ACTIVE_SHIFT_KEY, JSON.stringify(shiftSummary));
 }
