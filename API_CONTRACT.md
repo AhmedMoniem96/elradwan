@@ -293,3 +293,24 @@ All lists are paginated and read-only for the PWA.
   "has_more": false
 }
 ```
+
+
+## Authorization permission matrix
+
+Roles: `cashier`, `supervisor`, `admin` (superuser always allowed).
+
+| Endpoint / Action | Capability | Cashier | Supervisor | Admin |
+|---|---|---:|---:|---:|
+| `GET /api/v1/invoices/`, `GET /api/v1/invoices/dashboard-summary/` | `sales.dashboard.view` | ✅ | ✅ | ✅ |
+| `POST /api/v1/payments/`, `POST /api/v1/returns/`, shift open/current | `sales.pos.access` | ✅ | ✅ | ✅ |
+| `GET /api/v1/customers/` | `sales.customers.view` | ✅ | ✅ | ✅ |
+| `POST /api/v1/shifts/{id}/close/` (own shift) | `shift.close.self` | ✅ | ✅ | ✅ |
+| `POST /api/v1/shifts/{id}/close/` (override another cashier) | `shift.close.override` | ❌ | ✅ | ✅ |
+| `POST /api/v1/admin/invoices/{id}/void/` | `invoice.void` | ❌ | ✅ | ✅ |
+| `POST /api/v1/admin/stock-transfers/{id}/approve/` | `stock.transfer.approve` | ❌ | ✅ | ✅ |
+| `POST /api/v1/admin/stock-transfers/{id}/complete/` | `stock.transfer.complete` | ❌ | ✅ | ✅ |
+| `POST /api/v1/admin/purchase-orders/{id}/receive/` | `stock.adjust` | ❌ | ✅ | ✅ |
+| `POST/PUT/DELETE /api/v1/devices/` | `device.manage` | ❌ | ❌ | ✅ |
+| Admin CRUD (`/api/v1/admin/*`) | `admin.records.manage` | ❌ | ❌ | ✅ |
+
+Denied authorization attempts are logged under logger `security.authorization`.

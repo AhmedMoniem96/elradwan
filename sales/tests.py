@@ -285,3 +285,87 @@ class CashShiftTests(TestCase):
         self.assertEqual(close_response.status_code, 200)
         self.assertEqual(Decimal(close_response.json()["shift"]["expected_amount"]), Decimal("150.00"))
         self.assertEqual(Decimal(close_response.json()["shift"]["variance"]), Decimal("-1.00"))
+
+
+class RolePermissionSalesTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.branch = Branch.objects.create(code="SR", name="Sales Role")
+
+        self.cashier = self.user_model.objects.create_user(
+            username="sales-cashier",
+            password="pass1234",
+            branch=self.branch,
+            role="cashier",
+        )
+        self.supervisor = self.user_model.objects.create_user(
+            username="sales-supervisor",
+            password="pass1234",
+            branch=self.branch,
+            role="supervisor",
+        )
+        self.admin = self.user_model.objects.create_user(
+            username="sales-admin",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
+        self.device = Device.objects.create(branch=self.branch, name="Sales Device", identifier="sales-dev-rbac")
+        self.customer = Customer.objects.create(branch=self.branch, name="Role Customer")
+        self.invoice = Invoice.objects.create(
+            branch=self.branch,
+            device=self.device,
+            user=self.cashier,
+            customer=self.customer,
+            invoice_number="INV-RBAC-1",
+            local_invoice_no="L-RBAC-1",
+            subtotal=Decimal("10.00"),
+            discount_total=Decimal("0.00"),
+            tax_total=Decimal("0.00"),
+            total=Decimal("10.00"),
+            event_id=uuid.uuid4(),
+            created_at=timezone.now(),
+        )
+
+    def test_cashier_cannot_void_invoice(self):
+        self.client.force_authenticate(user=self.cashier)
+        response = self.client.post(f"/api/v1/admin/invoices/{self.invoice.id}/void/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_supervisor_can_void_invoice(self):
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.post(f"/api/v1/admin/invoices/{self.invoice.id}/void/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.VOID)
+
+    def test_supervisor_can_override_shift_close(self):
+        shift = CashShift.objects.create(
+            branch=self.branch,
+            cashier=self.cashier,
+            device=self.device,
+            opening_amount=Decimal("15.00"),
+        )
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.post(
+            f"/api/v1/shifts/{shift.id}/close/",
+            {"closing_counted_amount": "15.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_cashier_cannot_override_shift_close(self):
+        shift = CashShift.objects.create(
+            branch=self.branch,
+            cashier=self.supervisor,
+            device=self.device,
+            opening_amount=Decimal("15.00"),
+        )
+        self.client.force_authenticate(user=self.cashier)
+        response = self.client.post(
+            f"/api/v1/shifts/{shift.id}/close/",
+            {"closing_counted_amount": "15.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)

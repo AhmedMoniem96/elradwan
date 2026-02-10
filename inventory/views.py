@@ -7,10 +7,11 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.permissions import RoleCapabilityPermission
 from common.utils import emit_outbox
 from core.models import User
 from core.views import scoped_queryset_for_user
@@ -77,7 +78,8 @@ class OutboxMutationMixin:
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -86,7 +88,8 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Product.objects.select_related("preferred_supplier")
     serializer_class = ProductSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -95,7 +98,8 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
 class WarehouseViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -104,7 +108,8 @@ class WarehouseViewSet(viewsets.ReadOnlyModelViewSet):
 class SupplierViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Supplier.objects.prefetch_related("contacts")
     serializer_class = SupplierSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -113,7 +118,8 @@ class SupplierViewSet(viewsets.ReadOnlyModelViewSet):
 class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PurchaseOrder.objects.select_related("supplier")
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view", "pending": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -127,7 +133,8 @@ class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
 class StockTransferViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = StockTransfer.objects.select_related("source_warehouse", "destination_warehouse", "approved_by").prefetch_related("lines__product")
     serializer_class = StockTransferSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -136,7 +143,8 @@ class StockTransferViewSet(viewsets.ReadOnlyModelViewSet):
 class InventoryAlertViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = InventoryAlert.objects.select_related("warehouse", "product")
     serializer_class = InventoryAlertSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view", "unread": "inventory.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user).filter(resolved_at__isnull=True).order_by("-created_at")
@@ -150,7 +158,8 @@ class InventoryAlertViewSet(viewsets.ReadOnlyModelViewSet):
 class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "category"
 
     def get_queryset(self):
@@ -160,7 +169,8 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Product.objects.select_related("preferred_supplier")
     serializer_class = ProductSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "product"
 
     def get_queryset(self):
@@ -170,7 +180,8 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Warehouse.objects.all()
     serializer_class = WarehouseSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "warehouse"
 
     def get_queryset(self):
@@ -180,7 +191,8 @@ class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminSupplierViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "supplier"
 
     def get_queryset(self):
@@ -190,7 +202,8 @@ class AdminSupplierViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminSupplierContactViewSet(viewsets.ModelViewSet):
     queryset = SupplierContact.objects.select_related("supplier")
     serializer_class = SupplierContactSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -221,7 +234,8 @@ class AdminSupplierContactViewSet(viewsets.ModelViewSet):
 class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.select_related("supplier").prefetch_related("lines")
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "admin.records.manage", "retrieve": "admin.records.manage", "create": "admin.records.manage", "update": "admin.records.manage", "partial_update": "admin.records.manage", "destroy": "admin.records.manage", "receive": "stock.adjust"}
     outbox_entity = "purchase_order"
 
     def get_queryset(self):
@@ -252,7 +266,8 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = StockTransfer.objects.select_related("source_warehouse", "destination_warehouse", "approved_by").prefetch_related("lines__product")
     serializer_class = StockTransferSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "admin.records.manage", "retrieve": "admin.records.manage", "create": "stock.adjust", "update": "stock.adjust", "partial_update": "stock.adjust", "destroy": "stock.adjust", "approve": "stock.transfer.approve", "complete": "stock.transfer.complete"}
     outbox_entity = "stock_transfer"
 
     def get_queryset(self):
@@ -326,7 +341,8 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
 
 class SupplierBalancesReportView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def get(self, request):
         po_qs = scoped_queryset_for_user(PurchaseOrder.objects.select_related("supplier"), request.user)
@@ -348,7 +364,8 @@ class SupplierBalancesReportView(APIView):
 
 
 class PurchaseReceiveHistoryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def get(self, request):
         po_qs = scoped_queryset_for_user(
@@ -370,7 +387,8 @@ class PurchaseReceiveHistoryView(APIView):
 
 
 class StockIntelligenceView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def get(self, request):
         intelligence = refresh_inventory_alerts(request.user.branch_id)
@@ -400,7 +418,8 @@ class StockIntelligenceView(APIView):
 
 
 class AlertMarkReadView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def post(self, request):
         alert_ids = request.data.get("alert_ids", [])
@@ -421,7 +440,8 @@ class AlertMarkReadView(APIView):
 
 
 class ReorderSuggestionExportView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def get(self, request):
         fmt = request.query_params.get("format", "csv").lower()

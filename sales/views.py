@@ -7,8 +7,9 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 
+from common.permissions import RoleCapabilityPermission, user_has_capability
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
 from sales.models import CashShift, Customer, Invoice, Payment, Return
@@ -65,7 +66,8 @@ class OutboxMutationMixin:
 class CustomerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "sales.customers.view", "retrieve": "sales.customers.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -74,7 +76,8 @@ class CustomerViewSet(viewsets.ReadOnlyModelViewSet):
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "sales.dashboard.view", "retrieve": "sales.dashboard.view", "dashboard_summary": "sales.dashboard.view"}
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -100,7 +103,16 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
 class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "sales.pos.access",
+        "retrieve": "sales.pos.access",
+        "create": "sales.pos.access",
+        "update": "admin.records.manage",
+        "partial_update": "admin.records.manage",
+        "destroy": "admin.records.manage",
+        "void": "invoice.void",
+    }
     outbox_entity = "payment"
 
     def get_queryset(self):
@@ -129,7 +141,16 @@ class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Return.objects.all()
     serializer_class = ReturnSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "sales.pos.access",
+        "retrieve": "sales.pos.access",
+        "create": "sales.pos.access",
+        "update": "admin.records.manage",
+        "partial_update": "admin.records.manage",
+        "destroy": "admin.records.manage",
+        "void": "invoice.void",
+    }
     outbox_entity = "return"
 
     def get_queryset(self):
@@ -158,7 +179,8 @@ class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminCustomerViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "customer"
 
     def get_queryset(self):
@@ -168,15 +190,36 @@ class AdminCustomerViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 class AdminInvoiceViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "admin.records.manage",
+        "retrieve": "admin.records.manage",
+        "create": "admin.records.manage",
+        "update": "admin.records.manage",
+        "partial_update": "admin.records.manage",
+        "destroy": "admin.records.manage",
+        "void": "invoice.void",
+    }
     outbox_entity = "invoice"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
+    @action(detail=True, methods=["post"], url_path="void")
+    def void(self, request, pk=None):
+        invoice = self.get_object()
+        if invoice.status == Invoice.Status.VOID:
+            raise ValidationError("Invoice is already void.")
+        invoice.status = Invoice.Status.VOID
+        invoice.updated_at = timezone.now()
+        invoice.save(update_fields=["status", "updated_at"])
+        self._emit(invoice, "upsert")
+        return Response(self.get_serializer(invoice).data)
+
 
 class CashShiftOpenView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"post": "sales.pos.access"}
 
     def post(self, request):
         serializer = CashShiftOpenSerializer(data=request.data)
@@ -211,7 +254,8 @@ class CashShiftOpenView(APIView):
 
 
 class CashShiftCurrentView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "sales.pos.access"}
 
     def get(self, request):
         user = request.user
@@ -227,16 +271,20 @@ class CashShiftCurrentView(APIView):
 
 
 class CashShiftCloseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"post": "shift.close.self"}
 
     def post(self, request, shift_id):
         serializer = CashShiftCloseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = request.user
-        shift = CashShift.objects.filter(id=shift_id, cashier=user, closed_at__isnull=True).first()
+        shift = CashShift.objects.filter(id=shift_id, closed_at__isnull=True).first()
         if shift is None:
             raise NotFound("Open shift not found.")
+        is_own_shift = shift.cashier_id == user.id
+        if not is_own_shift and not user_has_capability(user, "shift.close.override"):
+            raise ValidationError("Only supervisors/admins can close another cashier's shift.")
 
         close_time = timezone.now()
         report = get_shift_report(shift)
@@ -263,7 +311,8 @@ class CashShiftCloseView(APIView):
 
 
 class CashShiftReportView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "sales.dashboard.view"}
 
     def get(self, request, shift_id):
         user = request.user

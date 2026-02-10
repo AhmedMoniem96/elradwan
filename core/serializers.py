@@ -25,6 +25,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token["role"] = getattr(user, "role", None)
+        token["is_superuser"] = user.is_superuser
+        token["is_staff"] = user.is_staff
+        return token
+
     def validate(self, attrs):
         username = attrs.get("username", "")
         if username and "@" in username:

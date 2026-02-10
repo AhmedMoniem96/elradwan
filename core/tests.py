@@ -49,3 +49,43 @@ class BranchScopedCoreTests(TestCase):
         self.assertEqual(response.status_code, 201)
         created = Device.objects.get(id=response.json()["id"])
         self.assertEqual(created.branch_id, self.branch_a.id)
+
+
+class RolePermissionCoreTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.branch = Branch.objects.create(code="RP", name="Role Perm")
+        self.cashier = self.user_model.objects.create_user(
+            username="cashier-core",
+            password="pass1234",
+            branch=self.branch,
+            role="cashier",
+        )
+        self.admin = self.user_model.objects.create_user(
+            username="admin-core",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
+
+    def test_cashier_cannot_manage_device_and_denial_is_logged(self):
+        self.client.force_authenticate(user=self.cashier)
+        with self.assertLogs("security.authorization", level="WARNING") as cm:
+            response = self.client.post(
+                "/api/v1/devices/",
+                {"name": "Cashier Device", "identifier": "cashier-device", "is_active": True},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(any("permission_denied" in message for message in cm.output))
+
+    def test_admin_can_manage_device(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/v1/devices/",
+            {"name": "Admin Device", "identifier": "admin-device", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
