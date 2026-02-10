@@ -118,10 +118,10 @@ class SyncPullView(APIView):
                 "updates": [
                     {
                         "cursor": update.id,
-                        "entity": update.entity,
-                        "op": update.op,
-                        "entity_id": str(update.entity_id),
-                        "payload": update.payload,
+                        "entity": (update.payload or {}).get("entity", update.entity),
+                        "op": (update.payload or {}).get("op", update.op),
+                        "entity_id": (update.payload or {}).get("entity_id", str(update.entity_id)),
+                        "payload": (update.payload or {}).get("payload", update.payload),
                     }
                     for update in updates
                 ],

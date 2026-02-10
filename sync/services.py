@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from inventory.models import Product, StockMove, Warehouse
 from sales.models import Customer, Invoice, InvoiceLine, Payment
-from sync.models import SyncOutbox
+from common.utils import emit_outbox
 
 
 @dataclass
@@ -82,14 +82,13 @@ def _handle_customer_upsert(sync_event):
     }
     customer, _ = Customer.objects.update_or_create(id=customer_id, defaults=defaults)
 
-    SyncOutbox.objects.create(
+    emit_outbox(
         branch_id=sync_event.branch_id,
         entity="customer",
         entity_id=customer.id,
         op="upsert",
         payload={
             "id": str(customer.id),
-            "branch_id": str(customer.branch_id),
             "name": customer.name,
             "phone": customer.phone,
             "email": customer.email,
@@ -133,14 +132,13 @@ def _handle_stock_adjust(sync_event):
         device=sync_event.device,
     )
 
-    SyncOutbox.objects.create(
+    emit_outbox(
         branch_id=sync_event.branch_id,
         entity="stock_move",
         entity_id=stock_move.id,
         op="upsert",
         payload={
             "id": str(stock_move.id),
-            "branch_id": str(stock_move.branch_id),
             "warehouse_id": str(stock_move.warehouse_id),
             "product_id": str(stock_move.product_id),
             "quantity": str(stock_move.quantity),
@@ -197,6 +195,21 @@ def _handle_invoice_create(sync_event):
         )
 
     invoice_number = payload.get("invoice_number") or f"{sync_event.branch.code}-{payload['local_invoice_no']}"
+    total_paid = Decimal("0")
+    for payment_payload in payload.get("payments") or []:
+        for field in ["method", "amount", "paid_at"]:
+            if payment_payload.get(field) in (None, ""):
+                raise EventRejectError("validation_failed", {f"payments.{field}": "Required."})
+        total_paid += Decimal(str(payment_payload["amount"]))
+
+    invoice_status = Invoice.Status.OPEN
+    paid_at = None
+    if total_paid >= Decimal(str(totals["total"])) and total_paid > 0:
+        invoice_status = Invoice.Status.PAID
+        paid_at = timezone.now()
+    elif total_paid > 0:
+        invoice_status = Invoice.Status.PARTIALLY_PAID
+
     invoice = Invoice.objects.create(
         branch=sync_event.branch,
         device=sync_event.device,
@@ -210,6 +223,8 @@ def _handle_invoice_create(sync_event):
         total=Decimal(str(totals["total"])),
         event_id=sync_event.event_id,
         created_at=payload["created_at"],
+        status=invoice_status,
+        paid_at=paid_at,
     )
 
     for line in lines:
@@ -236,12 +251,8 @@ def _handle_invoice_create(sync_event):
             line_total=line_total,
         )
 
-    total_paid = Decimal("0")
     for payment_payload in payload.get("payments") or []:
-        for field in ["method", "amount", "paid_at"]:
-            if payment_payload.get(field) in (None, ""):
-                raise EventRejectError("validation_failed", {f"payments.{field}": "Required."})
-        payment = Payment.objects.create(
+        Payment.objects.create(
             invoice=invoice,
             method=payment_payload["method"],
             amount=Decimal(str(payment_payload["amount"])),
@@ -249,23 +260,14 @@ def _handle_invoice_create(sync_event):
             event_id=sync_event.event_id,
             device=sync_event.device,
         )
-        total_paid += payment.amount
 
-    if total_paid >= invoice.total and total_paid > 0:
-        invoice.status = Invoice.Status.PAID
-        invoice.paid_at = timezone.now()
-    elif total_paid > 0:
-        invoice.status = Invoice.Status.PARTIALLY_PAID
-    invoice.save(update_fields=["status", "paid_at", "updated_at"])
-
-    SyncOutbox.objects.create(
+    emit_outbox(
         branch_id=sync_event.branch_id,
         entity="invoice",
         entity_id=invoice.id,
         op="upsert",
         payload={
             "id": str(invoice.id),
-            "branch_id": str(invoice.branch_id),
             "device_id": str(invoice.device_id),
             "user_id": str(invoice.user_id),
             "customer_id": str(invoice.customer_id) if invoice.customer_id else None,
