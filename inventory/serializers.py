@@ -7,6 +7,7 @@ from rest_framework import serializers
 
 from inventory.models import (
     Category,
+    InventoryAlert,
     Product,
     PurchaseOrder,
     PurchaseOrderLine,
@@ -34,6 +35,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    preferred_supplier_name = serializers.CharField(source="preferred_supplier.name", read_only=True)
+
     class Meta:
         model = Product
         fields = [
@@ -46,6 +49,10 @@ class ProductSerializer(serializers.ModelSerializer):
             "price",
             "cost",
             "tax_rate",
+            "minimum_quantity",
+            "reorder_quantity",
+            "preferred_supplier",
+            "preferred_supplier_name",
             "stock_status",
             "is_active",
             "created_at",
@@ -291,3 +298,28 @@ class StockTransferSerializer(serializers.ModelSerializer):
         for line in lines:
             StockTransferLine.objects.create(transfer=transfer, product=line["product"], quantity=line["quantity"])
         return transfer
+
+
+class InventoryAlertSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
+
+    class Meta:
+        model = InventoryAlert
+        fields = [
+            "id",
+            "branch",
+            "warehouse",
+            "warehouse_name",
+            "product",
+            "product_name",
+            "severity",
+            "current_quantity",
+            "threshold_quantity",
+            "suggested_reorder_quantity",
+            "is_read",
+            "resolved_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "branch", "resolved_at", "created_at", "updated_at"]

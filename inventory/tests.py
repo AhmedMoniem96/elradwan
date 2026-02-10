@@ -254,3 +254,59 @@ class StockTransferFlowTests(TestCase):
         complete_res = self.client.post(f"/api/v1/admin/stock-transfers/{transfer_id}/complete/", {}, format="json")
         self.assertEqual(complete_res.status_code, 400)
         self.assertIn("shortages", complete_res.json())
+
+
+class StockIntelligenceTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="SI", name="Stock Intelligence")
+        self.admin = self.user_model.objects.create_user(
+            username="stock-admin",
+            password="pass1234",
+            is_staff=True,
+            branch=self.branch,
+        )
+
+        self.warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+        self.product = Product.objects.create(
+            branch=self.branch,
+            sku="SI-001",
+            name="Low Item",
+            price=Decimal("10.00"),
+            minimum_quantity=Decimal("5.00"),
+            reorder_quantity=Decimal("8.00"),
+        )
+
+    def test_stock_intelligence_and_alert_mark_read(self):
+        self.client.force_authenticate(user=self.admin)
+
+        intel_res = self.client.get("/api/v1/stock-intelligence/")
+        self.assertEqual(intel_res.status_code, 200)
+        self.assertEqual(intel_res.json()["critical_count"], 1)
+
+        unread_res = self.client.get("/api/v1/alerts/unread/")
+        self.assertEqual(unread_res.status_code, 200)
+        self.assertEqual(len(unread_res.json()), 1)
+
+        mark_read_res = self.client.post(
+            "/api/v1/alerts/mark-read/",
+            {"alert_ids": [unread_res.json()[0]["id"]]},
+            format="json",
+        )
+        self.assertEqual(mark_read_res.status_code, 200)
+
+        unread_after = self.client.get("/api/v1/alerts/unread/")
+        self.assertEqual(len(unread_after.json()), 0)
+
+    def test_reorder_export_endpoints(self):
+        self.client.force_authenticate(user=self.admin)
+
+        csv_res = self.client.get("/api/v1/reorder-suggestions/export/?format=csv")
+        self.assertEqual(csv_res.status_code, 200)
+        self.assertIn("supplier,warehouse,sku", csv_res.content.decode())
+
+        pdf_res = self.client.get("/api/v1/reorder-suggestions/export/?format=pdf")
+        self.assertEqual(pdf_res.status_code, 200)
+        self.assertIn("Reorder Suggestions", pdf_res.content.decode())

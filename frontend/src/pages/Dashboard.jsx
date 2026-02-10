@@ -12,6 +12,7 @@ export default function Dashboard() {
     expected_cash_total: '0.00',
     variance_total: '0.00',
   });
+  const [stockSummary, setStockSummary] = useState({ low_count: 0, critical_count: 0, unread_alert_count: 0 });
 
   useEffect(() => {
     let mounted = true;
@@ -24,6 +25,15 @@ export default function Dashboard() {
       })
       .catch(() => {});
 
+    axios
+      .get('/api/v1/stock-intelligence/')
+      .then((res) => {
+        if (mounted) {
+          setStockSummary(res.data || stockSummary);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       mounted = false;
     };
@@ -31,15 +41,8 @@ export default function Dashboard() {
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={8} lg={9}>
-        <Paper
-          sx={{
-            p: 2,
-            display: 'flex',
-            flexDirection: 'column',
-            height: 240,
-          }}
-        >
+      <Grid item xs={12} md={8} lg={6}>
+        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 220 }}>
           <Typography variant="h6" gutterBottom>
             {t('todays_sales')}
           </Typography>
@@ -52,14 +55,7 @@ export default function Dashboard() {
         </Paper>
       </Grid>
       <Grid item xs={12} md={4} lg={3}>
-        <Paper
-          sx={{
-            p: 2,
-            display: 'flex',
-            flexDirection: 'column',
-            height: 240,
-          }}
-        >
+        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 220 }}>
           <Typography variant="h6" gutterBottom>
             Shift variance
           </Typography>
@@ -68,6 +64,18 @@ export default function Dashboard() {
           </Typography>
           <Typography color="text.secondary" sx={{ flex: 1 }}>
             {t('status')}: {t('online')}
+          </Typography>
+        </Paper>
+      </Grid>
+      <Grid item xs={12} md={4} lg={3}>
+        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', height: 220 }}>
+          <Typography variant="h6" gutterBottom>
+            Stock Alerts
+          </Typography>
+          <Typography variant="body1">Critical: {stockSummary.critical_count}</Typography>
+          <Typography variant="body1">Low: {stockSummary.low_count}</Typography>
+          <Typography color="text.secondary" sx={{ mt: 1 }}>
+            Unread: {stockSummary.unread_alert_count}
           </Typography>
         </Paper>
       </Grid>

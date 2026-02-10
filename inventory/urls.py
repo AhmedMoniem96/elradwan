@@ -5,14 +5,18 @@ from inventory.views import (
     AdminCategoryViewSet,
     AdminProductViewSet,
     AdminPurchaseOrderViewSet,
+    AdminStockTransferViewSet,
     AdminSupplierContactViewSet,
     AdminSupplierViewSet,
     AdminWarehouseViewSet,
-    AdminStockTransferViewSet,
+    AlertMarkReadView,
     CategoryViewSet,
+    InventoryAlertViewSet,
     ProductViewSet,
     PurchaseOrderViewSet,
     PurchaseReceiveHistoryView,
+    ReorderSuggestionExportView,
+    StockIntelligenceView,
     StockTransferViewSet,
     SupplierBalancesReportView,
     SupplierViewSet,
@@ -26,6 +30,7 @@ router.register(r"warehouses", WarehouseViewSet, basename="warehouse")
 router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
 router.register(r"stock-transfers", StockTransferViewSet, basename="stock-transfer")
+router.register(r"alerts", InventoryAlertViewSet, basename="inventory-alert")
 router.register(r"admin/categories", AdminCategoryViewSet, basename="admin-category")
 router.register(r"admin/products", AdminProductViewSet, basename="admin-product")
 router.register(r"admin/warehouses", AdminWarehouseViewSet, basename="admin-warehouse")
@@ -37,4 +42,7 @@ router.register(r"admin/stock-transfers", AdminStockTransferViewSet, basename="a
 urlpatterns = router.urls + [
     path("reports/supplier-balances/", SupplierBalancesReportView.as_view(), name="supplier-balances"),
     path("reports/purchases/received-history/", PurchaseReceiveHistoryView.as_view(), name="received-history"),
+    path("stock-intelligence/", StockIntelligenceView.as_view(), name="stock-intelligence"),
+    path("alerts/mark-read/", AlertMarkReadView.as_view(), name="alerts-mark-read"),
+    path("reorder-suggestions/export/", ReorderSuggestionExportView.as_view(), name="reorder-suggestions-export"),
 ]
