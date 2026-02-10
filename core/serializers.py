@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from core.models import Branch, Device
+from core.models import AuditLog, Branch, Device
 
 User = get_user_model()
 
@@ -55,3 +55,30 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = ["id", "branch", "name", "identifier", "last_seen_at", "is_active"]
         read_only_fields = ["id", "last_seen_at"]
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source="actor.username", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    device_name = serializers.CharField(source="device.name", read_only=True)
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "actor",
+            "actor_username",
+            "branch",
+            "branch_name",
+            "device",
+            "device_name",
+            "action",
+            "entity",
+            "entity_id",
+            "before_snapshot",
+            "after_snapshot",
+            "event_id",
+            "request_id",
+            "created_at",
+        ]
+        read_only_fields = fields

@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.audit import create_audit_log_from_request
 from common.permissions import RoleCapabilityPermission
 from common.utils import emit_outbox
 from core.models import User
@@ -48,6 +49,20 @@ from inventory.services import (
 
 class OutboxMutationMixin:
     outbox_entity = None
+    audit_entity = None
+
+    def _audit(self, *, action, entity, instance, before_snapshot=None, after_snapshot=None, event_id=None):
+        create_audit_log_from_request(
+            self.request,
+            action=action,
+            entity=entity,
+            entity_id=instance.id,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+            event_id=event_id,
+            branch=getattr(instance, "branch", None),
+            device=None,
+        )
 
     def _emit(self, instance, op):
         emit_outbox(
@@ -65,13 +80,18 @@ class OutboxMutationMixin:
 
         instance = serializer.save(branch_id=user.branch_id)
         self._emit(instance, "upsert")
+        self._audit(action=f"{self.audit_entity}.create", entity=self.audit_entity, instance=instance, after_snapshot=self.get_serializer(instance).data)
 
     def perform_update(self, serializer):
+        before_snapshot = self.get_serializer(serializer.instance).data
         instance = serializer.save()
         self._emit(instance, "upsert")
+        self._audit(action=f"{self.audit_entity}.update", entity=self.audit_entity, instance=instance, before_snapshot=before_snapshot, after_snapshot=self.get_serializer(instance).data)
 
     def perform_destroy(self, instance):
+        before_snapshot = self.get_serializer(instance).data
         self._emit(instance, "delete")
+        self._audit(action=f"{self.audit_entity}.delete", entity=self.audit_entity, instance=instance, before_snapshot=before_snapshot)
         instance.delete()
 
 
@@ -161,6 +181,7 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "category"
+    audit_entity = "category"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -172,6 +193,7 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "product"
+    audit_entity = "product"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -183,6 +205,7 @@ class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "warehouse"
+    audit_entity = "warehouse"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -194,6 +217,7 @@ class AdminSupplierViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "supplier"
+    audit_entity = "supplier"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -237,6 +261,7 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "admin.records.manage", "retrieve": "admin.records.manage", "create": "admin.records.manage", "update": "admin.records.manage", "partial_update": "admin.records.manage", "destroy": "admin.records.manage", "receive": "stock.adjust"}
     outbox_entity = "purchase_order"
+    audit_entity = "purchase_order"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -248,6 +273,7 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
         instance = serializer.save(branch_id=user.branch_id)
         self._emit(instance, "upsert")
+        self._audit(action=f"{self.audit_entity}.create", entity=self.audit_entity, instance=instance, after_snapshot=self.get_serializer(instance).data)
 
     @action(detail=True, methods=["post"], url_path="receive")
     def receive(self, request, pk=None):
@@ -259,6 +285,7 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         po = serializer.save()
         self._emit(po, "upsert")
+        self._audit(action="stock.adjustment", entity="purchase_order", instance=po, after_snapshot=self.get_serializer(po).data, event_id=serializer.validated_data["event_id"])
         emit_outbox(po.branch_id, "goods_receipt", po.id, "upsert", self.get_serializer(po).data)
         return Response(self.get_serializer(po).data)
 
@@ -269,6 +296,7 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "admin.records.manage", "retrieve": "admin.records.manage", "create": "stock.adjust", "update": "stock.adjust", "partial_update": "stock.adjust", "destroy": "stock.adjust", "approve": "stock.transfer.approve", "complete": "stock.transfer.complete"}
     outbox_entity = "stock_transfer"
+    audit_entity = "stock_transfer"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -276,6 +304,7 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save(branch_id=self.request.user.branch_id)
         self._emit(instance, "upsert")
+        self._audit(action="transfer.create", entity="stock_transfer", instance=instance, after_snapshot=self.get_serializer(instance).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
@@ -292,6 +321,7 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         transfer.approved_at = timezone.now()
         transfer.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
         self._emit(transfer, "upsert")
+        self._audit(action="transfer.approve", entity="stock_transfer", instance=transfer, after_snapshot=self.get_serializer(transfer).data)
         emit_outbox(transfer.branch_id, "stock_transfer_approved", transfer.id, "upsert", self.get_serializer(transfer).data)
         return Response(self.get_serializer(transfer).data)
 
@@ -336,6 +366,7 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
             transfer.save(update_fields=["status", "completed_at", "updated_at"])
 
         self._emit(transfer, "upsert")
+        self._audit(action="transfer.complete", entity="stock_transfer", instance=transfer, after_snapshot=self.get_serializer(transfer).data, event_id=event_id)
         emit_outbox(transfer.branch_id, "stock_transfer_completed", transfer.id, "upsert", self.get_serializer(transfer).data)
         return Response(self.get_serializer(transfer).data)
 

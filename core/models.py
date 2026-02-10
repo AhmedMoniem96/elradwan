@@ -39,3 +39,26 @@ class Device(models.Model):
         indexes = [
             models.Index(fields=["branch", "is_active"]),
         ]
+
+
+class AuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True)
+    device = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField(max_length=64)
+    entity = models.CharField(max_length=64)
+    entity_id = models.UUIDField(null=True, blank=True)
+    before_snapshot = models.JSONField(null=True, blank=True)
+    after_snapshot = models.JSONField(null=True, blank=True)
+    event_id = models.UUIDField(null=True, blank=True)
+    request_id = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["action", "created_at"]),
+            models.Index(fields=["entity", "created_at"]),
+            models.Index(fields=["actor", "created_at"]),
+        ]
