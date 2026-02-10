@@ -31,6 +31,7 @@ import MenuItem from '@mui/material/MenuItem';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
+import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
 
@@ -88,6 +89,11 @@ export default function Layout() {
   const { logout } = useAuth();
   const { outbox, failedEvents } = useSync();
   const [anchorEl, setAnchorEl] = React.useState(null);
+  const [unreadAlerts, setUnreadAlerts] = React.useState(0);
+
+  React.useEffect(() => {
+    axios.get('/api/v1/alerts/unread/').then((res) => setUnreadAlerts((res.data || []).length)).catch(() => {});
+  }, []);
 
   const toggleDrawer = () => {
     setOpen(!open);
@@ -159,7 +165,7 @@ export default function Layout() {
           </Menu>
 
           <IconButton color="inherit">
-            <Badge badgeContent={4} color="secondary">
+            <Badge badgeContent={unreadAlerts} color="secondary">
               <NotificationsIcon />
             </Badge>
           </IconButton>

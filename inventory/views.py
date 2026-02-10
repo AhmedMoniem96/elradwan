@@ -2,6 +2,7 @@ import uuid
 
 from django.db import transaction
 from django.db.models import Sum
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -13,10 +14,21 @@ from rest_framework.views import APIView
 from common.utils import emit_outbox
 from core.models import User
 from core.views import scoped_queryset_for_user
-from inventory.models import Category, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, SupplierContact, Warehouse
+from inventory.models import (
+    Category,
+    InventoryAlert,
+    Product,
+    PurchaseOrder,
+    StockMove,
+    StockTransfer,
+    Supplier,
+    SupplierContact,
+    Warehouse,
+)
 from inventory.serializers import (
     CategorySerializer,
     GoodsReceiptSerializer,
+    InventoryAlertSerializer,
     ProductSerializer,
     PurchaseOrderSerializer,
     StockTransferSerializer,
@@ -24,7 +36,13 @@ from inventory.serializers import (
     SupplierSerializer,
     WarehouseSerializer,
 )
-from inventory.services import ensure_transfer_stock_available
+from inventory.services import (
+    compute_stock_intelligence,
+    ensure_transfer_stock_available,
+    export_reorder_csv,
+    export_reorder_pdf_text,
+    refresh_inventory_alerts,
+)
 
 
 class OutboxMutationMixin:
@@ -66,7 +84,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Product.objects.all()
+    queryset = Product.objects.select_related("preferred_supplier")
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
@@ -115,6 +133,20 @@ class StockTransferViewSet(viewsets.ReadOnlyModelViewSet):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
 
+class InventoryAlertViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = InventoryAlert.objects.select_related("warehouse", "product")
+    serializer_class = InventoryAlertSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user).filter(resolved_at__isnull=True).order_by("-created_at")
+
+    @action(detail=False, methods=["get"], url_path="unread")
+    def unread(self, request):
+        qs = self.get_queryset().filter(is_read=False)
+        return Response(self.get_serializer(qs, many=True).data)
+
+
 class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -126,7 +158,7 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
 
 class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
-    queryset = Product.objects.all()
+    queryset = Product.objects.select_related("preferred_supplier")
     serializer_class = ProductSerializer
     permission_classes = [IsAdminUser]
     outbox_entity = "product"
@@ -170,37 +202,19 @@ class AdminSupplierContactViewSet(viewsets.ModelViewSet):
         return qs.none()
 
     def perform_create(self, serializer):
-        user = self.request.user
         supplier = serializer.validated_data["supplier"]
+        user = self.request.user
         if not user.is_superuser and supplier.branch_id != user.branch_id:
-            raise ValidationError({"supplier": "Supplier must belong to your branch."})
+            raise ValidationError("Supplier must belong to your branch.")
         instance = serializer.save()
-        emit_outbox(
-            branch_id=instance.supplier.branch_id,
-            entity="supplier_contact",
-            entity_id=instance.id,
-            op="upsert",
-            payload=self.get_serializer(instance).data,
-        )
+        emit_outbox(instance.supplier.branch_id, "supplier_contact", instance.id, "upsert", self.get_serializer(instance).data)
 
     def perform_update(self, serializer):
         instance = serializer.save()
-        emit_outbox(
-            branch_id=instance.supplier.branch_id,
-            entity="supplier_contact",
-            entity_id=instance.id,
-            op="upsert",
-            payload=self.get_serializer(instance).data,
-        )
+        emit_outbox(instance.supplier.branch_id, "supplier_contact", instance.id, "upsert", self.get_serializer(instance).data)
 
     def perform_destroy(self, instance):
-        emit_outbox(
-            branch_id=instance.supplier.branch_id,
-            entity="supplier_contact",
-            entity_id=instance.id,
-            op="delete",
-            payload=self.get_serializer(instance).data,
-        )
+        emit_outbox(instance.supplier.branch_id, "supplier_contact", instance.id, "delete", self.get_serializer(instance).data)
         instance.delete()
 
 
@@ -215,35 +229,11 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        supplier = serializer.validated_data["supplier"]
-        if supplier.branch_id != user.branch_id:
-            raise ValidationError({"supplier": "Supplier must belong to your branch."})
+        if not getattr(user, "branch_id", None):
+            raise ValidationError("Authenticated user must belong to a branch to create records.")
 
         instance = serializer.save(branch_id=user.branch_id)
         self._emit(instance, "upsert")
-
-    @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
-        po = self.get_object()
-        if po.status != PurchaseOrder.Status.DRAFT:
-            raise ValidationError("Only draft purchase orders can be approved.")
-        po.status = PurchaseOrder.Status.APPROVED
-        po.approved_at = timezone.now()
-        po.save(update_fields=["status", "approved_at", "updated_at"])
-        self._emit(po, "upsert")
-        emit_outbox(po.branch_id, "purchase_order_approved", po.id, "upsert", self.get_serializer(po).data)
-        return Response(self.get_serializer(po).data)
-
-    @action(detail=True, methods=["post"], url_path="cancel")
-    def cancel(self, request, pk=None):
-        po = self.get_object()
-        if po.status == PurchaseOrder.Status.RECEIVED:
-            raise ValidationError("Received purchase orders cannot be cancelled.")
-        po.status = PurchaseOrder.Status.CANCELLED
-        po.save(update_fields=["status", "updated_at"])
-        self._emit(po, "upsert")
-        emit_outbox(po.branch_id, "purchase_order_cancelled", po.id, "upsert", self.get_serializer(po).data)
-        return Response(self.get_serializer(po).data)
 
     @action(detail=True, methods=["post"], url_path="receive")
     def receive(self, request, pk=None):
@@ -377,3 +367,73 @@ class PurchaseReceiveHistoryView(APIView):
                 }
             )
         return Response(payload)
+
+
+class StockIntelligenceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        intelligence = refresh_inventory_alerts(request.user.branch_id)
+        serialized_rows = [
+            {
+                **row,
+                "warehouse_id": str(row["warehouse_id"]),
+                "product_id": str(row["product_id"]),
+                "preferred_supplier_id": str(row["preferred_supplier_id"]) if row["preferred_supplier_id"] else None,
+                "minimum_quantity": str(row["minimum_quantity"]),
+                "reorder_quantity": str(row["reorder_quantity"]),
+                "on_hand": str(row["on_hand"]),
+                "suggested_reorder_quantity": str(row["suggested_reorder_quantity"]),
+            }
+            for row in intelligence["rows"]
+            if row["severity"]
+        ]
+        return Response(
+            {
+                "generated_at": intelligence["generated_at"],
+                "low_count": intelligence["low_count"],
+                "critical_count": intelligence["critical_count"],
+                "unread_alert_count": intelligence["unread_alert_count"],
+                "rows": serialized_rows,
+            }
+        )
+
+
+class AlertMarkReadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        alert_ids = request.data.get("alert_ids", [])
+        qs = scoped_queryset_for_user(InventoryAlert.objects.filter(id__in=alert_ids, resolved_at__isnull=True), request.user)
+        updated = []
+        for alert in qs:
+            alert.is_read = True
+            alert.save(update_fields=["is_read", "updated_at"])
+            updated.append(str(alert.id))
+            emit_outbox(
+                branch_id=alert.branch_id,
+                entity="inventory_alert_update",
+                entity_id=alert.id,
+                op="upsert",
+                payload={"alert_id": str(alert.id), "is_read": True},
+            )
+        return Response({"updated": updated})
+
+
+class ReorderSuggestionExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        fmt = request.query_params.get("format", "csv").lower()
+        branch_id = request.user.branch_id
+
+        if fmt == "pdf":
+            content = export_reorder_pdf_text(branch_id)
+            response = HttpResponse(content, content_type="application/pdf")
+            response["Content-Disposition"] = 'attachment; filename="reorder-suggestions.pdf"'
+            return response
+
+        csv_data = export_reorder_csv(branch_id)
+        response = HttpResponse(csv_data, content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="reorder-suggestions.csv"'
+        return response

@@ -31,6 +31,9 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=12, decimal_places=2)
     cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default=0)
+    minimum_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reorder_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    preferred_supplier = models.ForeignKey("Supplier", on_delete=models.PROTECT, null=True, blank=True)
     stock_status = models.CharField(max_length=255, blank=True, default="")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -214,4 +217,37 @@ class StockTransferLine(models.Model):
         indexes = [
             models.Index(fields=["transfer"]),
             models.Index(fields=["product"]),
+        ]
+
+
+class InventoryAlert(models.Model):
+    class Severity(models.TextChoices):
+        LOW = "low", "Low"
+        CRITICAL = "critical", "Critical"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    severity = models.CharField(max_length=16, choices=Severity.choices)
+    current_quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    threshold_quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    suggested_reorder_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_read = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "is_read", "severity"]),
+            models.Index(fields=["warehouse", "product"]),
+            models.Index(fields=["branch", "updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "warehouse", "product"],
+                name="uniq_open_alert_per_product_warehouse",
+                condition=models.Q(resolved_at__isnull=True),
+            ),
         ]
