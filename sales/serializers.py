@@ -6,13 +6,64 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from inventory.models import StockMove, Warehouse
-from sales.models import Customer, Invoice, InvoiceLine, Payment, Refund, Return, ReturnLine
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Refund, Return, ReturnLine
 
 MONEY_QUANT = Decimal("0.01")
 
 
 def _to_money(value):
     return Decimal(value).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def _get_active_shift(cashier_id, device_id):
+    return CashShift.objects.filter(cashier_id=cashier_id, device_id=device_id, closed_at__isnull=True).first()
+
+
+class CashShiftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashShift
+        fields = [
+            "id",
+            "branch",
+            "cashier",
+            "device",
+            "opened_at",
+            "closed_at",
+            "opening_amount",
+            "closing_counted_amount",
+            "expected_amount",
+            "variance",
+        ]
+        read_only_fields = [
+            "id",
+            "branch",
+            "cashier",
+            "opened_at",
+            "closed_at",
+            "expected_amount",
+            "variance",
+        ]
+
+
+class CashShiftOpenSerializer(serializers.Serializer):
+    device = serializers.UUIDField()
+    opening_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class CashShiftCloseSerializer(serializers.Serializer):
+    closing_counted_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class CashShiftReportSerializer(serializers.Serializer):
+    shift = CashShiftSerializer()
+    payments = serializers.DictField(child=serializers.DecimalField(max_digits=12, decimal_places=2))
+    invoice_count = serializers.IntegerField()
+
+
+class ShiftSummarySerializer(serializers.Serializer):
+    active_shift_count = serializers.IntegerField()
+    expected_cash_total = serializers.DecimalField(max_digits=12, decimal_places=2)
+    variance_total = serializers.DecimalField(max_digits=12, decimal_places=2)
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -78,6 +129,10 @@ class PaymentSerializer(serializers.ModelSerializer):
         balance_due = invoice.total - paid_so_far
         if amount > balance_due:
             raise serializers.ValidationError({"amount": "Payment amount cannot be greater than the remaining balance."})
+
+        shift = _get_active_shift(cashier_id=invoice.user_id, device_id=attrs["device"].id)
+        if shift is None:
+            raise serializers.ValidationError("An active cash shift is required before recording POS payments.")
 
         return attrs
 
@@ -308,6 +363,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def validate(self, attrs):
+        if self.instance is None:
+            user = attrs.get("user")
+            device = attrs.get("device")
+            if user and device:
+                shift = _get_active_shift(cashier_id=user.id, device_id=device.id)
+                if shift is None:
+                    raise serializers.ValidationError("An active cash shift is required before creating POS invoices.")
+        return attrs
+
     def get_amount_paid(self, obj):
         return obj.payments.aggregate(total=Sum("amount"))["total"] or 0
 
@@ -329,3 +394,31 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_returned_total(self, obj):
         return obj.returns.aggregate(total=Sum("total"))["total"] or 0
+
+
+def get_shift_report(shift):
+    close_time = shift.closed_at or timezone.now()
+    payments_qs = Payment.objects.filter(
+        invoice__branch_id=shift.branch_id,
+        invoice__device_id=shift.device_id,
+        invoice__user_id=shift.cashier_id,
+        paid_at__gte=shift.opened_at,
+        paid_at__lte=close_time,
+    )
+    totals = {method: Decimal("0") for method, _ in Payment.Method.choices}
+    for entry in payments_qs.values("method").annotate(total=Sum("amount")):
+        totals[entry["method"]] = _to_money(entry["total"] or 0)
+
+    invoice_count = Invoice.objects.filter(
+        branch_id=shift.branch_id,
+        device_id=shift.device_id,
+        user_id=shift.cashier_id,
+        created_at__gte=shift.opened_at,
+        created_at__lte=close_time,
+    ).count()
+
+    return {
+        "shift": shift,
+        "payments": totals,
+        "invoice_count": invoice_count,
+    }

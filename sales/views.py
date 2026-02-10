@@ -1,15 +1,28 @@
-from rest_framework import viewsets
-from rest_framework.exceptions import ValidationError
+from decimal import Decimal
+
+from django.db.models import Sum
+from django.utils import timezone
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
-from sales.models import Customer, Invoice, Payment, Return
+from sales.models import CashShift, Customer, Invoice, Payment, Return
 from sales.serializers import (
+    CashShiftCloseSerializer,
+    CashShiftOpenSerializer,
+    CashShiftReportSerializer,
+    CashShiftSerializer,
     CustomerSerializer,
     InvoiceSerializer,
     PaymentSerializer,
     ReturnSerializer,
+    ShiftSummarySerializer,
+    get_shift_report,
 )
 
 
@@ -65,6 +78,23 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+    @action(detail=False, methods=["get"], url_path="dashboard-summary")
+    def dashboard_summary(self, request):
+        user = request.user
+        qs = CashShift.objects.all()
+        if not user.is_superuser and getattr(user, "branch_id", None):
+            qs = qs.filter(branch_id=user.branch_id)
+        elif not user.is_superuser:
+            qs = qs.none()
+
+        summary = {
+            "active_shift_count": qs.filter(closed_at__isnull=True).count(),
+            "expected_cash_total": qs.filter(closed_at__isnull=True).aggregate(total=Sum("opening_amount"))["total"]
+            or Decimal("0.00"),
+            "variance_total": qs.filter(closed_at__isnull=False).aggregate(total=Sum("variance"))["total"] or Decimal("0.00"),
+        }
+        return Response(ShiftSummarySerializer(summary).data)
 
 
 class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
@@ -143,3 +173,106 @@ class AdminInvoiceViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+
+class CashShiftOpenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CashShiftOpenSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        if not getattr(user, "branch_id", None):
+            raise ValidationError("Authenticated user must belong to a branch to open shifts.")
+
+        device_id = serializer.validated_data["device"]
+        opening_amount = serializer.validated_data["opening_amount"]
+
+        if CashShift.objects.filter(cashier=user, device_id=device_id, closed_at__isnull=True).exists():
+            raise ValidationError("An open shift already exists for this cashier and device.")
+
+        shift = CashShift.objects.create(
+            branch_id=user.branch_id,
+            cashier=user,
+            device_id=device_id,
+            opening_amount=opening_amount,
+        )
+
+        emit_outbox(
+            branch_id=shift.branch_id,
+            entity="cash_shift",
+            entity_id=shift.id,
+            op="upsert",
+            payload=CashShiftSerializer(shift).data,
+        )
+
+        return Response(CashShiftSerializer(shift).data, status=status.HTTP_201_CREATED)
+
+
+class CashShiftCurrentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        device_id = request.query_params.get("device_id")
+        if not device_id:
+            raise ValidationError({"device_id": "This query parameter is required."})
+
+        shift = CashShift.objects.filter(cashier=user, device_id=device_id, closed_at__isnull=True).first()
+        if shift is None:
+            raise NotFound("No active shift found for cashier and device.")
+
+        return Response(CashShiftSerializer(shift).data)
+
+
+class CashShiftCloseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, shift_id):
+        serializer = CashShiftCloseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        shift = CashShift.objects.filter(id=shift_id, cashier=user, closed_at__isnull=True).first()
+        if shift is None:
+            raise NotFound("Open shift not found.")
+
+        close_time = timezone.now()
+        report = get_shift_report(shift)
+        expected_cash = shift.opening_amount + report["payments"].get(Payment.Method.CASH, Decimal("0.00"))
+        counted_cash = serializer.validated_data["closing_counted_amount"]
+        variance = counted_cash - expected_cash
+
+        shift.closed_at = close_time
+        shift.closing_counted_amount = counted_cash
+        shift.expected_amount = expected_cash
+        shift.variance = variance
+        shift.save(update_fields=["closed_at", "closing_counted_amount", "expected_amount", "variance"])
+
+        emit_outbox(
+            branch_id=shift.branch_id,
+            entity="cash_shift",
+            entity_id=shift.id,
+            op="upsert",
+            payload=CashShiftSerializer(shift).data,
+        )
+
+        report_payload = get_shift_report(shift)
+        return Response(CashShiftReportSerializer(report_payload).data)
+
+
+class CashShiftReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, shift_id):
+        user = request.user
+        qs = CashShift.objects.filter(id=shift_id)
+        if not user.is_superuser:
+            qs = qs.filter(branch_id=user.branch_id)
+
+        shift = qs.first()
+        if shift is None:
+            raise NotFound("Shift not found.")
+
+        return Response(CashShiftReportSerializer(get_shift_report(shift)).data)

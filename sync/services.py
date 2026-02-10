@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from inventory.models import Product, StockMove, Warehouse
-from sales.models import Customer, Invoice, InvoiceLine, Payment
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment
 from common.utils import emit_outbox
 
 
@@ -21,6 +21,43 @@ class EventRejectError(Exception):
         self.reason = reason
         self.details = details or {}
         super().__init__(reason)
+
+
+def _get_active_shift(branch_id, device_id, user_id):
+    return CashShift.objects.filter(
+        branch_id=branch_id,
+        device_id=device_id,
+        cashier_id=user_id,
+        closed_at__isnull=True,
+    ).first()
+
+
+def _build_shift_summary(shift):
+    if shift is None:
+        return None
+    close_time = shift.closed_at or timezone.now()
+    cash_total = (
+        Payment.objects.filter(
+            invoice__branch_id=shift.branch_id,
+            invoice__device_id=shift.device_id,
+            invoice__user_id=shift.cashier_id,
+            method=Payment.Method.CASH,
+            paid_at__gte=shift.opened_at,
+            paid_at__lte=close_time,
+        ).aggregate(total=models.Sum("amount"))["total"]
+        or Decimal("0")
+    )
+    expected = shift.expected_amount if shift.expected_amount is not None else (shift.opening_amount + cash_total)
+    return {
+        "id": str(shift.id),
+        "cashier_id": str(shift.cashier_id),
+        "device_id": str(shift.device_id),
+        "opened_at": shift.opened_at.isoformat(),
+        "closed_at": shift.closed_at.isoformat() if shift.closed_at else None,
+        "opening_amount": str(shift.opening_amount),
+        "expected_amount": str(expected),
+        "variance": str(shift.variance) if shift.variance is not None else None,
+    }
 
 
 SUPPORTED_EVENT_TYPES = {
@@ -224,6 +261,10 @@ def _handle_invoice_create(sync_event):
     if str(payload["user_id"]) != str(sync_event.user_id):
         raise EventRejectError("forbidden", {"user_id": "Payload user_id mismatch."})
 
+    active_shift = _get_active_shift(sync_event.branch_id, sync_event.device_id, sync_event.user_id)
+    if active_shift is None:
+        raise EventRejectError("forbidden", {"shift": "Open shift required before creating invoices."})
+
     lines = payload.get("lines") or []
     if not isinstance(lines, list) or not lines:
         raise EventRejectError("validation_failed", {"lines": "At least one line is required."})
@@ -334,5 +375,6 @@ def _handle_invoice_create(sync_event):
             "tax_total": str(invoice.tax_total),
             "total": str(invoice.total),
             "event_id": str(invoice.event_id),
+            "shift_summary": _build_shift_summary(active_shift),
         },
     )

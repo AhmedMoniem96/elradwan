@@ -156,3 +156,29 @@ class Refund(models.Model):
         indexes = [
             models.Index(fields=["return_txn", "refunded_at"]),
         ]
+
+
+class CashShift(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    cashier = models.ForeignKey(User, on_delete=models.PROTECT)
+    device = models.ForeignKey(Device, on_delete=models.PROTECT)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    opening_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    closing_counted_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    expected_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    variance = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "opened_at"]),
+            models.Index(fields=["cashier", "device", "opened_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cashier", "device"],
+                condition=models.Q(closed_at__isnull=True),
+                name="uniq_open_shift_per_cashier_device",
+            ),
+        ]

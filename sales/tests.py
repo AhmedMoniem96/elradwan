@@ -200,3 +200,88 @@ class ReturnFlowTests(TestCase):
         self.assertEqual(Decimal(response.json()["returned_subtotal"]), Decimal("20.00"))
         self.assertEqual(Decimal(response.json()["returned_tax_total"]), Decimal("2.00"))
         self.assertEqual(Decimal(response.json()["returned_total"]), Decimal("22.00"))
+
+
+class CashShiftTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="CS", name="Cash Shift")
+        self.user = self.user_model.objects.create_user(
+            username="cashier",
+            password="pass1234",
+            branch=self.branch,
+        )
+        self.device = Device.objects.create(branch=self.branch, name="POS", identifier="pos-1")
+        self.customer = Customer.objects.create(branch=self.branch, name="Customer")
+
+        self.invoice = Invoice.objects.create(
+            branch=self.branch,
+            device=self.device,
+            user=self.user,
+            customer=self.customer,
+            invoice_number="INV-C-1",
+            local_invoice_no="L-C-1",
+            subtotal=Decimal("100.00"),
+            discount_total=Decimal("0.00"),
+            tax_total=Decimal("0.00"),
+            total=Decimal("100.00"),
+            event_id=uuid.uuid4(),
+            created_at=timezone.now(),
+        )
+
+    def test_payment_requires_open_shift(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "invoice": str(self.invoice.id),
+                "method": "cash",
+                "amount": "10.00",
+                "paid_at": timezone.now().isoformat(),
+                "event_id": str(uuid.uuid4()),
+                "device": str(self.device.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("active cash shift", str(response.json()).lower())
+
+    def test_open_and_close_shift_report(self):
+        self.client.force_authenticate(user=self.user)
+        open_response = self.client.post(
+            "/api/v1/shifts/open/",
+            {
+                "device": str(self.device.id),
+                "opening_amount": "50.00",
+            },
+            format="json",
+        )
+        self.assertEqual(open_response.status_code, 201)
+
+        payment_response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "invoice": str(self.invoice.id),
+                "method": "cash",
+                "amount": "100.00",
+                "paid_at": timezone.now().isoformat(),
+                "event_id": str(uuid.uuid4()),
+                "device": str(self.device.id),
+            },
+            format="json",
+        )
+        self.assertEqual(payment_response.status_code, 201)
+
+        close_response = self.client.post(
+            f"/api/v1/shifts/{open_response.json()['id']}/close/",
+            {
+                "closing_counted_amount": "149.00",
+            },
+            format="json",
+        )
+        self.assertEqual(close_response.status_code, 200)
+        self.assertEqual(Decimal(close_response.json()["shift"]["expected_amount"]), Decimal("150.00"))
+        self.assertEqual(Decimal(close_response.json()["shift"]["variance"]), Decimal("-1.00"))
