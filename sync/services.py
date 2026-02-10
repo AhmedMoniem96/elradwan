@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import models, transaction
 from django.utils import timezone
 
-from inventory.models import Product, StockMove, Warehouse
+from inventory.models import Product, StockMove, StockTransfer, StockTransferLine, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment
 from common.utils import emit_outbox
 
@@ -66,6 +66,9 @@ SUPPORTED_EVENT_TYPES = {
     "customer.delete",
     "stock.adjust",
     "product.stock_status.set",
+    "stock.transfer.create",
+    "stock.transfer.approve",
+    "stock.transfer.complete",
 }
 
 
@@ -84,6 +87,9 @@ def process_sync_event(sync_event):
         "customer.delete": _handle_customer_delete,
         "stock.adjust": _handle_stock_adjust,
         "product.stock_status.set": _handle_product_stock_status_set,
+        "stock.transfer.create": _handle_stock_transfer_create,
+        "stock.transfer.approve": _handle_stock_transfer_approve,
+        "stock.transfer.complete": _handle_stock_transfer_complete,
     }[event_type]
 
     try:
@@ -239,6 +245,144 @@ def _handle_product_stock_status_set(sync_event):
         },
     )
 
+
+
+def _serialize_transfer(transfer):
+    return {
+        "id": str(transfer.id),
+        "branch": str(transfer.branch_id),
+        "source_warehouse": str(transfer.source_warehouse_id),
+        "destination_warehouse": str(transfer.destination_warehouse_id),
+        "reference": transfer.reference,
+        "status": transfer.status,
+        "requires_supervisor_approval": transfer.requires_supervisor_approval,
+        "approved_by": str(transfer.approved_by_id) if transfer.approved_by_id else None,
+        "approved_at": transfer.approved_at.isoformat() if transfer.approved_at else None,
+        "completed_at": transfer.completed_at.isoformat() if transfer.completed_at else None,
+        "notes": transfer.notes,
+        "lines": [
+            {
+                "id": str(line.id),
+                "product": str(line.product_id),
+                "quantity": str(line.quantity),
+            }
+            for line in transfer.lines.all()
+        ],
+    }
+
+
+def _handle_stock_transfer_create(sync_event):
+    payload = sync_event.payload
+    _validate_required(payload, ["branch_id", "source_warehouse_id", "destination_warehouse_id", "reference", "lines"])
+    _validate_branch_scope(payload, sync_event)
+
+    source = Warehouse.objects.filter(id=payload["source_warehouse_id"], branch=sync_event.branch).first()
+    destination = Warehouse.objects.filter(id=payload["destination_warehouse_id"], branch=sync_event.branch).first()
+    if source is None or destination is None:
+        raise EventRejectError("validation_failed", {"warehouse": "Source and destination warehouses must belong to branch."})
+    if source.id == destination.id:
+        raise EventRejectError("validation_failed", {"destination_warehouse_id": "Destination must differ from source warehouse."})
+
+    lines = payload.get("lines") or []
+    if not isinstance(lines, list) or not lines:
+        raise EventRejectError("validation_failed", {"lines": "At least one transfer line is required."})
+
+    transfer = StockTransfer.objects.create(
+        branch=sync_event.branch,
+        source_warehouse=source,
+        destination_warehouse=destination,
+        reference=payload["reference"],
+        requires_supervisor_approval=bool(payload.get("requires_supervisor_approval", False)),
+        notes=payload.get("notes", ""),
+    )
+
+    for line in lines:
+        if line.get("product_id") in (None, "") or line.get("quantity") in (None, ""):
+            raise EventRejectError("validation_failed", {"lines": "Each line requires product_id and quantity."})
+        qty = Decimal(str(line["quantity"]))
+        if qty <= 0:
+            raise EventRejectError("validation_failed", {"lines": "Line quantity must be positive."})
+        product = Product.objects.filter(id=line["product_id"], branch=sync_event.branch).first()
+        if product is None:
+            raise EventRejectError("validation_failed", {"product_id": f"Unknown product {line['product_id']}"})
+        StockTransferLine.objects.create(transfer=transfer, product=product, quantity=qty)
+
+    emit_outbox(sync_event.branch_id, "stock_transfer", transfer.id, "upsert", _serialize_transfer(transfer))
+
+
+def _handle_stock_transfer_approve(sync_event):
+    payload = sync_event.payload
+    _validate_required(payload, ["branch_id", "transfer_id"])
+    _validate_branch_scope(payload, sync_event)
+
+    transfer = StockTransfer.objects.filter(id=payload["transfer_id"], branch=sync_event.branch).first()
+    if transfer is None:
+        raise EventRejectError("validation_failed", {"transfer_id": "Transfer not found."})
+    if transfer.status != StockTransfer.Status.DRAFT:
+        raise EventRejectError("validation_failed", {"status": "Only draft transfers can be approved."})
+
+    transfer.status = StockTransfer.Status.APPROVED
+    transfer.approved_by = sync_event.user
+    transfer.approved_at = timezone.now()
+    transfer.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+
+    emit_outbox(sync_event.branch_id, "stock_transfer", transfer.id, "upsert", _serialize_transfer(transfer))
+
+
+def _handle_stock_transfer_complete(sync_event):
+    payload = sync_event.payload
+    _validate_required(payload, ["branch_id", "transfer_id"])
+    _validate_branch_scope(payload, sync_event)
+
+    transfer = StockTransfer.objects.prefetch_related("lines").filter(id=payload["transfer_id"], branch=sync_event.branch).first()
+    if transfer is None:
+        raise EventRejectError("validation_failed", {"transfer_id": "Transfer not found."})
+    if transfer.status != StockTransfer.Status.APPROVED:
+        raise EventRejectError("validation_failed", {"status": "Only approved transfers can be completed."})
+
+    shortages = []
+    for line in transfer.lines.all():
+        available = (
+            StockMove.objects.filter(
+                branch=sync_event.branch, warehouse_id=transfer.source_warehouse_id, product_id=line.product_id
+            ).aggregate(total=models.Sum("quantity"))["total"]
+            or Decimal("0")
+        )
+        if available < line.quantity:
+            shortages.append({"product_id": str(line.product_id), "available": str(available), "required": str(line.quantity)})
+
+    if shortages:
+        raise EventRejectError("validation_failed", {"shortages": shortages})
+
+    for line in transfer.lines.all():
+        StockMove.objects.create(
+            branch=sync_event.branch,
+            warehouse_id=transfer.source_warehouse_id,
+            product_id=line.product_id,
+            quantity=-line.quantity,
+            reason=StockMove.Reason.TRANSFER,
+            source_ref_type="inventory.stock_transfer",
+            source_ref_id=transfer.id,
+            event_id=sync_event.event_id,
+            device=sync_event.device,
+        )
+        StockMove.objects.create(
+            branch=sync_event.branch,
+            warehouse_id=transfer.destination_warehouse_id,
+            product_id=line.product_id,
+            quantity=line.quantity,
+            reason=StockMove.Reason.TRANSFER,
+            source_ref_type="inventory.stock_transfer",
+            source_ref_id=transfer.id,
+            event_id=sync_event.event_id,
+            device=sync_event.device,
+        )
+
+    transfer.status = StockTransfer.Status.COMPLETED
+    transfer.completed_at = timezone.now()
+    transfer.save(update_fields=["status", "completed_at", "updated_at"])
+
+    emit_outbox(sync_event.branch_id, "stock_transfer", transfer.id, "upsert", _serialize_transfer(transfer))
 
 def _handle_invoice_create(sync_event):
     payload = sync_event.payload

@@ -167,3 +167,51 @@ class PurchaseOrderLine(models.Model):
             models.Index(fields=["purchase_order"]),
             models.Index(fields=["product"]),
         ]
+
+
+class StockTransfer(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        APPROVED = "approved", "Approved"
+        COMPLETED = "completed", "Completed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    source_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="outgoing_transfers")
+    destination_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="incoming_transfers")
+    reference = models.CharField(max_length=64)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    requires_supervisor_approval = models.BooleanField(default=False)
+    approved_by = models.ForeignKey(
+        "core.User",
+        on_delete=models.PROTECT,
+        related_name="approved_stock_transfers",
+        null=True,
+        blank=True,
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("branch", "reference")
+        indexes = [
+            models.Index(fields=["branch", "status", "created_at"]),
+            models.Index(fields=["source_warehouse", "destination_warehouse"]),
+        ]
+
+
+class StockTransferLine(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        unique_together = ("transfer", "product")
+        indexes = [
+            models.Index(fields=["transfer"]),
+            models.Index(fields=["product"]),
+        ]

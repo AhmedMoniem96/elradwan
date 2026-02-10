@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from core.models import Branch
-from inventory.models import Product, Warehouse
+from inventory.models import Product, StockMove, StockTransfer, Warehouse
 
 
 class BranchScopedInventoryTests(TestCase):
@@ -173,3 +173,84 @@ class ProcurementFlowTests(TestCase):
         balance_res = self.client.get("/api/v1/reports/supplier-balances/")
         self.assertEqual(balance_res.status_code, 200)
         self.assertEqual(Decimal(balance_res.json()[0]["balance_due"]), Decimal("60.00"))
+
+
+class StockTransferFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="TR", name="Transfers")
+        self.admin = self.user_model.objects.create_user(
+            username="transfer-admin",
+            password="pass1234",
+            is_staff=True,
+            role="admin",
+            branch=self.branch,
+        )
+
+        self.product = Product.objects.create(branch=self.branch, sku="TR-001", name="Transfer Item", price=Decimal("10.00"))
+        self.source = Warehouse.objects.create(branch=self.branch, name="Source", is_primary=True)
+        self.destination = Warehouse.objects.create(branch=self.branch, name="Destination")
+        StockMove.objects.create(
+            branch=self.branch,
+            warehouse=self.source,
+            product=self.product,
+            quantity=Decimal("10.00"),
+            reason=StockMove.Reason.ADJUSTMENT,
+            source_ref_type="test",
+            source_ref_id=uuid.uuid4(),
+            event_id=uuid.uuid4(),
+        )
+
+    def test_transfer_lifecycle_creates_paired_moves(self):
+        self.client.force_authenticate(user=self.admin)
+
+        create_res = self.client.post(
+            "/api/v1/admin/stock-transfers/",
+            {
+                "source_warehouse": str(self.source.id),
+                "destination_warehouse": str(self.destination.id),
+                "reference": "TR-0001",
+                "requires_supervisor_approval": False,
+                "lines": [{"product": str(self.product.id), "quantity": "3.00"}],
+            },
+            format="json",
+        )
+        self.assertEqual(create_res.status_code, 201)
+        transfer_id = create_res.json()["id"]
+
+        approve_res = self.client.post(f"/api/v1/admin/stock-transfers/{transfer_id}/approve/", {}, format="json")
+        self.assertEqual(approve_res.status_code, 200)
+
+        complete_res = self.client.post(f"/api/v1/admin/stock-transfers/{transfer_id}/complete/", {}, format="json")
+        self.assertEqual(complete_res.status_code, 200)
+
+        transfer = StockTransfer.objects.get(id=transfer_id)
+        self.assertEqual(transfer.status, StockTransfer.Status.COMPLETED)
+
+        moves = StockMove.objects.filter(source_ref_id=transfer.id, reason=StockMove.Reason.TRANSFER).order_by("quantity")
+        self.assertEqual(moves.count(), 2)
+        self.assertEqual(moves.first().quantity, Decimal("-3.00"))
+        self.assertEqual(moves.last().quantity, Decimal("3.00"))
+
+    def test_transfer_complete_validates_source_stock(self):
+        self.client.force_authenticate(user=self.admin)
+
+        create_res = self.client.post(
+            "/api/v1/admin/stock-transfers/",
+            {
+                "source_warehouse": str(self.source.id),
+                "destination_warehouse": str(self.destination.id),
+                "reference": "TR-0002",
+                "requires_supervisor_approval": False,
+                "lines": [{"product": str(self.product.id), "quantity": "99.00"}],
+            },
+            format="json",
+        )
+        transfer_id = create_res.json()["id"]
+        self.client.post(f"/api/v1/admin/stock-transfers/{transfer_id}/approve/", {}, format="json")
+
+        complete_res = self.client.post(f"/api/v1/admin/stock-transfers/{transfer_id}/complete/", {}, format="json")
+        self.assertEqual(complete_res.status_code, 400)
+        self.assertIn("shortages", complete_res.json())

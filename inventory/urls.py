@@ -8,10 +8,12 @@ from inventory.views import (
     AdminSupplierContactViewSet,
     AdminSupplierViewSet,
     AdminWarehouseViewSet,
+    AdminStockTransferViewSet,
     CategoryViewSet,
     ProductViewSet,
     PurchaseOrderViewSet,
     PurchaseReceiveHistoryView,
+    StockTransferViewSet,
     SupplierBalancesReportView,
     SupplierViewSet,
     WarehouseViewSet,
@@ -23,12 +25,14 @@ router.register(r"products", ProductViewSet, basename="product")
 router.register(r"warehouses", WarehouseViewSet, basename="warehouse")
 router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
+router.register(r"stock-transfers", StockTransferViewSet, basename="stock-transfer")
 router.register(r"admin/categories", AdminCategoryViewSet, basename="admin-category")
 router.register(r"admin/products", AdminProductViewSet, basename="admin-product")
 router.register(r"admin/warehouses", AdminWarehouseViewSet, basename="admin-warehouse")
 router.register(r"admin/suppliers", AdminSupplierViewSet, basename="admin-supplier")
 router.register(r"admin/supplier-contacts", AdminSupplierContactViewSet, basename="admin-supplier-contact")
 router.register(r"admin/purchase-orders", AdminPurchaseOrderViewSet, basename="admin-purchase-order")
+router.register(r"admin/stock-transfers", AdminStockTransferViewSet, basename="admin-stock-transfer")
 
 urlpatterns = router.urls + [
     path("reports/supplier-balances/", SupplierBalancesReportView.as_view(), name="supplier-balances"),

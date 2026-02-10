@@ -11,11 +11,13 @@ from inventory.models import (
     PurchaseOrder,
     PurchaseOrderLine,
     StockMove,
+    StockTransfer,
+    StockTransferLine,
     Supplier,
     SupplierContact,
     Warehouse,
 )
-from inventory.services import update_product_cost
+from inventory.services import ensure_transfer_stock_available, update_product_cost
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -27,15 +29,7 @@ def _to_money(value):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = [
-            "id",
-            "branch",
-            "name",
-            "parent",
-            "is_active",
-            "created_at",
-            "updated_at",
-        ]
+        fields = ["id", "branch", "name", "parent", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -86,16 +80,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrderLine
-        fields = [
-            "id",
-            "purchase_order",
-            "product",
-            "quantity",
-            "quantity_received",
-            "unit_cost",
-            "tax_rate",
-            "line_total",
-        ]
+        fields = ["id", "purchase_order", "product", "quantity", "quantity_received", "unit_cost", "tax_rate", "line_total"]
         read_only_fields = ["id", "quantity_received", "line_total"]
 
 
@@ -124,16 +109,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "updated_at",
             "lines",
         ]
-        read_only_fields = [
-            "id",
-            "subtotal",
-            "tax_total",
-            "total",
-            "approved_at",
-            "received_at",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ["id", "subtotal", "tax_total", "total", "approved_at", "received_at", "created_at", "updated_at"]
 
     def get_balance_due(self, obj):
         return max(obj.total - obj.amount_paid, Decimal("0.00"))
@@ -261,3 +237,57 @@ class GoodsReceiptSerializer(serializers.Serializer):
             po.received_at = timezone.now()
             po.save(update_fields=["status", "received_at", "updated_at"])
         return po
+
+
+class StockTransferLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+
+    class Meta:
+        model = StockTransferLine
+        fields = ["id", "transfer", "product", "product_name", "quantity"]
+        read_only_fields = ["id"]
+
+
+class StockTransferSerializer(serializers.ModelSerializer):
+    lines = StockTransferLineSerializer(many=True)
+
+    class Meta:
+        model = StockTransfer
+        fields = [
+            "id",
+            "branch",
+            "source_warehouse",
+            "destination_warehouse",
+            "reference",
+            "status",
+            "requires_supervisor_approval",
+            "approved_by",
+            "approved_at",
+            "completed_at",
+            "notes",
+            "created_at",
+            "updated_at",
+            "lines",
+        ]
+        read_only_fields = ["id", "approved_by", "approved_at", "completed_at", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        source = attrs.get("source_warehouse") or getattr(self.instance, "source_warehouse", None)
+        destination = attrs.get("destination_warehouse") or getattr(self.instance, "destination_warehouse", None)
+        branch_id = attrs.get("branch_id") or getattr(self.instance, "branch_id", None)
+
+        if source and destination and source.id == destination.id:
+            raise serializers.ValidationError({"destination_warehouse": "Destination must differ from source warehouse."})
+        if source and branch_id and source.branch_id != branch_id:
+            raise serializers.ValidationError({"source_warehouse": "Source warehouse must belong to transfer branch."})
+        if destination and branch_id and destination.branch_id != branch_id:
+            raise serializers.ValidationError({"destination_warehouse": "Destination warehouse must belong to transfer branch."})
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines = validated_data.pop("lines", [])
+        transfer = StockTransfer.objects.create(**validated_data)
+        for line in lines:
+            StockTransferLine.objects.create(transfer=transfer, product=line["product"], quantity=line["quantity"])
+        return transfer
