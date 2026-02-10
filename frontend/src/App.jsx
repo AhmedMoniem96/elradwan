@@ -6,6 +6,7 @@ import POS from './pages/POS';
 import Inventory from './pages/Inventory';
 import Sync from './pages/Sync';
 import AuditLogs from './pages/AuditLogs';
+import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -55,6 +56,9 @@ function RoutedApp() {
               </Route>
               <Route element={<ProtectedRoute capability="sync.view" />}>
                 <Route path="sync" element={<Sync />} />
+              </Route>
+              <Route element={<ProtectedRoute capability="sales.dashboard.view" />}>
+                <Route path="reports" element={<Reports />} />
               </Route>
               <Route element={<ProtectedRoute capability="admin.records.manage" />}>
                 <Route path="audit-logs" element={<AuditLogs />} />

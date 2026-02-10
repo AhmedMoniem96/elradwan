@@ -111,12 +111,10 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def get_invoice_amount_paid(self, obj):
-        total_paid = obj.invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
-        return total_paid
+        return obj.invoice.amount_paid
 
     def get_invoice_balance_due(self, obj):
-        total_paid = obj.invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
-        return max(obj.invoice.total - total_paid, 0)
+        return obj.invoice.balance_due
 
     def validate(self, attrs):
         invoice = attrs["invoice"]
@@ -125,8 +123,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         if amount <= 0:
             raise serializers.ValidationError({"amount": "Payment amount must be greater than zero."})
 
-        paid_so_far = invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
-        balance_due = invoice.total - paid_so_far
+        balance_due = invoice.balance_due
         if amount > balance_due:
             raise serializers.ValidationError({"amount": "Payment amount cannot be greater than the remaining balance."})
 
@@ -139,7 +136,8 @@ class PaymentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         payment = super().create(validated_data)
         invoice = payment.invoice
-        total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or 0
+        total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+        balance_due = max(invoice.total - total_paid, Decimal("0"))
 
         if total_paid >= invoice.total:
             invoice.status = Invoice.Status.PAID
@@ -151,7 +149,9 @@ class PaymentSerializer(serializers.ModelSerializer):
             invoice.status = Invoice.Status.OPEN
             invoice.paid_at = None
 
-        invoice.save(update_fields=["status", "paid_at", "updated_at"])
+        invoice.amount_paid = total_paid
+        invoice.balance_due = balance_due
+        invoice.save(update_fields=["status", "paid_at", "amount_paid", "balance_due", "updated_at"])
         return payment
 
 
@@ -326,8 +326,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     lines = InvoiceLineSerializer(many=True, read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     returns = ReturnSerializer(many=True, read_only=True)
-    amount_paid = serializers.SerializerMethodField()
-    balance_due = serializers.SerializerMethodField()
+    amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    balance_due = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     payment_percentage = serializers.SerializerMethodField()
     returned_subtotal = serializers.SerializerMethodField()
     returned_tax_total = serializers.SerializerMethodField()
@@ -363,6 +363,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def create(self, validated_data):
+        if "amount_paid" not in validated_data:
+            validated_data["amount_paid"] = Decimal("0.00")
+        if "balance_due" not in validated_data:
+            validated_data["balance_due"] = validated_data.get("total", Decimal("0.00"))
+        return super().create(validated_data)
+
     def validate(self, attrs):
         if self.instance is None:
             user = attrs.get("user")
@@ -373,18 +380,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError("An active cash shift is required before creating POS invoices.")
         return attrs
 
-    def get_amount_paid(self, obj):
-        return obj.payments.aggregate(total=Sum("amount"))["total"] or 0
-
-    def get_balance_due(self, obj):
-        paid = obj.payments.aggregate(total=Sum("amount"))["total"] or 0
-        return max(obj.total - paid, 0)
 
     def get_payment_percentage(self, obj):
         if obj.total == 0:
             return 0
-        paid = obj.payments.aggregate(total=Sum("amount"))["total"] or 0
-        return round((paid / obj.total) * 100, 2)
+        return round((obj.amount_paid / obj.total) * 100, 2)
 
     def get_returned_subtotal(self, obj):
         return obj.returns.aggregate(total=Sum("subtotal"))["total"] or 0
