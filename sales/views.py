@@ -1,8 +1,8 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from sales.models import Customer, Invoice
-from sales.serializers import CustomerSerializer, InvoiceSerializer
+from sales.models import Customer, Invoice, Payment
+from sales.serializers import CustomerSerializer, InvoiceSerializer, PaymentSerializer
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -14,4 +14,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
 class InvoiceViewSet(viewsets.ModelViewSet):
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]

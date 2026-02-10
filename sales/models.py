@@ -25,6 +25,7 @@ class Customer(models.Model):
 class Invoice(models.Model):
     class Status(models.TextChoices):
         OPEN = "open", "Open"
+        PARTIALLY_PAID = "partially_paid", "Partially Paid"
         PAID = "paid", "Paid"
         VOID = "void", "Void"
 

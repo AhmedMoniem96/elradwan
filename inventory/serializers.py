@@ -31,6 +31,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "price",
             "cost",
             "tax_rate",
+            "stock_status",
             "is_active",
             "created_at",
             "updated_at",

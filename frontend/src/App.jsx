@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
+import POS from './pages/POS';
+import Inventory from './pages/Inventory';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -29,9 +31,9 @@ function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Dashboard />} />
-                <Route path="pos" element={<div>POS Screen (Coming Soon)</div>} />
+                <Route path="pos" element={<POS />} />
                 <Route path="customers" element={<Customers />} />
-                <Route path="inventory" element={<div>Inventory Management (Coming Soon)</div>} />
+                <Route path="inventory" element={<Inventory />} />
                 <Route path="sync" element={<div>Sync Status (Coming Soon)</div>} />
               </Route>
             </Route>

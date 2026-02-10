@@ -46,6 +46,15 @@ const resources = {
       "reset_password": "Reset Password",
       "send_reset_link": "Send Reset Link",
       "back_to_login": "Back to Login"
+      ,"invoice_total": "Invoice Total"
+      ,"payment_amount": "Payment Amount"
+      ,"payment_percentage": "Payment Percentage"
+      ,"record_payment": "Record Payment"
+      ,"amount_paid": "Amount Paid"
+      ,"remaining_balance": "Remaining Balance"
+      ,"payment": "Payment"
+      ,"price": "Price"
+      ,"stock_status": "Stock Status"
     }
   },
   ar: {
@@ -91,6 +100,15 @@ const resources = {
       "reset_password": "إعادة تعيين كلمة المرور",
       "send_reset_link": "إرسال رابط إعادة التعيين",
       "back_to_login": "العودة لتسجيل الدخول"
+      ,"invoice_total": "إجمالي الفاتورة"
+      ,"payment_amount": "قيمة الدفع"
+      ,"payment_percentage": "نسبة الدفع"
+      ,"record_payment": "تسجيل الدفعة"
+      ,"amount_paid": "المبلغ المدفوع"
+      ,"remaining_balance": "الرصيد المتبقي"
+      ,"payment": "دفعة"
+      ,"price": "السعر"
+      ,"stock_status": "حالة المخزون"
     }
   }
 };
