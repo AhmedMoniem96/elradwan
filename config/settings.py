@@ -1,11 +1,52 @@
-from pathlib import Path
+import os
 from datetime import timedelta
+from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = "replace-me"
-DEBUG = True
-ALLOWED_HOSTS = ["*"]
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
+    value = os.getenv(name)
+    if value is None:
+        return default or []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+DJANGO_ENV = os.getenv("DJANGO_ENV", "dev").strip().lower()
+if DJANGO_ENV not in {"dev", "staging", "prod"}:
+    raise ImproperlyConfigured("DJANGO_ENV must be one of: dev, staging, prod.")
+
+DEBUG = env_bool("DEBUG", default=DJANGO_ENV == "dev")
+
+if DJANGO_ENV == "dev":
+    SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-only-key")
+else:
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        raise ImproperlyConfigured("SECRET_KEY must be set when DJANGO_ENV is staging or prod.")
+
+if DJANGO_ENV == "dev":
+    ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+else:
+    ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", default=[])
+
+if DJANGO_ENV == "dev":
+    CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=True)
+    CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", default=[])
+else:
+    CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+    CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", default=[])
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -87,5 +128,3 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
-
-CORS_ALLOW_ALL_ORIGINS = True
