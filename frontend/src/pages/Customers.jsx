@@ -22,9 +22,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { useSync } from '../sync/SyncContext';
 
 export default function Customers() {
   const { t } = useTranslation();
+  const { enqueueEvent, pushNow, pullNow } = useSync();
   const [customers, setCustomers] = useState([]);
   const [open, setOpen] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState({
@@ -65,15 +67,19 @@ export default function Customers() {
 
   const handleSave = async () => {
     try {
-      if (isEditing) {
-        await axios.put(`/api/v1/customers/${currentCustomer.id}/`, currentCustomer);
-      } else {
-        // We need to provide a branch ID for new customers as per the model
-        // For now, we'll assume the backend handles it or we mock it
-        const payload = { ...currentCustomer, branch: "33333333-3333-3333-3333-333333333333" }; 
-        await axios.post('/api/v1/customers/', payload);
-      }
-      fetchCustomers();
+      const customerId = currentCustomer.id || crypto.randomUUID();
+      enqueueEvent({
+        eventType: 'customer.upsert',
+        payload: {
+          customer_id: customerId,
+          name: currentCustomer.name,
+          phone: currentCustomer.phone,
+          email: currentCustomer.email,
+        },
+      });
+      await pushNow();
+      await pullNow();
+      await fetchCustomers();
       handleClose();
     } catch (error) {
       console.error('Error saving customer:', error);
@@ -84,8 +90,15 @@ export default function Customers() {
   const handleDelete = async (id) => {
     if (window.confirm(t('Are you sure you want to delete this customer?'))) {
       try {
-        await axios.delete(`/api/v1/customers/${id}/`);
-        fetchCustomers();
+        enqueueEvent({
+          eventType: 'customer.delete',
+          payload: {
+            customer_id: id,
+          },
+        });
+        await pushNow();
+        await pullNow();
+        await fetchCustomers();
       } catch (error) {
         console.error('Error deleting customer:', error);
       }

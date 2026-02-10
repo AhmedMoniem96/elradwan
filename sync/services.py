@@ -26,7 +26,9 @@ class EventRejectError(Exception):
 SUPPORTED_EVENT_TYPES = {
     "invoice.create",
     "customer.upsert",
+    "customer.delete",
     "stock.adjust",
+    "product.stock_status.set",
 }
 
 
@@ -42,7 +44,9 @@ def process_sync_event(sync_event):
     handler = {
         "invoice.create": _handle_invoice_create,
         "customer.upsert": _handle_customer_upsert,
+        "customer.delete": _handle_customer_delete,
         "stock.adjust": _handle_stock_adjust,
+        "product.stock_status.set": _handle_product_stock_status_set,
     }[event_type]
 
     try:
@@ -96,6 +100,29 @@ def _handle_customer_upsert(sync_event):
     )
 
 
+def _handle_customer_delete(sync_event):
+    payload = sync_event.payload
+    _validate_required(payload, ["branch_id", "customer_id"])
+    _validate_branch_scope(payload, sync_event)
+
+    customer = Customer.objects.filter(id=payload["customer_id"], branch=sync_event.branch).first()
+    if customer is None:
+        raise EventRejectError("validation_failed", {"customer_id": "Customer not found in branch."})
+
+    customer_id = customer.id
+    customer.delete()
+
+    emit_outbox(
+        branch_id=sync_event.branch_id,
+        entity="customer",
+        entity_id=customer_id,
+        op="delete",
+        payload={
+            "id": str(customer_id),
+        },
+    )
+
+
 def _handle_stock_adjust(sync_event):
     payload = sync_event.payload
     _validate_required(payload, ["branch_id", "warehouse_id", "product_id", "quantity", "reason"])
@@ -144,6 +171,34 @@ def _handle_stock_adjust(sync_event):
             "quantity": str(stock_move.quantity),
             "reason": stock_move.reason,
             "event_id": str(stock_move.event_id),
+        },
+    )
+
+
+def _handle_product_stock_status_set(sync_event):
+    payload = sync_event.payload
+    _validate_required(payload, ["branch_id", "product_id", "stock_status"])
+    _validate_branch_scope(payload, sync_event)
+
+    product = Product.objects.filter(id=payload["product_id"], branch=sync_event.branch).first()
+    if product is None:
+        raise EventRejectError("validation_failed", {"product_id": "Product not found in branch."})
+
+    product.stock_status = payload["stock_status"]
+    product.save(update_fields=["stock_status", "updated_at"])
+
+    emit_outbox(
+        branch_id=sync_event.branch_id,
+        entity="product",
+        entity_id=product.id,
+        op="upsert",
+        payload={
+            "id": str(product.id),
+            "sku": product.sku,
+            "name": product.name,
+            "price": str(product.price),
+            "stock_status": product.stock_status,
+            "updated_at": product.updated_at.isoformat(),
         },
     )
 

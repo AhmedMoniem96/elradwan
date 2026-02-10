@@ -1,7 +1,17 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
+import { getStoredDeviceId } from './sync/SyncContext';
 
 const AuthContext = createContext(null);
+
+const parseJwt = (token) => {
+  try {
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+};
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -11,15 +21,48 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      // Ideally, you'd fetch user profile here to validate token
-      setUser({ username: 'User' }); 
-    } else {
-      delete axios.defaults.headers.common['Authorization'];
-      setUser(null);
-    }
-    setLoading(false);
+    const hydrate = async () => {
+      if (!token) {
+        delete axios.defaults.headers.common.Authorization;
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+      const claims = parseJwt(token) || {};
+
+      try {
+        const [branchResp, deviceResp] = await Promise.all([
+          axios.get('/api/v1/branches/'),
+          axios.get('/api/v1/devices/'),
+        ]);
+
+        const branch = (branchResp.data || [])[0] || null;
+        const devices = deviceResp.data || [];
+        const storedDeviceId = getStoredDeviceId();
+        const selectedDevice = devices.find((d) => d.id === storedDeviceId) || devices[0] || null;
+
+        setUser({
+          username: claims.username || claims.user || 'User',
+          id: claims.user_id || claims.sub || null,
+          branch_id: branch?.id || null,
+          device_id: selectedDevice?.id || null,
+        });
+      } catch (error) {
+        console.error('Failed to load runtime auth context', error);
+        setUser({
+          username: claims.username || claims.user || 'User',
+          id: claims.user_id || claims.sub || null,
+          branch_id: null,
+          device_id: null,
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    hydrate();
   }, [token]);
 
   const login = async (username, password) => {
@@ -28,10 +71,11 @@ export const AuthProvider = ({ children }) => {
       const { access, refresh } = response.data;
       localStorage.setItem('access_token', access);
       localStorage.setItem('refresh_token', refresh);
+      setLoading(true);
       setToken(access);
       return true;
     } catch (error) {
-      console.error("Login failed", error);
+      console.error('Login failed', error);
       return false;
     }
   };

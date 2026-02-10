@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useSync } from '../sync/SyncContext';
 import {
   Box,
   Button,
@@ -17,6 +18,7 @@ const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 
 export default function POS() {
   const { t } = useTranslation();
+  const { enqueueEvent } = useSync();
   const [invoiceTotal, setInvoiceTotal] = useState('0');
   const [paymentInputMode, setPaymentInputMode] = useState('amount');
   const [paymentValue, setPaymentValue] = useState('0');
@@ -28,6 +30,14 @@ export default function POS() {
     [payments],
   );
   const remaining = Math.max(parsedTotal - paidSoFar, 0);
+
+
+
+  const buildInvoiceCreateEvent = (invoice) =>
+    enqueueEvent({
+      eventType: 'invoice.create',
+      payload: invoice,
+    });
 
   const computedPaymentAmount = useMemo(() => {
     const value = Number(paymentValue) || 0;
@@ -55,6 +65,9 @@ export default function POS() {
     ]);
     setPaymentValue('0');
     setPaymentInputMode('amount');
+
+    // Future POS write flows should emit to sync outbox (e.g. invoice.create) rather than direct domain writes.
+    void buildInvoiceCreateEvent;
   };
 
   return (
