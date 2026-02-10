@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from core.models import Branch, Device
+from core.models import AuditLog, Branch, Device
 
 
 class BranchScopedCoreTests(TestCase):
@@ -89,3 +89,38 @@ class RolePermissionCoreTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201)
+
+
+class AuditLogTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.branch = Branch.objects.create(code="AL", name="Audit")
+        self.admin = self.user_model.objects.create_user(
+            username="audit-admin",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
+
+    def test_device_create_writes_audit_log(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/v1/devices/",
+            {"name": "Audit Device", "identifier": "audit-device", "is_active": True},
+            format="json",
+            HTTP_X_REQUEST_ID="req-123",
+        )
+
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(AuditLog.objects.filter(action="device.create", entity="device", request_id="req-123").exists())
+
+    def test_audit_logs_are_read_only(self):
+        self.client.force_authenticate(user=self.admin)
+        log = AuditLog.objects.create(action="test.action", entity="test", branch=self.branch, actor=self.admin)
+
+        patch_res = self.client.patch(f"/api/v1/admin/audit-logs/{log.id}/", {"action": "changed"}, format="json")
+        delete_res = self.client.delete(f"/api/v1/admin/audit-logs/{log.id}/")
+
+        self.assertEqual(patch_res.status_code, 405)
+        self.assertEqual(delete_res.status_code, 405)

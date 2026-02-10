@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
+from common.audit import create_audit_log_from_request
 from common.permissions import RoleCapabilityPermission, user_has_capability
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
@@ -29,6 +30,7 @@ from sales.serializers import (
 
 class OutboxMutationMixin:
     outbox_entity = None
+    audit_entity = None
 
     def _get_branch_id(self, instance):
         if hasattr(instance, "branch_id"):
@@ -36,6 +38,19 @@ class OutboxMutationMixin:
         if hasattr(instance, "invoice"):
             return instance.invoice.branch_id
         return None
+
+    def _audit(self, *, action, entity, instance, before_snapshot=None, after_snapshot=None, event_id=None):
+        create_audit_log_from_request(
+            self.request,
+            action=action,
+            entity=entity,
+            entity_id=instance.id,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+            event_id=event_id,
+            branch=getattr(instance, "branch", None) or getattr(getattr(instance, "invoice", None), "branch", None),
+            device=getattr(instance, "device", None) or getattr(getattr(instance, "invoice", None), "device", None),
+        )
 
     def _emit(self, instance, op):
         emit_outbox(
@@ -53,13 +68,25 @@ class OutboxMutationMixin:
 
         instance = serializer.save(branch_id=user.branch_id)
         self._emit(instance, "upsert")
+        self._audit(action=f"{self.audit_entity}.create", entity=self.audit_entity, instance=instance, after_snapshot=self.get_serializer(instance).data, event_id=getattr(instance, "event_id", None))
 
     def perform_update(self, serializer):
+        before_snapshot = self.get_serializer(serializer.instance).data
         instance = serializer.save()
         self._emit(instance, "upsert")
+        self._audit(
+            action=f"{self.audit_entity}.update",
+            entity=self.audit_entity,
+            instance=instance,
+            before_snapshot=before_snapshot,
+            after_snapshot=self.get_serializer(instance).data,
+            event_id=getattr(instance, "event_id", None),
+        )
 
     def perform_destroy(self, instance):
+        before_snapshot = self.get_serializer(instance).data
         self._emit(instance, "delete")
+        self._audit(action=f"{self.audit_entity}.delete", entity=self.audit_entity, instance=instance, before_snapshot=before_snapshot)
         instance.delete()
 
 
@@ -114,6 +141,7 @@ class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         "void": "invoice.void",
     }
     outbox_entity = "payment"
+    audit_entity = "payment"
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -136,6 +164,13 @@ class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
         instance = serializer.save()
         self._emit(instance, "upsert")
+        self._audit(
+            action="payment.create",
+            entity="payment",
+            instance=instance,
+            after_snapshot=self.get_serializer(instance).data,
+            event_id=instance.event_id,
+        )
 
 
 class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
@@ -152,6 +187,7 @@ class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         "void": "invoice.void",
     }
     outbox_entity = "return"
+    audit_entity = "return"
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("invoice", "branch", "device", "user")
@@ -174,6 +210,24 @@ class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
         instance = serializer.save(branch_id=user.branch_id, user=user)
         self._emit(instance, "upsert")
+        self._audit(action="return.create", entity="return", instance=instance, after_snapshot=self.get_serializer(instance).data, event_id=instance.event_id)
+        for refund in instance.refunds.all():
+            create_audit_log_from_request(
+                self.request,
+                action="refund.create",
+                entity="refund",
+                entity_id=refund.id,
+                after_snapshot={
+                    "id": str(refund.id),
+                    "return_id": str(instance.id),
+                    "method": refund.method,
+                    "amount": str(refund.amount),
+                    "refunded_at": refund.refunded_at.isoformat(),
+                },
+                event_id=instance.event_id,
+                branch=instance.branch,
+                device=instance.device,
+            )
 
 
 class AdminCustomerViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
@@ -182,6 +236,7 @@ class AdminCustomerViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
     outbox_entity = "customer"
+    audit_entity = "customer"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -201,6 +256,7 @@ class AdminInvoiceViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         "void": "invoice.void",
     }
     outbox_entity = "invoice"
+    audit_entity = "invoice"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -210,10 +266,19 @@ class AdminInvoiceViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         invoice = self.get_object()
         if invoice.status == Invoice.Status.VOID:
             raise ValidationError("Invoice is already void.")
+        previous_status = invoice.status
         invoice.status = Invoice.Status.VOID
         invoice.updated_at = timezone.now()
         invoice.save(update_fields=["status", "updated_at"])
         self._emit(invoice, "upsert")
+        self._audit(
+            action="invoice.void",
+            entity="invoice",
+            instance=invoice,
+            before_snapshot={"status": previous_status},
+            after_snapshot=self.get_serializer(invoice).data,
+            event_id=invoice.event_id,
+        )
         return Response(self.get_serializer(invoice).data)
 
 

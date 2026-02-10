@@ -22,6 +22,7 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import PeopleIcon from '@mui/icons-material/People';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LayersIcon from '@mui/icons-material/Layers';
+import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import TranslateIcon from '@mui/icons-material/Translate';
@@ -220,9 +221,16 @@ export default function Layout() {
               <ListItemText primary={t('inventory')} />
             </ListItemButton>
           )}
-          {can('sync.view') && (
-            <ListItemButton onClick={() => navigate('/sync')}>
+          {can('admin.records.manage') && (
+            <ListItemButton onClick={() => navigate('/audit-logs')}>
               <ListItemIcon>
+                <ManageSearchIcon />
+              </ListItemIcon>
+              <ListItemText primary="Audit Logs" />
+            </ListItemButton>
+          )}
+          {can('sync.view') && (
+            <ListItemButton onClick={() => navigate('/sync')}>              <ListItemIcon>
                 <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
                   <LayersIcon />
                 </Badge>
