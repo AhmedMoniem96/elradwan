@@ -1,4 +1,8 @@
+import uuid
+
+from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -7,17 +11,20 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.utils import emit_outbox
+from core.models import User
 from core.views import scoped_queryset_for_user
-from inventory.models import Category, Product, PurchaseOrder, Supplier, SupplierContact, Warehouse
+from inventory.models import Category, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, SupplierContact, Warehouse
 from inventory.serializers import (
     CategorySerializer,
     GoodsReceiptSerializer,
     ProductSerializer,
     PurchaseOrderSerializer,
+    StockTransferSerializer,
     SupplierContactSerializer,
     SupplierSerializer,
     WarehouseSerializer,
 )
+from inventory.services import ensure_transfer_stock_available
 
 
 class OutboxMutationMixin:
@@ -97,6 +104,15 @@ class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
     def pending(self, request):
         qs = self.get_queryset().filter(status__in=[PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.APPROVED])
         return Response(self.get_serializer(qs, many=True).data)
+
+
+class StockTransferViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = StockTransfer.objects.select_related("source_warehouse", "destination_warehouse", "approved_by").prefetch_related("lines__product")
+    serializer_class = StockTransferSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
 
 class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
@@ -212,8 +228,6 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         if po.status != PurchaseOrder.Status.DRAFT:
             raise ValidationError("Only draft purchase orders can be approved.")
         po.status = PurchaseOrder.Status.APPROVED
-        from django.utils import timezone
-
         po.approved_at = timezone.now()
         po.save(update_fields=["status", "approved_at", "updated_at"])
         self._emit(po, "upsert")
@@ -243,6 +257,82 @@ class AdminPurchaseOrderViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         self._emit(po, "upsert")
         emit_outbox(po.branch_id, "goods_receipt", po.id, "upsert", self.get_serializer(po).data)
         return Response(self.get_serializer(po).data)
+
+
+class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
+    queryset = StockTransfer.objects.select_related("source_warehouse", "destination_warehouse", "approved_by").prefetch_related("lines__product")
+    serializer_class = StockTransferSerializer
+    permission_classes = [IsAdminUser]
+    outbox_entity = "stock_transfer"
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        instance = serializer.save(branch_id=self.request.user.branch_id)
+        self._emit(instance, "upsert")
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        transfer = self.get_object()
+        if transfer.status != StockTransfer.Status.DRAFT:
+            raise ValidationError("Only draft transfers can be approved.")
+
+        user = request.user
+        if transfer.requires_supervisor_approval and user.role not in [User.Role.SUPERVISOR, User.Role.ADMIN] and not user.is_superuser:
+            raise ValidationError("Supervisor approval is required for this transfer.")
+
+        transfer.status = StockTransfer.Status.APPROVED
+        transfer.approved_by = user
+        transfer.approved_at = timezone.now()
+        transfer.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        self._emit(transfer, "upsert")
+        emit_outbox(transfer.branch_id, "stock_transfer_approved", transfer.id, "upsert", self.get_serializer(transfer).data)
+        return Response(self.get_serializer(transfer).data)
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        transfer = self.get_object()
+        if transfer.status != StockTransfer.Status.APPROVED:
+            raise ValidationError("Only approved transfers can be completed.")
+
+        shortages = ensure_transfer_stock_available(transfer)
+        if shortages:
+            raise ValidationError({"stock": "Insufficient source stock for transfer.", "shortages": shortages})
+
+        event_id = request.data.get("event_id") or uuid.uuid4()
+        with transaction.atomic():
+            for line in transfer.lines.select_related("product"):
+                StockMove.objects.create(
+                    branch_id=transfer.branch_id,
+                    warehouse_id=transfer.source_warehouse_id,
+                    product=line.product,
+                    quantity=-line.quantity,
+                    unit_cost=line.product.cost,
+                    reason=StockMove.Reason.TRANSFER,
+                    source_ref_type="inventory.stock_transfer",
+                    source_ref_id=transfer.id,
+                    event_id=event_id,
+                )
+                StockMove.objects.create(
+                    branch_id=transfer.branch_id,
+                    warehouse_id=transfer.destination_warehouse_id,
+                    product=line.product,
+                    quantity=line.quantity,
+                    unit_cost=line.product.cost,
+                    reason=StockMove.Reason.TRANSFER,
+                    source_ref_type="inventory.stock_transfer",
+                    source_ref_id=transfer.id,
+                    event_id=event_id,
+                )
+
+            transfer.status = StockTransfer.Status.COMPLETED
+            transfer.completed_at = timezone.now()
+            transfer.save(update_fields=["status", "completed_at", "updated_at"])
+
+        self._emit(transfer, "upsert")
+        emit_outbox(transfer.branch_id, "stock_transfer_completed", transfer.id, "upsert", self.get_serializer(transfer).data)
+        return Response(self.get_serializer(transfer).data)
 
 
 class SupplierBalancesReportView(APIView):

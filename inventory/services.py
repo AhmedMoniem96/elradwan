@@ -1,6 +1,9 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
+from django.db.models import Sum
+
+from inventory.models import StockMove
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -35,3 +38,26 @@ def update_product_cost(product, incoming_qty, incoming_unit_cost, current_stock
     product.cost = _to_money(new_cost)
     product.save(update_fields=["cost", "updated_at"])
     return product.cost
+
+
+def get_stock_balance(branch_id, warehouse_id, product_id):
+    return (
+        StockMove.objects.filter(branch_id=branch_id, warehouse_id=warehouse_id, product_id=product_id).aggregate(total=Sum("quantity"))["total"]
+        or Decimal("0")
+    )
+
+
+def ensure_transfer_stock_available(transfer):
+    shortages = []
+    for line in transfer.lines.select_related("product"):
+        available = get_stock_balance(transfer.branch_id, transfer.source_warehouse_id, line.product_id)
+        if available < line.quantity:
+            shortages.append(
+                {
+                    "product_id": str(line.product_id),
+                    "product_name": line.product.name,
+                    "available": str(available),
+                    "required": str(line.quantity),
+                }
+            )
+    return shortages
