@@ -41,6 +41,8 @@ class Invoice(models.Model):
     discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2)
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    balance_due = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     event_id = models.UUIDField()
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)

@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from core.models import Branch, Device
 from inventory.models import Product, StockMove, Warehouse
-from sales.models import Customer, Invoice, InvoiceLine, Return
+from sales.models import Customer, Invoice, InvoiceLine, Payment, Return
 
 
 class BranchScopedSalesTests(TestCase):
@@ -369,3 +369,74 @@ class RolePermissionSalesTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+class ReportingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="RP", name="Reporting", timezone="UTC")
+        self.user = user_model.objects.create_user(
+            username="report-admin",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
+        self.device = Device.objects.create(branch=self.branch, name="R-Device", identifier="r-dev")
+        self.customer = Customer.objects.create(branch=self.branch, name="ACME")
+        self.product = Product.objects.create(branch=self.branch, sku="R-1", name="Report Product", price=Decimal("100.00"), cost=Decimal("60.00"))
+
+        self.invoice = Invoice.objects.create(
+            branch=self.branch,
+            device=self.device,
+            user=self.user,
+            customer=self.customer,
+            invoice_number="INV-REP-1",
+            local_invoice_no="L-REP-1",
+            status=Invoice.Status.PARTIALLY_PAID,
+            subtotal=Decimal("200.00"),
+            discount_total=Decimal("0.00"),
+            tax_total=Decimal("0.00"),
+            total=Decimal("200.00"),
+            amount_paid=Decimal("120.00"),
+            balance_due=Decimal("80.00"),
+            event_id=uuid.uuid4(),
+            created_at=timezone.now(),
+        )
+        InvoiceLine.objects.create(
+            invoice=self.invoice,
+            product=self.product,
+            quantity=Decimal("2.00"),
+            unit_price=Decimal("100.00"),
+            discount=Decimal("0.00"),
+            tax_rate=Decimal("0.0000"),
+            line_total=Decimal("200.00"),
+        )
+        Payment.objects.create(
+            invoice=self.invoice,
+            method=Payment.Method.CARD,
+            amount=Decimal("120.00"),
+            paid_at=timezone.now(),
+            event_id=uuid.uuid4(),
+            device=self.device,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+    def test_reports_endpoints_return_expected_payloads(self):
+        daily = self.client.get("/api/v1/reports/daily-sales/")
+        self.assertEqual(daily.status_code, 200)
+        self.assertGreaterEqual(len(daily.json()["results"]), 1)
+
+        top_products = self.client.get("/api/v1/reports/top-products/")
+        self.assertEqual(top_products.status_code, 200)
+        self.assertEqual(top_products.json()["results"][0]["product__name"], "Report Product")
+
+        ar = self.client.get("/api/v1/reports/accounts-receivable/")
+        self.assertEqual(ar.status_code, 200)
+        self.assertEqual(Decimal(ar.json()["results"][0]["balance_due"]), Decimal("80.00"))
+
+    def test_reports_support_csv_export(self):
+        response = self.client.get("/api/v1/reports/top-customers/?format=csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")

@@ -23,6 +23,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LayersIcon from '@mui/icons-material/Layers';
 import ManageSearchIcon from '@mui/icons-material/ManageSearch';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import TranslateIcon from '@mui/icons-material/Translate';
@@ -219,6 +220,14 @@ export default function Layout() {
                 <BarChartIcon />
               </ListItemIcon>
               <ListItemText primary={t('inventory')} />
+            </ListItemButton>
+          )}
+          {can('sales.dashboard.view') && (
+            <ListItemButton onClick={() => navigate('/reports')}>
+              <ListItemIcon>
+                <AssessmentIcon />
+              </ListItemIcon>
+              <ListItemText primary="Reports" />
             </ListItemButton>
           )}
           {can('admin.records.manage') && (
