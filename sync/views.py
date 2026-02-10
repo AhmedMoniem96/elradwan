@@ -1,10 +1,12 @@
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.models import Device
 from sync.models import SyncEvent, SyncOutbox
 from sync.serializers import SyncPullSerializer, SyncPushSerializer
+from sync.services import process_sync_event
 
 
 class SyncPushView(APIView):
@@ -32,8 +34,23 @@ class SyncPushView(APIView):
                         },
                     )
                     if created:
-                        # TODO: process event into domain models and emit outbox rows.
-                        pass
+                        result = process_sync_event(sync_event)
+                        sync_event.processed_at = timezone.now()
+
+                        if result.accepted:
+                            sync_event.status = SyncEvent.Status.PROCESSED
+                            sync_event.save(update_fields=["status", "processed_at"])
+                        else:
+                            sync_event.status = SyncEvent.Status.REJECTED
+                            sync_event.save(update_fields=["status", "processed_at"])
+                            rejected.append(
+                                {
+                                    "event_id": str(event["event_id"]),
+                                    "reason": result.reason,
+                                    "details": result.details or {},
+                                }
+                            )
+                            continue
                 acknowledged.append(str(event["event_id"]))
             except IntegrityError as exc:
                 rejected.append(
