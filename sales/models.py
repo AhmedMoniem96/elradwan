@@ -98,3 +98,61 @@ class Payment(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["event_id", "device"], name="uniq_payment_event_device"),
         ]
+
+
+class Return(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="returns")
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    device = models.ForeignKey(Device, on_delete=models.PROTECT)
+    user = models.ForeignKey(User, on_delete=models.PROTECT)
+    reason = models.CharField(max_length=255, null=True, blank=True)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    event_id = models.UUIDField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["invoice", "created_at"]),
+            models.Index(fields=["branch", "created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["event_id", "device"], name="uniq_return_event_device"),
+        ]
+
+
+class ReturnLine(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    return_txn = models.ForeignKey(Return, on_delete=models.CASCADE, related_name="lines")
+    invoice_line = models.ForeignKey(InvoiceLine, on_delete=models.PROTECT, related_name="return_lines")
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    refunded_subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    refunded_tax = models.DecimalField(max_digits=12, decimal_places=2)
+    refunded_total = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["return_txn"]),
+            models.Index(fields=["invoice_line"]),
+        ]
+
+
+class Refund(models.Model):
+    class Method(models.TextChoices):
+        CASH = "cash", "Cash"
+        CARD = "card", "Card"
+        TRANSFER = "transfer", "Transfer"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    return_txn = models.ForeignKey(Return, on_delete=models.CASCADE, related_name="refunds")
+    method = models.CharField(max_length=16, choices=Method.choices)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    refunded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["return_txn", "refunded_at"]),
+        ]

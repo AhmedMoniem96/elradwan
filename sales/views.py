@@ -4,8 +4,13 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
-from sales.models import Customer, Invoice, Payment
-from sales.serializers import CustomerSerializer, InvoiceSerializer, PaymentSerializer
+from sales.models import Customer, Invoice, Payment, Return
+from sales.serializers import (
+    CustomerSerializer,
+    InvoiceSerializer,
+    PaymentSerializer,
+    ReturnSerializer,
+)
 
 
 class OutboxMutationMixin:
@@ -88,6 +93,35 @@ class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
             raise ValidationError({"invoice": "Invoice must belong to your branch."})
 
         instance = serializer.save()
+        self._emit(instance, "upsert")
+
+
+class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
+    queryset = Return.objects.all()
+    serializer_class = ReturnSerializer
+    permission_classes = [IsAuthenticated]
+    outbox_entity = "return"
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related("invoice", "branch", "device", "user")
+        user = self.request.user
+
+        if user.is_superuser:
+            return queryset
+        if getattr(user, "branch_id", None):
+            return queryset.filter(branch_id=user.branch_id)
+        return queryset.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not getattr(user, "branch_id", None):
+            raise ValidationError("Authenticated user must belong to a branch to create records.")
+
+        invoice = serializer.validated_data["invoice"]
+        if invoice.branch_id != user.branch_id:
+            raise ValidationError({"invoice": "Invoice must belong to your branch."})
+
+        instance = serializer.save(branch_id=user.branch_id, user=user)
         self._emit(instance, "upsert")
 
 

@@ -7,7 +7,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import Branch, Device
-from sales.models import Customer, Invoice
+from inventory.models import Product, StockMove, Warehouse
+from sales.models import Customer, Invoice, InvoiceLine, Return
 
 
 class BranchScopedSalesTests(TestCase):
@@ -96,3 +97,106 @@ class BranchScopedSalesTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("invoice", response.json())
+
+
+class ReturnFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="RC", name="Returns")
+        self.user = self.user_model.objects.create_user(
+            username="returns-admin",
+            password="pass1234",
+            is_staff=True,
+            branch=self.branch,
+        )
+        self.device = Device.objects.create(branch=self.branch, name="Returns Device", identifier="ret-dev")
+        self.customer = Customer.objects.create(branch=self.branch, name="Return Customer")
+        self.warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+        self.product = Product.objects.create(
+            branch=self.branch,
+            sku="SKU-1",
+            name="Product",
+            price=Decimal("60.00"),
+            tax_rate=Decimal("0.1000"),
+        )
+
+        self.invoice = Invoice.objects.create(
+            branch=self.branch,
+            device=self.device,
+            user=self.user,
+            customer=self.customer,
+            invoice_number="INV-R-1",
+            local_invoice_no="L-R-1",
+            subtotal=Decimal("120.00"),
+            discount_total=Decimal("0.00"),
+            tax_total=Decimal("12.00"),
+            total=Decimal("132.00"),
+            event_id=uuid.uuid4(),
+            created_at=timezone.now(),
+        )
+        self.invoice_line = InvoiceLine.objects.create(
+            invoice=self.invoice,
+            product=self.product,
+            quantity=Decimal("2.00"),
+            unit_price=Decimal("60.00"),
+            discount=Decimal("0.00"),
+            tax_rate=Decimal("0.1000"),
+            line_total=Decimal("120.00"),
+        )
+
+    def test_create_partial_return_creates_stock_moves_and_totals(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/v1/returns/",
+            {
+                "invoice": str(self.invoice.id),
+                "device": str(self.device.id),
+                "event_id": str(uuid.uuid4()),
+                "reason": "Damaged",
+                "lines": [
+                    {
+                        "invoice_line": str(self.invoice_line.id),
+                        "quantity": "1.00",
+                    }
+                ],
+                "refunds": [
+                    {"method": "cash", "amount": "66.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        return_txn = Return.objects.get(id=response.json()["id"])
+        self.assertEqual(return_txn.subtotal, Decimal("60.00"))
+        self.assertEqual(return_txn.tax_total, Decimal("6.00"))
+        self.assertEqual(return_txn.total, Decimal("66.00"))
+        self.assertEqual(return_txn.lines.count(), 1)
+        self.assertEqual(return_txn.refunds.count(), 1)
+
+        stock_move = StockMove.objects.get(source_ref_id=return_txn.id)
+        self.assertEqual(stock_move.reason, StockMove.Reason.RETURN)
+        self.assertEqual(stock_move.quantity, Decimal("1.00"))
+
+    def test_invoice_detail_includes_return_totals(self):
+        Return.objects.create(
+            invoice=self.invoice,
+            branch=self.branch,
+            device=self.device,
+            user=self.user,
+            subtotal=Decimal("20.00"),
+            tax_total=Decimal("2.00"),
+            total=Decimal("22.00"),
+            event_id=uuid.uuid4(),
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(f"/api/v1/invoices/{self.invoice.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Decimal(response.json()["returned_subtotal"]), Decimal("20.00"))
+        self.assertEqual(Decimal(response.json()["returned_tax_total"]), Decimal("2.00"))
+        self.assertEqual(Decimal(response.json()["returned_total"]), Decimal("22.00"))
