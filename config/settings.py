@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -141,3 +142,12 @@ CACHES = {
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@localhost")
+PASSWORD_RESET_FROM_EMAIL = os.getenv("PASSWORD_RESET_FROM_EMAIL", DEFAULT_FROM_EMAIL)
+
+PASSWORD_RESET_FRONTEND_URL = os.getenv("PASSWORD_RESET_FRONTEND_URL", "http://localhost:5173/reset-password")
+parsed_password_reset_url = urlparse(PASSWORD_RESET_FRONTEND_URL)
+if not (parsed_password_reset_url.scheme and parsed_password_reset_url.netloc):
+    raise ImproperlyConfigured("PASSWORD_RESET_FRONTEND_URL must be an absolute URL including scheme and host.")
