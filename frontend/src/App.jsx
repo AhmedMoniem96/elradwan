@@ -6,6 +6,7 @@ import POS from './pages/POS';
 import Inventory from './pages/Inventory';
 import Sync from './pages/Sync';
 import AuditLogs from './pages/AuditLogs';
+import Branches from './pages/Branches';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -62,6 +63,7 @@ function RoutedApp() {
               </Route>
               <Route element={<ProtectedRoute capability="admin.records.manage" />}>
                 <Route path="audit-logs" element={<AuditLogs />} />
+                <Route path="branches" element={<Branches />} />
               </Route>
             </Route>
           </Route>
