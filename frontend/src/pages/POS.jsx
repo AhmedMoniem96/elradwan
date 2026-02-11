@@ -5,6 +5,9 @@ import {
   Button,
   ButtonGroup,
   Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Divider,
   List,
   ListItem,
@@ -24,6 +27,17 @@ const MAX_TOTAL_RESULTS = 12;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
+const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+const toDateTime = (value) => {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString();
+};
 
 const scoreProductMatch = (product, queryTokens) => {
   const name = normalize(product.name);
@@ -161,6 +175,12 @@ export default function POS() {
   const [paymentInputMode, setPaymentInputMode] = useState('amount');
   const [paymentValue, setPaymentValue] = useState('0');
   const [payments, setPayments] = useState([]);
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const [receipts, setReceipts] = useState([]);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  const [receiptsError, setReceiptsError] = useState('');
+  const [receiptQuickFilter, setReceiptQuickFilter] = useState('');
+  const [activeReceipt, setActiveReceipt] = useState(null);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -395,6 +415,23 @@ export default function POS() {
     [cart, parsedInvoiceTotal, payments, selectedCustomer],
   );
 
+  const filteredReceipts = useMemo(() => {
+    const query = normalize(receiptQuickFilter);
+    const queryPhone = normalizePhone(receiptQuickFilter);
+    if (!query && !queryPhone) {
+      return receipts;
+    }
+
+    return receipts.filter((receipt) => {
+      const receiptNo = normalize(receipt.invoice_number || receipt.local_invoice_no);
+      const customerPhone = normalizePhone(receipt.customer?.phone);
+      return (
+        (query && receiptNo.includes(query))
+        || (queryPhone && customerPhone.includes(queryPhone))
+      );
+    });
+  }, [receiptQuickFilter, receipts]);
+
   const addToCart = (product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
@@ -495,6 +532,27 @@ export default function POS() {
     }
   };
 
+  const loadReceipts = async () => {
+    setReceiptsLoading(true);
+    setReceiptsError('');
+    try {
+      const response = await axios.get('/api/v1/invoices/');
+      const payload = Array.isArray(response.data) ? response.data : response.data.results || [];
+      setReceipts(payload);
+    } catch (err) {
+      console.error('Failed to load receipts', err);
+      setReceiptsError(t('pos_receipts_load_error'));
+    } finally {
+      setReceiptsLoading(false);
+    }
+  };
+
+  const openReceiptsPanel = () => {
+    setReceiptsOpen(true);
+    setActiveReceipt(null);
+    loadReceipts();
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" gutterBottom>
@@ -503,6 +561,10 @@ export default function POS() {
       <Typography color="text.secondary" sx={{ mb: 3 }}>
         Search products by name, SKU, or barcode, add them fast to cart, and collect flexible payments.
       </Typography>
+
+      <Button variant="outlined" sx={{ mb: 2 }} onClick={openReceiptsPanel}>
+        {t('pos_receipts_open')}
+      </Button>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -765,6 +827,112 @@ export default function POS() {
           </List>
         </Paper>
       </Box>
+
+      <Dialog
+        open={receiptsOpen}
+        onClose={() => setReceiptsOpen(false)}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle>{t('pos_receipts_history')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ py: 1 }}>
+            <TextField
+              size="small"
+              label={t('pos_receipts_quick_filter')}
+              placeholder={t('pos_receipts_quick_filter_placeholder')}
+              value={receiptQuickFilter}
+              onChange={(event) => setReceiptQuickFilter(event.target.value)}
+            />
+
+            {receiptsError && <Alert severity="error">{receiptsError}</Alert>}
+            {receiptsLoading && <Typography color="text.secondary">{t('pos_receipts_loading')}</Typography>}
+
+            {!receiptsLoading && filteredReceipts.length === 0 && (
+              <Typography color="text.secondary">{t('pos_receipts_empty')}</Typography>
+            )}
+
+            {filteredReceipts.map((receipt) => (
+              <Paper key={receipt.id} variant="outlined" sx={{ p: 1.5 }}>
+                <Stack spacing={0.5}>
+                  <Typography fontWeight={600}>
+                    {t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || '-'}
+                  </Typography>
+                  <Typography variant="body2">{t('pos_receipt_datetime')}: {toDateTime(receipt.created_at)}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_cashier')}: {receipt.user || '-'}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_customer')}: {receipt.customer?.name || t('unnamed_customer')}</Typography>
+                  <Typography variant="body2">{t('phone')}: {receipt.customer?.phone || t('no_phone')}</Typography>
+                  <Typography variant="body2">
+                    {t('pos_receipt_line_items')}: {(receipt.lines || []).map((line) => `#${line.product} × ${line.quantity}`).join(', ') || '-'}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('pos_receipt_totals')}: {formatMoney(receipt.total)}
+                    {' • '}
+                    {t('pos_receipt_discount')}: {formatMoney(receipt.discount_total)}
+                    {' • '}
+                    {t('pos_receipt_tax')}: {formatMoney(receipt.tax_total)}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('amount_paid')}: {formatMoney(receipt.amount_paid)}
+                    {' • '}
+                    {t('pos_receipt_balance')}: {formatMoney(receipt.balance_due)}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('pos_receipt_payment_methods')}: {(receipt.payments || []).map((paymentEntry) => paymentEntry.method).join(', ') || '-'}
+                  </Typography>
+                  <Typography variant="body2">
+                    {t('pos_receipt_returns')}: {(receipt.returns || []).length}
+                  </Typography>
+                  <Box>
+                    <Button size="small" onClick={() => setActiveReceipt(receipt)}>
+                      {t('pos_open_receipt_details')}
+                    </Button>
+                  </Box>
+                </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(activeReceipt)}
+        onClose={() => setActiveReceipt(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>{t('pos_receipt_details')}</DialogTitle>
+        <DialogContent>
+          {activeReceipt && (
+            <Stack spacing={1.2} sx={{ py: 1 }}>
+              <Typography>{t('pos_receipt_number')}: {activeReceipt.invoice_number || activeReceipt.local_invoice_no || '-'}</Typography>
+              <Typography>{t('pos_receipt_datetime')}: {toDateTime(activeReceipt.created_at)}</Typography>
+              <Typography>{t('pos_receipt_cashier')}: {activeReceipt.user || '-'}</Typography>
+              <Typography>{t('pos_receipt_customer')}: {activeReceipt.customer?.name || t('unnamed_customer')}</Typography>
+              <Typography>{t('phone')}: {activeReceipt.customer?.phone || t('no_phone')}</Typography>
+              <Divider />
+              <Typography fontWeight={600}>{t('pos_receipt_line_items')}</Typography>
+              {(activeReceipt.lines || []).length > 0 ? (
+                activeReceipt.lines.map((line) => (
+                  <Typography key={line.id} variant="body2">
+                    #{line.product} • {line.quantity} × {formatMoney(line.unit_price)} • {t('pos_receipt_discount')} {formatMoney(line.discount)} • {t('pos_receipt_tax')} {Number(line.tax_rate || 0) * 100}% • {t('pos_receipt_totals')} {formatMoney(line.line_total)}
+                  </Typography>
+                ))
+              ) : (
+                <Typography variant="body2" color="text.secondary">-</Typography>
+              )}
+              <Divider />
+              <Typography>{t('pos_receipt_totals')}: {formatMoney(activeReceipt.total)}</Typography>
+              <Typography>{t('pos_receipt_discount')}: {formatMoney(activeReceipt.discount_total)}</Typography>
+              <Typography>{t('pos_receipt_tax')}: {formatMoney(activeReceipt.tax_total)}</Typography>
+              <Typography>{t('amount_paid')}: {formatMoney(activeReceipt.amount_paid)}</Typography>
+              <Typography>{t('pos_receipt_balance')}: {formatMoney(activeReceipt.balance_due)}</Typography>
+              <Typography>{t('pos_receipt_payment_methods')}: {(activeReceipt.payments || []).map((paymentEntry) => `${paymentEntry.method} (${formatMoney(paymentEntry.amount)})`).join(', ') || '-'}</Typography>
+              <Typography>{t('pos_receipt_returns')}: {(activeReceipt.returns || []).length}</Typography>
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
     </Paper>
   );
 }
