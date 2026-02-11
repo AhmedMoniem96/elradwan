@@ -32,6 +32,10 @@ import TranslateIcon from '@mui/icons-material/Translate';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
@@ -90,9 +94,18 @@ export default function Layout() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { toggleColorMode, mode } = useThemeContext();
-  const { logout, can } = useAuth();
+  const {
+    user,
+    logout,
+    can,
+    availableBranches,
+    availableDevices,
+    setActiveBranchId,
+    setActiveDeviceId,
+  } = useAuth();
   const { outbox, failedEvents } = useSync();
-  const [anchorEl, setAnchorEl] = React.useState(null);
+  const [languageMenuAnchor, setLanguageMenuAnchor] = React.useState(null);
+  const [settingsMenuAnchor, setSettingsMenuAnchor] = React.useState(null);
   const [unreadAlerts, setUnreadAlerts] = React.useState(0);
 
   React.useEffect(() => {
@@ -104,22 +117,32 @@ export default function Layout() {
   };
 
   const handleLanguageMenu = (event) => {
-    setAnchorEl(event.currentTarget);
+    setLanguageMenuAnchor(event.currentTarget);
   };
 
-  const handleClose = () => {
-    setAnchorEl(null);
+  const handleLanguageMenuClose = () => {
+    setLanguageMenuAnchor(null);
+  };
+
+  const handleSettingsMenuOpen = (event) => {
+    setSettingsMenuAnchor(event.currentTarget);
+  };
+
+  const handleSettingsMenuClose = () => {
+    setSettingsMenuAnchor(null);
   };
 
   const changeLanguage = (lng) => {
     i18n.changeLanguage(lng);
-    handleClose();
+    handleLanguageMenuClose();
   };
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
+
+  const canManageRuntimeContext = can('device.read') || can('device.manage');
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -160,13 +183,70 @@ export default function Layout() {
             <TranslateIcon />
           </IconButton>
           <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
+            anchorEl={languageMenuAnchor}
+            open={Boolean(languageMenuAnchor)}
+            onClose={handleLanguageMenuClose}
           >
             <MenuItem onClick={() => changeLanguage('en')}>{t('english')}</MenuItem>
             <MenuItem onClick={() => changeLanguage('ar')}>{t('arabic')}</MenuItem>
           </Menu>
+
+          {canManageRuntimeContext && (
+            <>
+              <IconButton color="inherit" onClick={handleSettingsMenuOpen} title={t('settings')}>
+                <SettingsIcon />
+              </IconButton>
+              <Menu
+                anchorEl={settingsMenuAnchor}
+                open={Boolean(settingsMenuAnchor)}
+                onClose={handleSettingsMenuClose}
+                sx={{ '& .MuiMenu-paper': { width: 320, p: 1 } }}
+              >
+                <Box sx={{ px: 1, pt: 1, pb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('runtime_context')}</Typography>
+                  <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                    <InputLabel id="active-branch-label">{t('active_branch')}</InputLabel>
+                    <Select
+                      labelId="active-branch-label"
+                      label={t('active_branch')}
+                      value={user?.branch_id ?? ''}
+                      onChange={(event) => setActiveBranchId(event.target.value)}
+                      disabled={availableBranches.length === 0}
+                    >
+                      {availableBranches.length === 0 && (
+                        <MenuItem value="">{t('none')}</MenuItem>
+                      )}
+                      {availableBranches.map((branch) => (
+                        <MenuItem key={branch.id} value={branch.id}>
+                          {branch.name || branch.code || `${t('branches')} #${branch.id}`}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth size="small">
+                    <InputLabel id="active-device-label">{t('active_device')}</InputLabel>
+                    <Select
+                      labelId="active-device-label"
+                      label={t('active_device')}
+                      value={user?.device_id ?? ''}
+                      onChange={(event) => setActiveDeviceId(event.target.value)}
+                      disabled={availableDevices.length === 0}
+                    >
+                      {availableDevices.length === 0 && (
+                        <MenuItem value="">{t('none')}</MenuItem>
+                      )}
+                      {availableDevices.map((device) => (
+                        <MenuItem key={device.id} value={device.id}>
+                          {device.name || device.code || `${t('pos')} ${t('none')} #${device.id}`}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Menu>
+            </>
+          )}
 
           <IconButton color="inherit">
             <Badge badgeContent={unreadAlerts} color="secondary">
