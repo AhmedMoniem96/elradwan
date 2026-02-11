@@ -91,6 +91,48 @@ class RolePermissionCoreTests(TestCase):
         self.assertEqual(response.status_code, 201)
 
 
+class BranchAccessRoleTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch_a = Branch.objects.create(code="BA", name="Branch A")
+        self.branch_b = Branch.objects.create(code="BB", name="Branch B")
+
+        self.admin = self.user_model.objects.create_user(
+            username="branch-admin",
+            password="pass1234",
+            branch=self.branch_a,
+            role="admin",
+        )
+        self.cashier = self.user_model.objects.create_user(
+            username="branch-cashier",
+            password="pass1234",
+            branch=self.branch_a,
+            role="cashier",
+        )
+
+    def test_admin_can_list_multiple_branches(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get("/api/v1/branches/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.json()}
+        self.assertIn(str(self.branch_a.id), ids)
+        self.assertIn(str(self.branch_b.id), ids)
+
+    def test_non_admin_branch_scope_is_preserved(self):
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.get("/api/v1/branches/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.json()}
+        self.assertIn(str(self.branch_a.id), ids)
+        self.assertNotIn(str(self.branch_b.id), ids)
+
+
 class AuditLogTests(TestCase):
     def setUp(self):
         self.client = APIClient()
