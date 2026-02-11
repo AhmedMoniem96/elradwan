@@ -19,19 +19,21 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
 const PERCENTAGE_PRESETS = [25, 50, 75, 100];
-const MAX_SEARCH_RESULTS = 8;
+const MAX_GROUP_RESULTS = 5;
+const MAX_TOTAL_RESULTS = 12;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
 const scoreProductMatch = (product, queryTokens) => {
-  if (queryTokens.length === 0) {
-    return 0;
-  }
-
   const name = normalize(product.name);
   const sku = normalize(product.sku);
   const barcode = normalize(product.barcode);
+  const categoryName = normalize(product.categoryName);
+
+  if (queryTokens.length === 0) {
+    return categoryName ? 5 : 0;
+  }
 
   let score = 0;
   let matchedTokens = 0;
@@ -57,6 +59,15 @@ const scoreProductMatch = (product, queryTokens) => {
     if (sku.includes(token) || barcode.includes(token)) {
       tokenScore = Math.max(tokenScore, 55);
     }
+    if (categoryName === token) {
+      tokenScore = Math.max(tokenScore, 50);
+    }
+    if (categoryName.startsWith(token)) {
+      tokenScore = Math.max(tokenScore, 36);
+    }
+    if (categoryName.includes(token)) {
+      tokenScore = Math.max(tokenScore, 30);
+    }
 
     if (tokenScore > 0) {
       matchedTokens += 1;
@@ -69,6 +80,38 @@ const scoreProductMatch = (product, queryTokens) => {
   }
 
   score -= Math.min(name.length, 40) / 10;
+
+  return score;
+};
+
+const scoreCategoryMatch = (category, queryTokens) => {
+  if (queryTokens.length === 0) {
+    return 0;
+  }
+
+  const name = normalize(category.name);
+  let score = 0;
+  let matchedTokens = 0;
+
+  queryTokens.forEach((token) => {
+    let tokenScore = 0;
+    if (name === token) {
+      tokenScore = 95;
+    } else if (name.startsWith(token)) {
+      tokenScore = 70;
+    } else if (name.includes(token)) {
+      tokenScore = 45;
+    }
+
+    if (tokenScore > 0) {
+      matchedTokens += 1;
+      score += tokenScore;
+    }
+  });
+
+  if (matchedTokens === queryTokens.length) {
+    score += 25;
+  }
 
   return score;
 };
@@ -105,9 +148,12 @@ const scoreCustomerMatch = (customer, query) => {
 export default function POS() {
   const { t } = useTranslation();
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
+  const [activeCategoryId, setActiveCategoryId] = useState(null);
+  const [activeResultIndex, setActiveResultIndex] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [cart, setCart] = useState([]);
   const [error, setError] = useState('');
@@ -131,6 +177,18 @@ export default function POS() {
 
     fetchProducts();
 
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get('/api/v1/categories/');
+        const payload = Array.isArray(response.data) ? response.data : response.data.results || [];
+        setCategories(payload);
+      } catch (err) {
+        console.error('Failed to load categories for POS', err);
+      }
+    };
+
+    fetchCategories();
+
     const fetchCustomers = async () => {
       try {
         const response = await axios.get('/api/v1/customers/');
@@ -144,24 +202,131 @@ export default function POS() {
     fetchCustomers();
   }, []);
 
-  const searchableProducts = useMemo(() => {
-    const query = normalize(searchQuery);
-    if (!query) {
-      return [];
-    }
+  const categoriesById = useMemo(
+    () => new Map(categories.map((category) => [String(category.id), category])),
+    [categories],
+  );
 
+  const indexedProducts = useMemo(
+    () =>
+      products.map((product) => {
+        const fallbackCategoryName =
+          typeof product.category === 'object' ? product.category?.name : product.category_name;
+        const categoryId =
+          product.category_id
+          || (typeof product.category === 'object' ? product.category?.id : product.category);
+        const categoryName =
+          categoriesById.get(String(categoryId))?.name || fallbackCategoryName || '';
+
+        return {
+          ...product,
+          categoryId,
+          categoryName,
+          searchIndex: [product.name, product.sku, product.barcode, categoryName]
+            .map(normalize)
+            .filter(Boolean)
+            .join(' '),
+        };
+      }),
+    [products, categoriesById],
+  );
+
+  const indexedCategories = useMemo(
+    () =>
+      categories.map((category) => ({
+        ...category,
+        searchIndex: normalize(category.name),
+      })),
+    [categories],
+  );
+
+  const indexedCustomers = useMemo(
+    () =>
+      customers.map((customer) => ({
+        ...customer,
+        searchIndex: `${normalize(customer.name)} ${normalizePhone(customer.phone)}`,
+      })),
+    [customers],
+  );
+
+  const searchGroups = useMemo(() => {
+    const query = normalize(searchQuery);
     const queryTokens = query.split(/\s+/).filter(Boolean);
 
-    return products
+    const filteredProducts = activeCategoryId
+      ? indexedProducts.filter((product) => String(product.categoryId) === String(activeCategoryId))
+      : indexedProducts;
+
+    const matchedProducts = filteredProducts
       .map((product) => ({
         product,
         score: scoreProductMatch(product, queryTokens),
       }))
       .filter((item) => item.score > 0)
+      .map((item) => ({
+        ...item,
+        score:
+          activeCategoryId && String(item.product.categoryId) === String(activeCategoryId)
+            ? item.score + 40
+            : item.score,
+      }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_SEARCH_RESULTS)
+      .slice(0, MAX_GROUP_RESULTS)
       .map((item) => item.product);
-  }, [products, searchQuery]);
+
+    const matchedCategories = query
+      ? indexedCategories
+          .map((category) => ({
+            category,
+            score: scoreCategoryMatch(category, queryTokens),
+          }))
+          .filter((item) => item.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, MAX_GROUP_RESULTS)
+          .map((item) => item.category)
+      : [];
+
+    const matchedCustomers = query
+      ? indexedCustomers
+          .map((customer) => ({
+            customer,
+            score: scoreCustomerMatch(customer, query),
+          }))
+          .filter((item) => item.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, MAX_GROUP_RESULTS)
+          .map((item) => item.customer)
+      : [];
+
+    const grouped = [
+      { key: 'products', label: 'Products', items: matchedProducts, type: 'product' },
+      { key: 'categories', label: 'Categories', items: matchedCategories, type: 'category' },
+      { key: 'customers', label: 'Customers', items: matchedCustomers, type: 'customer' },
+    ];
+
+    let remaining = MAX_TOTAL_RESULTS;
+    return grouped
+      .map((group) => {
+        if (remaining <= 0) {
+          return { ...group, items: [] };
+        }
+        const limitedItems = group.items.slice(0, remaining);
+        remaining -= limitedItems.length;
+        return { ...group, items: limitedItems };
+      })
+      .filter((group) => group.items.length > 0);
+  }, [activeCategoryId, indexedCategories, indexedCustomers, indexedProducts, searchQuery]);
+
+  const flatResults = useMemo(
+    () =>
+      searchGroups.flatMap((group) =>
+        group.items.map((item) => ({
+          type: group.type,
+          item,
+        })),
+      ),
+    [searchGroups],
+  );
 
   const cartSubtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0),
@@ -206,9 +371,13 @@ export default function POS() {
       }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_SEARCH_RESULTS)
+      .slice(0, MAX_GROUP_RESULTS)
       .map((item) => item.customer);
   }, [customerQuery, customers]);
+
+  useEffect(() => {
+    setActiveResultIndex(0);
+  }, [searchQuery, activeCategoryId]);
 
   const invoicePayload = useMemo(
     () => ({
@@ -299,6 +468,33 @@ export default function POS() {
     setCustomerQuery('');
   };
 
+  const handleSelectCategory = (category) => {
+    setActiveCategoryId(category.id);
+    setSearchQuery(category.name || '');
+    setActiveResultIndex(0);
+  };
+
+  const clearCategoryFilter = () => {
+    setActiveCategoryId(null);
+  };
+
+  const activateResult = (result) => {
+    if (!result) {
+      return;
+    }
+    if (result.type === 'product') {
+      addToCart(result.item);
+      return;
+    }
+    if (result.type === 'category') {
+      handleSelectCategory(result.item);
+      return;
+    }
+    if (result.type === 'customer') {
+      handleSelectCustomer(result.item);
+    }
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" gutterBottom>
@@ -319,32 +515,100 @@ export default function POS() {
             placeholder="Type product name, SKU, or barcode"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(event) => {
+              if (!flatResults.length) {
+                return;
+              }
+
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActiveResultIndex((prev) => Math.min(prev + 1, flatResults.length - 1));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActiveResultIndex((prev) => Math.max(prev - 1, 0));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                activateResult(flatResults[activeResultIndex]);
+              }
+            }}
           />
 
-          {searchQuery && (
+          {activeCategoryId && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+              <Chip
+                color="primary"
+                label={`Category filter: ${categoriesById.get(String(activeCategoryId))?.name || activeCategoryId}`}
+              />
+              <Button size="small" onClick={clearCategoryFilter}>Clear</Button>
+            </Stack>
+          )}
+
+          {(searchQuery || activeCategoryId) && (
             <List dense sx={{ mt: 1 }}>
-              {searchableProducts.length > 0 ? (
-                searchableProducts.map((product) => (
-                  <ListItem
-                    key={product.id}
-                    disablePadding
-                    secondaryAction={
-                      <Button size="small" variant="contained" onClick={() => addToCart(product)}>
-                        Add
-                      </Button>
-                    }
-                  >
-                    <ListItemButton onClick={() => addToCart(product)}>
-                      <ListItemText
-                        primary={product.name}
-                        secondary={`${product.sku} • $${Number(product.price || 0).toFixed(2)}${product.barcode ? ` • ${product.barcode}` : ''}`}
-                      />
-                    </ListItemButton>
-                  </ListItem>
+              {searchGroups.length > 0 ? (
+                searchGroups.map((group) => (
+                  <Box key={group.key}>
+                    <Typography variant="caption" color="text.secondary" sx={{ px: 1, pt: 1, display: 'block' }}>
+                      {group.label}
+                    </Typography>
+                    {group.items.map((entry) => {
+                      const flatIndex = flatResults.findIndex((result) => result.item.id === entry.id && result.type === group.type);
+                      const isActive = flatIndex === activeResultIndex;
+                      if (group.type === 'product') {
+                        return (
+                          <ListItem
+                            key={`product-${entry.id}`}
+                            disablePadding
+                            secondaryAction={
+                              <Button size="small" variant="contained" onClick={() => addToCart(entry)}>
+                                Add
+                              </Button>
+                            }
+                          >
+                            <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
+                              <ListItemText
+                                primary={entry.name}
+                                secondary={`${entry.sku} • $${Number(entry.price || 0).toFixed(2)}${entry.barcode ? ` • ${entry.barcode}` : ''}${entry.categoryName ? ` • ${entry.categoryName}` : ''}`}
+                              />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      }
+
+                      if (group.type === 'category') {
+                        return (
+                          <ListItem key={`category-${entry.id}`} disablePadding>
+                            <ListItemButton selected={isActive} onClick={() => handleSelectCategory(entry)}>
+                              <ListItemText primary={entry.name} secondary="Filter products by this category" />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      }
+
+                      return (
+                        <ListItem
+                          key={`customer-${entry.id}`}
+                          disablePadding
+                          secondaryAction={(
+                            <Button size="small" variant="contained" onClick={() => handleSelectCustomer(entry)}>
+                              {t('select_customer')}
+                            </Button>
+                          )}
+                        >
+                          <ListItemButton selected={isActive} onClick={() => handleSelectCustomer(entry)}>
+                            <ListItemText
+                              primary={entry.name || t('unnamed_customer')}
+                              secondary={entry.phone || t('no_phone')}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    })}
+                  </Box>
                 ))
               ) : (
                 <ListItem>
-                  <ListItemText primary="No products matched your search" />
+                  <ListItemText primary="No search results matched" />
                 </ListItem>
               )}
             </List>
