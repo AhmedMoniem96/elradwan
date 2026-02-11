@@ -5,6 +5,8 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 
@@ -22,6 +24,54 @@ const formatTimestamp = (value) => {
 };
 
 const toTitle = (value) => (value ? String(value).replace(/_/g, ' ') : '');
+
+const dateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatTrendLabel = (value) => {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const buildDateRange = (days) => {
+  const end = new Date();
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  end.setHours(23, 59, 59, 999);
+
+  return {
+    date_from: dateKey(start),
+    date_to: dateKey(end),
+  };
+};
+
+const normalizeDailySales = (rows, windowDays) => {
+  const byDay = new Map((rows || []).map((item) => [item.day, item]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const timeline = [];
+
+  for (let index = windowDays - 1; index >= 0; index -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - index);
+    const key = dateKey(day);
+    const source = byDay.get(key);
+    timeline.push({
+      day: key,
+      gross_sales: Number(source?.gross_sales || 0),
+      invoice_count: Number(source?.invoice_count || 0),
+    });
+  }
+
+  return timeline;
+};
 
 function MiniBarChart({ title, data }) {
   const max = Math.max(...data.map((item) => item.value), 1);
@@ -81,6 +131,47 @@ function MiniHorizontalChart({ title, data }) {
   );
 }
 
+function TrendChart({
+  title,
+  points,
+  color = 'primary.main',
+  yFormatter = (value) => value,
+  peakLabel = 'Peak',
+}) {
+  const values = points.map((point) => point.value);
+  const max = Math.max(...values, 0);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const width = 100;
+  const height = 42;
+
+  const polyline = points
+    .map((point, idx) => {
+      const x = points.length === 1 ? width / 2 : (idx / (points.length - 1)) * width;
+      const y = height - ((point.value - min) / range) * height;
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <Paper sx={{ p: 2, height: '100%' }}>
+      <Typography variant="h6" gutterBottom>{title}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {peakLabel}: {yFormatter(max)}
+      </Typography>
+      <Box sx={{ mt: 1.5, mb: 1.5, height: 180, bgcolor: 'action.hover', borderRadius: 2, p: 1.5, color }}>
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" width="100%" height="100%">
+          <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      </Box>
+      <Stack direction="row" justifyContent="space-between" spacing={1}>
+        <Typography variant="caption" color="text.secondary">{formatTrendLabel(points[0]?.label)}</Typography>
+        <Typography variant="caption" color="text.secondary">{formatTrendLabel(points[points.length - 1]?.label)}</Typography>
+      </Stack>
+    </Paper>
+  );
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
   const [shiftSummary, setShiftSummary] = useState({
@@ -92,6 +183,11 @@ export default function Dashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(true);
   const [recentActivityFailed, setRecentActivityFailed] = useState(false);
+  const [trendWindowDays, setTrendWindowDays] = useState(7);
+  const [salesSeries, setSalesSeries] = useState([]);
+  const [paymentSplitSeries, setPaymentSplitSeries] = useState([]);
+
+  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
 
   useEffect(() => {
     let mounted = true;
@@ -133,25 +229,53 @@ export default function Dashboard() {
         }
       });
 
+    const { date_from, date_to } = buildDateRange(trendWindowDays);
+    const params = new URLSearchParams({ date_from, date_to, timezone }).toString();
+
+    axios
+      .get(`/api/v1/reports/daily-sales/?${params}`)
+      .then((res) => {
+        if (mounted) {
+          setSalesSeries(normalizeDailySales(res.data?.results || [], trendWindowDays));
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSalesSeries(normalizeDailySales([], trendWindowDays));
+        }
+      });
+
+    axios
+      .get(`/api/v1/reports/payment-method-split/?${params}`)
+      .then((res) => {
+        if (mounted) {
+          setPaymentSplitSeries(Array.isArray(res.data?.results) ? res.data.results : []);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setPaymentSplitSeries([]);
+        }
+      });
+
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [timezone, trendWindowDays]);
 
-  const salesVsVarianceData = useMemo(
-    () => [
-      {
-        label: t('todays_sales'),
-        value: Number(shiftSummary.expected_cash_total || 0),
-        color: 'primary.main',
-      },
-      {
-        label: t('dashboard_variance', 'Variance'),
-        value: Math.abs(Number(shiftSummary.variance_total || 0)),
-        color: 'warning.main',
-      },
-    ],
-    [shiftSummary.expected_cash_total, shiftSummary.variance_total, t],
+  const salesTrendData = useMemo(
+    () => salesSeries.map((item) => ({ label: item.day, value: item.gross_sales })),
+    [salesSeries],
+  );
+
+  const invoicesTrendData = useMemo(
+    () => salesSeries.map((item) => ({ label: item.day, value: item.invoice_count })),
+    [salesSeries],
+  );
+
+  const totalSalesInWindow = useMemo(
+    () => salesSeries.reduce((sum, item) => sum + Number(item.gross_sales || 0), 0),
+    [salesSeries],
   );
 
   const stockAlertsData = useMemo(
@@ -200,11 +324,60 @@ export default function Dashboard() {
       </Grid>
 
       <Grid item xs={12} md={6}>
-        <MiniBarChart title={t('dashboard_sales_vs_variance', 'Sales vs variance')} data={salesVsVarianceData} />
+        <Stack spacing={2}>
+          <Paper sx={{ p: 2 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+              <Box>
+                <Typography variant="h6">{t('dashboard_sales_trend', 'Sales trend')}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('dashboard_total_for_window', 'Total for selected window')}: {formatCurrency(totalSalesInWindow)}
+                </Typography>
+              </Box>
+              <TextField
+                select
+                size="small"
+                label={t('dashboard_window', 'Window')}
+                value={trendWindowDays}
+                onChange={(event) => setTrendWindowDays(Number(event.target.value))}
+                sx={{ minWidth: 120 }}
+              >
+                <MenuItem value={7}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 7 })}</MenuItem>
+                <MenuItem value={30}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 30 })}</MenuItem>
+              </TextField>
+            </Stack>
+          </Paper>
+          <TrendChart
+            title={t('dashboard_sales_amount_trend', 'Gross sales')}
+            points={salesTrendData}
+            yFormatter={formatCurrency}
+            peakLabel={t('dashboard_peak_value', 'Peak')}
+            color="primary.main"
+          />
+        </Stack>
       </Grid>
 
       <Grid item xs={12} md={6}>
-        <MiniHorizontalChart title={t('dashboard_stock_distribution', 'Stock alert distribution')} data={stockAlertsData} />
+        <Stack spacing={2}>
+          <TrendChart
+            title={t('dashboard_invoice_count_trend', 'Invoice count')}
+            points={invoicesTrendData}
+            yFormatter={(value) => Number(value).toFixed(0)}
+            peakLabel={t('dashboard_peak_value', 'Peak')}
+            color="secondary.main"
+          />
+          <MiniHorizontalChart title={t('dashboard_stock_distribution', 'Stock alert distribution')} data={stockAlertsData} />
+        </Stack>
+      </Grid>
+
+      <Grid item xs={12}>
+        <MiniBarChart
+          title={t('dashboard_payment_split_window', 'Payment split (selected window)')}
+          data={(paymentSplitSeries || []).map((entry) => ({
+            label: toTitle(entry.method || t('unknown', 'Unknown')),
+            value: Number(entry.amount || 0),
+            color: 'info.main',
+          }))}
+        />
       </Grid>
 
       <Grid item xs={12}>
