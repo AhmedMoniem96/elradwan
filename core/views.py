@@ -8,7 +8,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from common.audit import create_audit_log_from_request
-from common.permissions import RoleCapabilityPermission
+from common.permissions import RoleCapabilityPermission, user_has_capability
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from core.models import AuditLog, Branch, Device
@@ -75,6 +75,8 @@ class BranchViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.is_superuser:
+            return queryset
+        if user_has_capability(user, "admin.records.manage"):
             return queryset
         if getattr(user, "branch_id", None):
             return queryset.filter(id=user.branch_id)
