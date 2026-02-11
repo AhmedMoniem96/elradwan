@@ -23,6 +23,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LayersIcon from '@mui/icons-material/Layers';
 import ManageSearchIcon from '@mui/icons-material/ManageSearch';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
@@ -231,12 +232,20 @@ export default function Layout() {
             </ListItemButton>
           )}
           {can('admin.records.manage') && (
-            <ListItemButton onClick={() => navigate('/audit-logs')}>
-              <ListItemIcon>
-                <ManageSearchIcon />
-              </ListItemIcon>
-              <ListItemText primary={t('audit_logs')} />
-            </ListItemButton>
+            <>
+              <ListItemButton onClick={() => navigate('/branches')}>
+                <ListItemIcon>
+                  <AccountTreeIcon />
+                </ListItemIcon>
+                <ListItemText primary={t('branches')} />
+              </ListItemButton>
+              <ListItemButton onClick={() => navigate('/audit-logs')}>
+                <ListItemIcon>
+                  <ManageSearchIcon />
+                </ListItemIcon>
+                <ListItemText primary={t('audit_logs')} />
+              </ListItemButton>
+            </>
           )}
           {can('sync.view') && (
             <ListItemButton onClick={() => navigate('/sync')}>              <ListItemIcon>
