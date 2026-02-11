@@ -88,7 +88,7 @@ export default function Customers() {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm(t('Are you sure you want to delete this customer?'))) {
+    if (window.confirm(t('customers_delete_confirmation'))) {
       try {
         enqueueEvent({
           eventType: 'customer.delete',

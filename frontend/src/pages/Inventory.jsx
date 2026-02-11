@@ -67,13 +67,13 @@ export default function Inventory() {
       setError('');
     } catch (err) {
       console.error('Failed to load inventory data', err);
-      setError('Failed to load inventory data');
+      setError(t('inventory_load_error'));
     }
   };
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [t]);
 
   const saveStatus = async (product) => {
     try {
@@ -89,7 +89,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to save status', err);
-      setError('Failed to save stock status');
+      setError(t('inventory_save_stock_status_error'));
     }
   };
 
@@ -100,7 +100,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to mark alerts read', err);
-      setError('Failed to mark alerts read');
+      setError(t('inventory_mark_alerts_read_error'));
     }
   };
 
@@ -137,7 +137,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to create transfer', err);
-      setError('Failed to create transfer');
+      setError(t('inventory_create_transfer_error'));
     }
   };
 
@@ -149,7 +149,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to approve transfer', err);
-      setError('Failed to approve transfer');
+      setError(t('inventory_approve_transfer_error'));
     }
   };
 
@@ -161,7 +161,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to complete transfer', err);
-      setError('Failed to complete transfer');
+      setError(t('inventory_complete_transfer_error'));
     }
   };
 
@@ -174,25 +174,25 @@ export default function Inventory() {
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
-          <Typography variant="h6">Low/Critical Stock</Typography>
+          <Typography variant="h6">{t('inventory_low_critical_stock')}</Typography>
           <Stack direction="row" spacing={1}>
-            <Chip color="error" label={`Critical: ${stockIntel.critical_count || 0}`} />
-            <Chip color="warning" label={`Low: ${stockIntel.low_count || 0}`} />
-            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">Export CSV</Button>
-            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">Export PDF</Button>
+            <Chip color="error" label={`${t('inventory_critical_label')}: ${stockIntel.critical_count || 0}`} />
+            <Chip color="warning" label={`${t('inventory_low_label')}: ${stockIntel.low_count || 0}`} />
+            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">{t('export_csv')}</Button>
+            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">{t('export_pdf')}</Button>
           </Stack>
         </Stack>
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Warehouse</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Supplier</TableCell>
-                <TableCell>On Hand</TableCell>
-                <TableCell>Minimum</TableCell>
-                <TableCell>Reorder</TableCell>
-                <TableCell>Severity</TableCell>
+                <TableCell>{t('warehouse')}</TableCell>
+                <TableCell>{t('product')}</TableCell>
+                <TableCell>{t('supplier')}</TableCell>
+                <TableCell>{t('on_hand')}</TableCell>
+                <TableCell>{t('minimum')}</TableCell>
+                <TableCell>{t('reorder')}</TableCell>
+                <TableCell>{t('severity')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -200,7 +200,7 @@ export default function Inventory() {
                 <TableRow key={`${row.warehouse_id}-${row.product_id}`}>
                   <TableCell>{row.warehouse_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>
-                  <TableCell>{row.preferred_supplier_name || '-'}</TableCell>
+                  <TableCell>{row.preferred_supplier_name || t('none')}</TableCell>
                   <TableCell>{row.on_hand}</TableCell>
                   <TableCell>{row.minimum_quantity}</TableCell>
                   <TableCell>{row.suggested_reorder_quantity}</TableCell>
@@ -216,25 +216,30 @@ export default function Inventory() {
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 2 }}>
-          <Typography variant="h6">Unread Alerts</Typography>
-          <Button size="small" variant="contained" disabled={!alerts.length} onClick={markAlertsRead}>Mark all read</Button>
+          <Typography variant="h6">{t('inventory_unread_alerts')}</Typography>
+          <Button size="small" variant="contained" disabled={!alerts.length} onClick={markAlertsRead}>{t('inventory_mark_all_read')}</Button>
         </Stack>
         {(alerts || []).map((alert) => (
           <Alert key={alert.id} severity={alert.severity === 'critical' ? 'error' : 'warning'} sx={{ mb: 1 }}>
-            {alert.product_name} in {alert.warehouse_name}: {alert.current_quantity} on hand (min {alert.threshold_quantity})
+            {t('inventory_alert_message', {
+              product: alert.product_name,
+              warehouse: alert.warehouse_name,
+              current: alert.current_quantity,
+              threshold: alert.threshold_quantity,
+            })}
           </Alert>
         ))}
-        {!alerts.length && <Typography color="text.secondary">No unread alerts.</Typography>}
+        {!alerts.length && <Typography color="text.secondary">{t('inventory_no_unread_alerts')}</Typography>}
       </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Product Stock Status</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_product_stock_status')}</Typography>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell>{t('name')}</TableCell>
-                <TableCell>SKU</TableCell>
+                <TableCell>{t('sku')}</TableCell>
                 <TableCell>{t('price')}</TableCell>
                 <TableCell>{t('stock_status')}</TableCell>
                 <TableCell align="right">{t('actions')}</TableCell>
@@ -252,7 +257,7 @@ export default function Inventory() {
                       size="small"
                       value={draftStatus[product.id] || ''}
                       onChange={(e) => setDraftStatus((prev) => ({ ...prev, [product.id]: e.target.value }))}
-                      placeholder="in stock / out of stock"
+                      placeholder={t('inventory_stock_status_placeholder')}
                     />
                   </TableCell>
                   <TableCell align="right">
@@ -268,65 +273,65 @@ export default function Inventory() {
       </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Create Stock Transfer</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_create_stock_transfer')}</Typography>
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField select label="Source Warehouse" value={transferForm.source_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, source_warehouse_id: e.target.value }))} fullWidth>
+            <TextField select label={t('inventory_source_warehouse')} value={transferForm.source_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, source_warehouse_id: e.target.value }))} fullWidth>
               {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
             </TextField>
-            <TextField select label="Destination Warehouse" value={transferForm.destination_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, destination_warehouse_id: e.target.value }))} fullWidth>
+            <TextField select label={t('inventory_destination_warehouse')} value={transferForm.destination_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, destination_warehouse_id: e.target.value }))} fullWidth>
               {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
             </TextField>
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField label="Reference" value={transferForm.reference} onChange={(e) => setTransferForm((prev) => ({ ...prev, reference: e.target.value }))} fullWidth />
-            <TextField label="Notes" value={transferForm.notes} onChange={(e) => setTransferForm((prev) => ({ ...prev, notes: e.target.value }))} fullWidth />
+            <TextField label={t('reference')} value={transferForm.reference} onChange={(e) => setTransferForm((prev) => ({ ...prev, reference: e.target.value }))} fullWidth />
+            <TextField label={t('notes')} value={transferForm.notes} onChange={(e) => setTransferForm((prev) => ({ ...prev, notes: e.target.value }))} fullWidth />
           </Stack>
           <FormControlLabel
             control={<Switch checked={transferForm.requires_supervisor_approval} onChange={(e) => setTransferForm((prev) => ({ ...prev, requires_supervisor_approval: e.target.checked }))} />}
-            label="Requires supervisor approval"
+            label={t('inventory_requires_supervisor_approval')}
           />
           {transferForm.lines.map((line, index) => (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} key={`line-${index}`}>
-              <TextField select label="Product" value={line.product} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, product: e.target.value } : entry)) }))} fullWidth>
+              <TextField select label={t('product')} value={line.product} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, product: e.target.value } : entry)) }))} fullWidth>
                 {products.map((product) => <MenuItem key={product.id} value={product.id}>{product.name}</MenuItem>)}
               </TextField>
-              <TextField label="Quantity" value={line.quantity} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, quantity: e.target.value } : entry)) }))} fullWidth />
+              <TextField label={t('quantity')} value={line.quantity} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, quantity: e.target.value } : entry)) }))} fullWidth />
             </Stack>
           ))}
           <Stack direction="row" spacing={2}>
-            <Button variant="outlined" onClick={() => setTransferForm((prev) => ({ ...prev, lines: [...prev.lines, emptyLine] }))}>Add Line</Button>
-            <Button variant="contained" disabled={!canCreateTransfer} onClick={createTransfer}>Create Transfer</Button>
+            <Button variant="outlined" onClick={() => setTransferForm((prev) => ({ ...prev, lines: [...prev.lines, emptyLine] }))}>{t('inventory_add_line')}</Button>
+            <Button variant="contained" disabled={!canCreateTransfer} onClick={createTransfer}>{t('inventory_create_transfer')}</Button>
           </Stack>
         </Stack>
       </Paper>
 
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Stock Transfers</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_stock_transfers')}</Typography>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Reference</TableCell>
-                <TableCell>Source</TableCell>
-                <TableCell>Destination</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Lines</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell>{t('reference')}</TableCell>
+                <TableCell>{t('source')}</TableCell>
+                <TableCell>{t('destination')}</TableCell>
+                <TableCell>{t('status')}</TableCell>
+                <TableCell>{t('lines')}</TableCell>
+                <TableCell align="right">{t('actions')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {transfers.map((transfer) => (
                 <TableRow key={transfer.id}>
                   <TableCell>{transfer.reference}</TableCell>
-                  <TableCell>{warehouses.find((w) => w.id === transfer.source_warehouse)?.name || '-'}</TableCell>
-                  <TableCell>{warehouses.find((w) => w.id === transfer.destination_warehouse)?.name || '-'}</TableCell>
+                  <TableCell>{warehouses.find((w) => w.id === transfer.source_warehouse)?.name || t('none')}</TableCell>
+                  <TableCell>{warehouses.find((w) => w.id === transfer.destination_warehouse)?.name || t('none')}</TableCell>
                   <TableCell><Chip label={transfer.status} size="small" /></TableCell>
                   <TableCell>{(transfer.lines || []).map((line) => `${line.product_name || line.product} (${line.quantity})`).join(', ')}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" justifyContent="flex-end" spacing={1}>
-                      {transfer.status === 'draft' && <Button size="small" variant="outlined" onClick={() => approveTransfer(transfer.id)}>Approve</Button>}
-                      {transfer.status === 'approved' && <Button size="small" variant="contained" onClick={() => completeTransfer(transfer.id)}>Complete</Button>}
+                      {transfer.status === 'draft' && <Button size="small" variant="outlined" onClick={() => approveTransfer(transfer.id)}>{t('approve')}</Button>}
+                      {transfer.status === 'approved' && <Button size="small" variant="contained" onClick={() => completeTransfer(transfer.id)}>{t('complete')}</Button>}
                     </Stack>
                   </TableCell>
                 </TableRow>

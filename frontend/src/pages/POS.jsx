@@ -160,7 +160,8 @@ const scoreCustomerMatch = (customer, query) => {
 };
 
 export default function POS() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isRTL = i18n.dir() === 'rtl';
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -191,7 +192,7 @@ export default function POS() {
         setError('');
       } catch (err) {
         console.error('Failed to load products for POS', err);
-        setError('Failed to load products');
+        setError(t('pos_load_products_error'));
       }
     };
 
@@ -220,7 +221,7 @@ export default function POS() {
     };
 
     fetchCustomers();
-  }, []);
+  }, [t]);
 
   const categoriesById = useMemo(
     () => new Map(categories.map((category) => [String(category.id), category])),
@@ -319,9 +320,9 @@ export default function POS() {
       : [];
 
     const grouped = [
-      { key: 'products', label: 'Products', items: matchedProducts, type: 'product' },
-      { key: 'categories', label: 'Categories', items: matchedCategories, type: 'category' },
-      { key: 'customers', label: 'Customers', items: matchedCustomers, type: 'customer' },
+      { key: 'products', label: t('pos_search_products_group'), items: matchedProducts, type: 'product' },
+      { key: 'categories', label: t('pos_search_categories_group'), items: matchedCategories, type: 'category' },
+      { key: 'customers', label: t('pos_search_customers_group'), items: matchedCustomers, type: 'customer' },
     ];
 
     let remaining = MAX_TOTAL_RESULTS;
@@ -335,7 +336,7 @@ export default function POS() {
         return { ...group, items: limitedItems };
       })
       .filter((group) => group.items.length > 0);
-  }, [activeCategoryId, indexedCategories, indexedCustomers, indexedProducts, searchQuery]);
+  }, [activeCategoryId, indexedCategories, indexedCustomers, indexedProducts, searchQuery, t]);
 
   const flatResults = useMemo(
     () =>
@@ -559,7 +560,7 @@ export default function POS() {
         {t('pos')}
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Search products by name, SKU, or barcode, add them fast to cart, and collect flexible payments.
+        {t('pos_intro_text')}
       </Typography>
 
       <Button variant="outlined" sx={{ mb: 2 }} onClick={openReceiptsPanel}>
@@ -570,11 +571,11 @@ export default function POS() {
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.3fr 1fr' }, gap: 2 }}>
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>Smart product search</Typography>
+          <Typography variant="h6" sx={{ mb: 1 }}>{t('pos_smart_product_search')}</Typography>
           <TextField
             fullWidth
             size="small"
-            placeholder="Type product name, SKU, or barcode"
+            placeholder={t('pos_product_search_placeholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(event) => {
@@ -599,9 +600,9 @@ export default function POS() {
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
               <Chip
                 color="primary"
-                label={`Category filter: ${categoriesById.get(String(activeCategoryId))?.name || activeCategoryId}`}
+                label={`${t('pos_category_filter_label')}: ${categoriesById.get(String(activeCategoryId))?.name || activeCategoryId}`}
               />
-              <Button size="small" onClick={clearCategoryFilter}>Clear</Button>
+              <Button size="small" onClick={clearCategoryFilter}>{t('clear')}</Button>
             </Stack>
           )}
 
@@ -623,14 +624,15 @@ export default function POS() {
                             disablePadding
                             secondaryAction={
                               <Button size="small" variant="contained" onClick={() => addToCart(entry)}>
-                                Add
+                                {t('add')}
                               </Button>
                             }
                           >
                             <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
                               <ListItemText
                                 primary={entry.name}
-                                secondary={`${entry.sku} • $${Number(entry.price || 0).toFixed(2)}${entry.barcode ? ` • ${entry.barcode}` : ''}${entry.categoryName ? ` • ${entry.categoryName}` : ''}`}
+                                secondary={`${entry.sku} • ${formatMoney(entry.price)}${entry.barcode ? ` • ${entry.barcode}` : ''}${entry.categoryName ? ` • ${entry.categoryName}` : ''}`}
+                                sx={{ textAlign: isRTL ? 'right' : 'left' }}
                               />
                             </ListItemButton>
                           </ListItem>
@@ -641,7 +643,11 @@ export default function POS() {
                         return (
                           <ListItem key={`category-${entry.id}`} disablePadding>
                             <ListItemButton selected={isActive} onClick={() => handleSelectCategory(entry)}>
-                              <ListItemText primary={entry.name} secondary="Filter products by this category" />
+                              <ListItemText
+                                primary={entry.name}
+                                secondary={t('pos_filter_products_by_category')}
+                                sx={{ textAlign: isRTL ? 'right' : 'left' }}
+                              />
                             </ListItemButton>
                           </ListItem>
                         );
@@ -661,6 +667,7 @@ export default function POS() {
                             <ListItemText
                               primary={entry.name || t('unnamed_customer')}
                               secondary={entry.phone || t('no_phone')}
+                              sx={{ textAlign: isRTL ? 'right' : 'left' }}
                             />
                           </ListItemButton>
                         </ListItem>
@@ -669,8 +676,8 @@ export default function POS() {
                   </Box>
                 ))
               ) : (
-                <ListItem>
-                  <ListItemText primary="No search results matched" />
+                  <ListItem>
+                  <ListItemText primary={t('pos_no_search_results')} />
                 </ListItem>
               )}
             </List>
@@ -730,23 +737,23 @@ export default function POS() {
 
           <Divider sx={{ my: 2 }} />
 
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>Cart</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>{t('cart')}</Typography>
           {cart.length === 0 ? (
-            <Typography color="text.secondary">No items in cart yet.</Typography>
+            <Typography color="text.secondary">{t('pos_cart_empty')}</Typography>
           ) : (
             <Stack spacing={1.2}>
               {cart.map((item) => (
                 <Paper key={item.id} variant="outlined" sx={{ p: 1.2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexDirection: isRTL ? 'row-reverse' : 'row' }}>
                     <Box>
                       <Typography fontWeight={600}>{item.name}</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {item.sku} • ${item.unitPrice.toFixed(2)} each
+                        {item.sku} • {formatMoney(item.unitPrice)} {t('pos_each')}
                       </Typography>
                     </Box>
-                    <Chip label={`$${(item.quantity * item.unitPrice).toFixed(2)}`} color="primary" size="small" />
+                    <Chip label={formatMoney(item.quantity * item.unitPrice)} color="primary" size="small" />
                   </Box>
-                  <ButtonGroup size="small" sx={{ mt: 1 }}>
+                  <ButtonGroup size="small" sx={{ mt: 1, direction: isRTL ? 'rtl' : 'ltr' }}>
                     <Button onClick={() => updateQuantity(item.id, -1)}>-</Button>
                     <Button disabled>{item.quantity}</Button>
                     <Button onClick={() => updateQuantity(item.id, 1)}>+</Button>
@@ -758,7 +765,7 @@ export default function POS() {
         </Paper>
 
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Payment</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>{t('payment')}</Typography>
 
           <TextField
             label={t('invoice_total')}
@@ -809,8 +816,8 @@ export default function POS() {
 
           <Divider sx={{ my: 2 }} />
 
-          <Typography>{t('amount_paid')}: ${paidSoFar.toFixed(2)}</Typography>
-          <Typography>{t('remaining_balance')}: ${remaining.toFixed(2)}</Typography>
+          <Typography sx={{ textAlign: isRTL ? 'right' : 'left' }}>{t('amount_paid')}: {formatMoney(paidSoFar)}</Typography>
+          <Typography sx={{ textAlign: isRTL ? 'right' : 'left' }}>{t('remaining_balance')}: {formatMoney(remaining)}</Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
             {t('invoice_payload_customer_hint')}: {invoicePayload.customer_id || t('none')}
           </Typography>
@@ -856,14 +863,14 @@ export default function POS() {
               <Paper key={receipt.id} variant="outlined" sx={{ p: 1.5 }}>
                 <Stack spacing={0.5}>
                   <Typography fontWeight={600}>
-                    {t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || '-'}
+                    {t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || t('none')}
                   </Typography>
                   <Typography variant="body2">{t('pos_receipt_datetime')}: {toDateTime(receipt.created_at)}</Typography>
-                  <Typography variant="body2">{t('pos_receipt_cashier')}: {receipt.user || '-'}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_cashier')}: {receipt.user || t('none')}</Typography>
                   <Typography variant="body2">{t('pos_receipt_customer')}: {receipt.customer?.name || t('unnamed_customer')}</Typography>
                   <Typography variant="body2">{t('phone')}: {receipt.customer?.phone || t('no_phone')}</Typography>
                   <Typography variant="body2">
-                    {t('pos_receipt_line_items')}: {(receipt.lines || []).map((line) => `#${line.product} × ${line.quantity}`).join(', ') || '-'}
+                    {t('pos_receipt_line_items')}: {(receipt.lines || []).map((line) => `#${line.product} × ${line.quantity}`).join(', ') || t('none')}
                   </Typography>
                   <Typography variant="body2">
                     {t('pos_receipt_totals')}: {formatMoney(receipt.total)}
@@ -878,7 +885,7 @@ export default function POS() {
                     {t('pos_receipt_balance')}: {formatMoney(receipt.balance_due)}
                   </Typography>
                   <Typography variant="body2">
-                    {t('pos_receipt_payment_methods')}: {(receipt.payments || []).map((paymentEntry) => paymentEntry.method).join(', ') || '-'}
+                    {t('pos_receipt_payment_methods')}: {(receipt.payments || []).map((paymentEntry) => paymentEntry.method).join(', ') || t('none')}
                   </Typography>
                   <Typography variant="body2">
                     {t('pos_receipt_returns')}: {(receipt.returns || []).length}
@@ -905,9 +912,9 @@ export default function POS() {
         <DialogContent>
           {activeReceipt && (
             <Stack spacing={1.2} sx={{ py: 1 }}>
-              <Typography>{t('pos_receipt_number')}: {activeReceipt.invoice_number || activeReceipt.local_invoice_no || '-'}</Typography>
+              <Typography>{t('pos_receipt_number')}: {activeReceipt.invoice_number || activeReceipt.local_invoice_no || t('none')}</Typography>
               <Typography>{t('pos_receipt_datetime')}: {toDateTime(activeReceipt.created_at)}</Typography>
-              <Typography>{t('pos_receipt_cashier')}: {activeReceipt.user || '-'}</Typography>
+              <Typography>{t('pos_receipt_cashier')}: {activeReceipt.user || t('none')}</Typography>
               <Typography>{t('pos_receipt_customer')}: {activeReceipt.customer?.name || t('unnamed_customer')}</Typography>
               <Typography>{t('phone')}: {activeReceipt.customer?.phone || t('no_phone')}</Typography>
               <Divider />
@@ -919,7 +926,7 @@ export default function POS() {
                   </Typography>
                 ))
               ) : (
-                <Typography variant="body2" color="text.secondary">-</Typography>
+                <Typography variant="body2" color="text.secondary">{t('none')}</Typography>
               )}
               <Divider />
               <Typography>{t('pos_receipt_totals')}: {formatMoney(activeReceipt.total)}</Typography>
@@ -927,7 +934,7 @@ export default function POS() {
               <Typography>{t('pos_receipt_tax')}: {formatMoney(activeReceipt.tax_total)}</Typography>
               <Typography>{t('amount_paid')}: {formatMoney(activeReceipt.amount_paid)}</Typography>
               <Typography>{t('pos_receipt_balance')}: {formatMoney(activeReceipt.balance_due)}</Typography>
-              <Typography>{t('pos_receipt_payment_methods')}: {(activeReceipt.payments || []).map((paymentEntry) => `${paymentEntry.method} (${formatMoney(paymentEntry.amount)})`).join(', ') || '-'}</Typography>
+              <Typography>{t('pos_receipt_payment_methods')}: {(activeReceipt.payments || []).map((paymentEntry) => `${paymentEntry.method} (${formatMoney(paymentEntry.amount)})`).join(', ') || t('none')}</Typography>
               <Typography>{t('pos_receipt_returns')}: {(activeReceipt.returns || []).length}</Typography>
             </Stack>
           )}
