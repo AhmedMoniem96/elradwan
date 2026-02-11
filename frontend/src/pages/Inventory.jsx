@@ -57,6 +57,9 @@ export default function Inventory() {
   const [transfers, setTransfers] = useState([]);
   const [stockIntel, setStockIntel] = useState({ rows: [], low_count: 0, critical_count: 0 });
   const [alerts, setAlerts] = useState([]);
+  const [poPreview, setPoPreview] = useState(null);
+  const [poFilters, setPoFilters] = useState({ branch_id: '', warehouse_id: '', severity: '', min_stockout_days: '' });
+  const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [draftStatus, setDraftStatus] = useState({});
   const [error, setError] = useState('');
   const [productForm, setProductForm] = useState(initialProductForm);
@@ -129,6 +132,26 @@ export default function Inventory() {
     } catch (err) {
       console.error('Failed to mark alerts read', err);
       setError(t('inventory_mark_alerts_read_error'));
+    }
+  };
+
+  const createPOFromSuggestions = async () => {
+    setIsCreatingPO(true);
+    try {
+      const payload = {
+        branch_id: poFilters.branch_id || undefined,
+        warehouse_id: poFilters.warehouse_id || undefined,
+        severity: poFilters.severity || undefined,
+        min_stockout_days: poFilters.min_stockout_days === '' ? undefined : Number(poFilters.min_stockout_days),
+      };
+      const response = await axios.post('/api/v1/reorder-suggestions/create-po/', payload);
+      setPoPreview(response.data);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to create purchase order from suggestions', err);
+      setError(t('inventory_create_po_from_suggestions_error', 'Failed to create PO from suggestions.'));
+    } finally {
+      setIsCreatingPO(false);
     }
   };
 
@@ -320,11 +343,45 @@ export default function Inventory() {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('inventory_low_critical_stock')}</Typography>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip color="error" label={`${t('inventory_critical_label')}: ${stockIntel.critical_count || 0}`} />
             <Chip color="warning" label={`${t('inventory_low_label')}: ${stockIntel.low_count || 0}`} />
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">{t('export_csv')}</Button>
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">{t('export_pdf')}</Button>
+            <TextField
+              size="small"
+              label={t('warehouse')}
+              select
+              value={poFilters.warehouse_id}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, warehouse_id: e.target.value }))}
+              sx={{ minWidth: 150 }}
+            >
+              <MenuItem value="">{t('all', 'All')}</MenuItem>
+              {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
+            </TextField>
+            <TextField
+              size="small"
+              label={t('severity')}
+              select
+              value={poFilters.severity}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, severity: e.target.value }))}
+              sx={{ minWidth: 130 }}
+            >
+              <MenuItem value="">{t('all', 'All')}</MenuItem>
+              <MenuItem value="low">low</MenuItem>
+              <MenuItem value="critical">critical</MenuItem>
+            </TextField>
+            <TextField
+              size="small"
+              label={t('min_stockout_days', 'Min stockout days')}
+              type="number"
+              value={poFilters.min_stockout_days}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, min_stockout_days: e.target.value }))}
+              sx={{ width: 170 }}
+            />
+            <Button size="small" variant="contained" onClick={createPOFromSuggestions} disabled={isCreatingPO}>
+              {t('create_po_from_alerts', 'Create PO from alerts')}
+            </Button>
           </Stack>
         </Stack>
         <TableContainer>
@@ -357,6 +414,23 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
+        {poPreview && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              {t('po_creation_result', 'PO creation result')}: {poPreview.created_count || 0} created, {poPreview.skipped_count || 0} skipped
+            </Typography>
+            {(poPreview.created_purchase_orders || []).map((po) => (
+              <Alert key={po.purchase_order_id} severity="success" sx={{ mb: 1 }}>
+                {po.po_number} - {po.lines.map((line) => `${line.product_name} (${line.quantity})`).join(', ')}
+              </Alert>
+            ))}
+            {(poPreview.skipped_groups || []).map((group) => (
+              <Alert key={group.grouping_token} severity="info" sx={{ mb: 1 }}>
+                {t('po_skipped_existing', 'Skipped existing group')}: {group.existing_po_id}
+              </Alert>
+            ))}
+          </Box>
+        )}
       </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>

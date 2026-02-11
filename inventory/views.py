@@ -44,6 +44,7 @@ from inventory.services import (
     export_reorder_csv,
     export_reorder_pdf_text,
     refresh_inventory_alerts,
+    create_purchase_orders_from_alerts,
 )
 
 
@@ -468,6 +469,45 @@ class AlertMarkReadView(APIView):
                 payload={"alert_id": str(alert.id), "is_read": True},
             )
         return Response({"updated": updated})
+
+
+
+
+class ReorderSuggestionCreatePOView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"post": "admin.records.manage"}
+
+    def post(self, request):
+        request_branch_id = request.data.get("branch_id")
+        branch_id = request.user.branch_id
+        if request_branch_id and (request.user.is_superuser or not getattr(request.user, "branch_id", None)):
+            branch_id = request_branch_id
+
+        if not branch_id:
+            raise ValidationError("No branch is available for this request.")
+
+        severity = request.data.get("severity")
+        if severity and severity not in [InventoryAlert.Severity.LOW, InventoryAlert.Severity.CRITICAL]:
+            raise ValidationError({"severity": "Severity must be low or critical."})
+
+        min_stockout_days = request.data.get("min_stockout_days")
+        if min_stockout_days in [None, ""]:
+            min_stockout_days = None
+        else:
+            try:
+                min_stockout_days = int(min_stockout_days)
+            except (TypeError, ValueError):
+                raise ValidationError({"min_stockout_days": "Must be an integer."})
+            if min_stockout_days < 0:
+                raise ValidationError({"min_stockout_days": "Must be >= 0."})
+
+        result = create_purchase_orders_from_alerts(
+            branch_id=branch_id,
+            warehouse_id=request.data.get("warehouse_id"),
+            severity=severity,
+            min_stockout_days=min_stockout_days,
+        )
+        return Response(result, status=status.HTTP_201_CREATED if result["created_count"] else status.HTTP_200_OK)
 
 
 class ReorderSuggestionExportView(APIView):
