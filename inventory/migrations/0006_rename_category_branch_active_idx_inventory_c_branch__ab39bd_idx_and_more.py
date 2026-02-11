@@ -3,6 +3,56 @@
 from django.db import migrations
 
 
+def _safe_rename_index(model_name: str, old_name: str, new_name: str):
+    """Run an idempotent PostgreSQL index rename while preserving migration state."""
+
+    return migrations.SeparateDatabaseAndState(
+        database_operations=[
+            migrations.RunSQL(
+                sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{old_name}" RENAME TO "{new_name}"';
+                  END IF;
+                END $$;
+                """,
+                reverse_sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{new_name}" RENAME TO "{old_name}"';
+                  END IF;
+                END $$;
+                """,
+            )
+        ],
+        state_operations=[
+            migrations.RenameIndex(
+                model_name=model_name,
+                old_name=old_name,
+                new_name=new_name,
+            )
+        ],
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,109 +60,25 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameIndex(
-            model_name='category',
-            new_name='inventory_c_branch__ab39bd_idx',
-            old_name='category_branch_active_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='category',
-            new_name='inventory_c_parent__a38b2c_idx',
-            old_name='category_parent_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='inventoryalert',
-            new_name='inventory_i_branch__4bbb45_idx',
-            old_name='inventory_in_branch__a35d43_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='inventoryalert',
-            new_name='inventory_i_warehou_3c5ca4_idx',
-            old_name='inventory_in_warehou_13a4f5_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='inventoryalert',
-            new_name='inventory_i_branch__017267_idx',
-            old_name='inventory_in_branch__3fdb70_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='product',
-            new_name='inventory_p_branch__77a8c7_idx',
-            old_name='product_branch_barcode_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='product',
-            new_name='inventory_p_branch__4c740b_idx',
-            old_name='product_branch_active_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='purchaseorder',
-            new_name='inventory_p_branch__51d1b9_idx',
-            old_name='inventory_pu_branch__34e1df_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='purchaseorder',
-            new_name='inventory_p_supplie_80088d_idx',
-            old_name='inventory_pu_supplie_469c0e_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='purchaseorderline',
-            new_name='inventory_p_purchas_aa823f_idx',
-            old_name='inventory_pu_purchase_ebf860_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='purchaseorderline',
-            new_name='inventory_p_product_c8831a_idx',
-            old_name='inventory_pu_product_a1ac0f_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stockmove',
-            new_name='inventory_s_warehou_f5591e_idx',
-            old_name='stockmove_wh_prod_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stockmove',
-            new_name='inventory_s_branch__ad802a_idx',
-            old_name='stockmove_branch_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stockmove',
-            new_name='inventory_s_source__833ef8_idx',
-            old_name='stockmove_source_ref_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stocktransfer',
-            new_name='inventory_s_branch__c0f061_idx',
-            old_name='inventory_st_branch__c3f870_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stocktransfer',
-            new_name='inventory_s_source__770ddc_idx',
-            old_name='inventory_st_source__83a7de_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stocktransferline',
-            new_name='inventory_s_transfe_60e28a_idx',
-            old_name='inventory_st_transfer_96b7ed_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='stocktransferline',
-            new_name='inventory_s_product_0ffd76_idx',
-            old_name='inventory_st_product_814f35_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='supplier',
-            new_name='inventory_s_branch__061fcc_idx',
-            old_name='inventory_su_branch__69bd64_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='suppliercontact',
-            new_name='inventory_s_supplie_7a6c03_idx',
-            old_name='inventory_su_supplie_0f38fd_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='warehouse',
-            new_name='inventory_w_branch__89a748_idx',
-            old_name='warehouse_branch_active_idx',
-        ),
+        _safe_rename_index('category', 'category_branch_active_idx', 'inventory_c_branch__ab39bd_idx'),
+        _safe_rename_index('category', 'category_parent_idx', 'inventory_c_parent__a38b2c_idx'),
+        _safe_rename_index('inventoryalert', 'inventory_in_branch__a35d43_idx', 'inventory_i_branch__4bbb45_idx'),
+        _safe_rename_index('inventoryalert', 'inventory_in_warehou_13a4f5_idx', 'inventory_i_warehou_3c5ca4_idx'),
+        _safe_rename_index('inventoryalert', 'inventory_in_branch__3fdb70_idx', 'inventory_i_branch__017267_idx'),
+        _safe_rename_index('product', 'product_branch_barcode_idx', 'inventory_p_branch__77a8c7_idx'),
+        _safe_rename_index('product', 'product_branch_active_idx', 'inventory_p_branch__4c740b_idx'),
+        _safe_rename_index('purchaseorder', 'inventory_pu_branch__34e1df_idx', 'inventory_p_branch__51d1b9_idx'),
+        _safe_rename_index('purchaseorder', 'inventory_pu_supplie_469c0e_idx', 'inventory_p_supplie_80088d_idx'),
+        _safe_rename_index('purchaseorderline', 'inventory_pu_purchase_ebf860_idx', 'inventory_p_purchas_aa823f_idx'),
+        _safe_rename_index('purchaseorderline', 'inventory_pu_product_a1ac0f_idx', 'inventory_p_product_c8831a_idx'),
+        _safe_rename_index('stockmove', 'stockmove_wh_prod_created_idx', 'inventory_s_warehou_f5591e_idx'),
+        _safe_rename_index('stockmove', 'stockmove_branch_created_idx', 'inventory_s_branch__ad802a_idx'),
+        _safe_rename_index('stockmove', 'stockmove_source_ref_idx', 'inventory_s_source__833ef8_idx'),
+        _safe_rename_index('stocktransfer', 'inventory_st_branch__c3f870_idx', 'inventory_s_branch__c0f061_idx'),
+        _safe_rename_index('stocktransfer', 'inventory_st_source__83a7de_idx', 'inventory_s_source__770ddc_idx'),
+        _safe_rename_index('stocktransferline', 'inventory_st_transfer_96b7ed_idx', 'inventory_s_transfe_60e28a_idx'),
+        _safe_rename_index('stocktransferline', 'inventory_st_product_814f35_idx', 'inventory_s_product_0ffd76_idx'),
+        _safe_rename_index('supplier', 'inventory_su_branch__69bd64_idx', 'inventory_s_branch__061fcc_idx'),
+        _safe_rename_index('suppliercontact', 'inventory_su_supplie_0f38fd_idx', 'inventory_s_supplie_7a6c03_idx'),
+        _safe_rename_index('warehouse', 'warehouse_branch_active_idx', 'inventory_w_branch__89a748_idx'),
     ]
