@@ -147,7 +147,7 @@ export default function Layout() {
             noWrap
             sx={{ flexGrow: 1 }}
           >
-            Elradwan POS
+            {t('app_title')}
           </Typography>
           
           <IconButton color="inherit" onClick={toggleColorMode}>
@@ -162,8 +162,8 @@ export default function Layout() {
             open={Boolean(anchorEl)}
             onClose={handleClose}
           >
-            <MenuItem onClick={() => changeLanguage('en')}>English</MenuItem>
-            <MenuItem onClick={() => changeLanguage('ar')}>العربية</MenuItem>
+            <MenuItem onClick={() => changeLanguage('en')}>{t('english')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('ar')}>{t('arabic')}</MenuItem>
           </Menu>
 
           <IconButton color="inherit">
@@ -227,7 +227,7 @@ export default function Layout() {
               <ListItemIcon>
                 <AssessmentIcon />
               </ListItemIcon>
-              <ListItemText primary="Reports" />
+              <ListItemText primary={t('reports')} />
             </ListItemButton>
           )}
           {can('admin.records.manage') && (
@@ -235,7 +235,7 @@ export default function Layout() {
               <ListItemIcon>
                 <ManageSearchIcon />
               </ListItemIcon>
-              <ListItemText primary="Audit Logs" />
+              <ListItemText primary={t('audit_logs')} />
             </ListItemButton>
           )}
           {can('sync.view') && (
