@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Chip,
@@ -25,16 +26,41 @@ import { useSync } from '../sync/SyncContext';
 
 const emptyLine = { product: '', quantity: '1.00' };
 
+const initialProductForm = {
+  id: '',
+  category: '',
+  sku: '',
+  barcode: '',
+  name: '',
+  description: '',
+  brand: '',
+  unit: 'pcs',
+  slug: '',
+  price: '0.00',
+  cost: '',
+  tax_rate: '0.0000',
+  minimum_quantity: '0.00',
+  reorder_quantity: '0.00',
+  preferred_supplier: '',
+  stock_status: '',
+  is_sellable_online: false,
+  is_active: true,
+  image: null,
+};
+
 export default function Inventory() {
   const { t } = useTranslation();
   const { enqueueEvent, pushNow, pullNow } = useSync();
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [stockIntel, setStockIntel] = useState({ rows: [], low_count: 0, critical_count: 0 });
   const [alerts, setAlerts] = useState([]);
   const [draftStatus, setDraftStatus] = useState({});
   const [error, setError] = useState('');
+  const [productForm, setProductForm] = useState(initialProductForm);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [transferForm, setTransferForm] = useState({
     source_warehouse_id: '',
     destination_warehouse_id: '',
@@ -46,14 +72,16 @@ export default function Inventory() {
 
   const loadData = async () => {
     try {
-      const [productsRes, warehousesRes, transferRes, stockRes, unreadAlertsRes] = await Promise.all([
+      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, unreadAlertsRes] = await Promise.all([
         axios.get('/api/v1/products/'),
+        axios.get('/api/v1/categories/'),
         axios.get('/api/v1/warehouses/'),
         axios.get('/api/v1/stock-transfers/'),
         axios.get('/api/v1/stock-intelligence/'),
         axios.get('/api/v1/alerts/unread/'),
       ]);
       setProducts(productsRes.data);
+      setCategories(categoriesRes.data || []);
       setWarehouses(warehousesRes.data);
       setTransfers(transferRes.data);
       setStockIntel(stockRes.data || { rows: [] });
@@ -141,6 +169,70 @@ export default function Inventory() {
     }
   };
 
+  const startEditProduct = (product) => {
+    setProductForm({
+      id: product.id,
+      category: product.category || '',
+      sku: product.sku || '',
+      barcode: product.barcode || '',
+      name: product.name || '',
+      description: product.description || '',
+      brand: product.brand || '',
+      unit: product.unit || 'pcs',
+      slug: product.slug || '',
+      price: product.price || '0.00',
+      cost: product.cost || '',
+      tax_rate: product.tax_rate || '0.0000',
+      minimum_quantity: product.minimum_quantity || '0.00',
+      reorder_quantity: product.reorder_quantity || '0.00',
+      preferred_supplier: product.preferred_supplier || '',
+      stock_status: product.stock_status || '',
+      is_sellable_online: !!product.is_sellable_online,
+      is_active: product.is_active !== false,
+      image: null,
+    });
+  };
+
+  const clearProductForm = () => setProductForm(initialProductForm);
+
+  const saveProduct = async () => {
+    setIsSavingProduct(true);
+    try {
+      const payload = new FormData();
+      [
+        'category', 'sku', 'barcode', 'name', 'description', 'brand', 'unit', 'slug', 'price', 'cost',
+        'tax_rate', 'minimum_quantity', 'reorder_quantity', 'preferred_supplier', 'stock_status',
+      ].forEach((key) => {
+        const value = productForm[key];
+        if (value !== null && value !== undefined) {
+          payload.append(key, value);
+        }
+      });
+      payload.append('is_sellable_online', productForm.is_sellable_online ? 'true' : 'false');
+      payload.append('is_active', productForm.is_active ? 'true' : 'false');
+      if (productForm.image instanceof File) {
+        payload.append('image', productForm.image);
+      }
+
+      if (productForm.id) {
+        await axios.patch(`/api/v1/admin/products/${productForm.id}/`, payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await axios.post('/api/v1/admin/products/', payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      clearProductForm();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save product', err);
+      setError(t('inventory_save_product_error', 'Failed to save product details.'));
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
+
   const approveTransfer = async (transferId) => {
     try {
       enqueueEvent({ eventType: 'stock.transfer.approve', payload: { transfer_id: transferId } });
@@ -171,6 +263,59 @@ export default function Inventory() {
         {t('inventory')}
       </Typography>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>{t('product_details', 'Product details')}</Typography>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label={t('name')} value={productForm.name} onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))} fullWidth />
+            <TextField label={t('sku')} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} fullWidth />
+            <TextField label={t('barcode')} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField select label={t('category')} value={productForm.category} onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))} fullWidth>
+              <MenuItem value="">{t('none')}</MenuItem>
+              {categories.map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}
+            </TextField>
+            <TextField label={t('brand', 'Brand')} value={productForm.brand} onChange={(e) => setProductForm((prev) => ({ ...prev, brand: e.target.value }))} fullWidth />
+            <TextField label={t('unit', 'Unit')} value={productForm.unit} onChange={(e) => setProductForm((prev) => ({ ...prev, unit: e.target.value }))} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label={t('price')} value={productForm.price} onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))} fullWidth />
+            <TextField label={t('cost')} value={productForm.cost} onChange={(e) => setProductForm((prev) => ({ ...prev, cost: e.target.value }))} fullWidth />
+            <TextField label={t('tax_rate')} value={productForm.tax_rate} onChange={(e) => setProductForm((prev) => ({ ...prev, tax_rate: e.target.value }))} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label={t('minimum_quantity')} value={productForm.minimum_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, minimum_quantity: e.target.value }))} fullWidth />
+            <TextField label={t('reorder_quantity')} value={productForm.reorder_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, reorder_quantity: e.target.value }))} fullWidth />
+            <TextField label={t('slug', 'Slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
+          </Stack>
+          <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} fullWidth multiline minRows={2} />
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+            <Button variant="outlined" component="label">
+              {t('upload_image', 'Upload image')}
+              <input hidden type="file" accept="image/*" onChange={(e) => setProductForm((prev) => ({ ...prev, image: e.target.files?.[0] || null }))} />
+            </Button>
+            <Typography color="text.secondary">{productForm.image?.name || t('no_file_selected', 'No file selected')}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={2}>
+            <FormControlLabel
+              control={<Switch checked={productForm.is_sellable_online} onChange={(e) => setProductForm((prev) => ({ ...prev, is_sellable_online: e.target.checked }))} />}
+              label={t('is_sellable_online', 'Sellable online')}
+            />
+            <FormControlLabel
+              control={<Switch checked={productForm.is_active} onChange={(e) => setProductForm((prev) => ({ ...prev, is_active: e.target.checked }))} />}
+              label={t('active')}
+            />
+          </Stack>
+          <Stack direction="row" spacing={2}>
+            <Button variant="contained" onClick={saveProduct} disabled={isSavingProduct || !productForm.name || !productForm.sku}>
+              {productForm.id ? t('save') : t('create')}
+            </Button>
+            <Button variant="outlined" onClick={clearProductForm}>{t('clear')}</Button>
+          </Stack>
+        </Stack>
+      </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
@@ -238,6 +383,7 @@ export default function Inventory() {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>{t('image', 'Image')}</TableCell>
                 <TableCell>{t('name')}</TableCell>
                 <TableCell>{t('sku')}</TableCell>
                 <TableCell>{t('price')}</TableCell>
@@ -248,10 +394,13 @@ export default function Inventory() {
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
+                  <TableCell>
+                    <Avatar variant="rounded" src={product.image_url || ''} alt={product.name} sx={{ width: 40, height: 40 }} />
+                  </TableCell>
                   <TableCell>{product.name}</TableCell>
                   <TableCell>{product.sku}</TableCell>
                   <TableCell>${Number(product.price).toFixed(2)}</TableCell>
-                  <TableCell width="40%">
+                  <TableCell width="35%">
                     <TextField
                       fullWidth
                       size="small"
@@ -261,9 +410,14 @@ export default function Inventory() {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    <Button variant="contained" size="small" onClick={() => saveStatus(product)}>
-                      {t('save')}
-                    </Button>
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button variant="outlined" size="small" onClick={() => startEditProduct(product)}>
+                        {t('edit')}
+                      </Button>
+                      <Button variant="contained" size="small" onClick={() => saveStatus(product)}>
+                        {t('save')}
+                      </Button>
+                    </Stack>
                   </TableCell>
                 </TableRow>
               ))}

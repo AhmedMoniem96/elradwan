@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -11,3 +13,7 @@ urlpatterns = [
     path("api/v1/", include("inventory.urls")),
     path("api/v1/", include("sales.urls")),
 ]
+
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
