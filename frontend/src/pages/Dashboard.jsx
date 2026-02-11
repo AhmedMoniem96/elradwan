@@ -14,6 +14,15 @@ const formatCurrency = (value) => {
   return `$${numeric.toFixed(2)}`;
 };
 
+const formatTimestamp = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString();
+};
+
+const toTitle = (value) => (value ? String(value).replace(/_/g, ' ') : '');
+
 function MiniBarChart({ title, data }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
@@ -80,6 +89,9 @@ export default function Dashboard() {
     variance_total: '0.00',
   });
   const [stockSummary, setStockSummary] = useState({ low_count: 0, critical_count: 0, unread_alert_count: 0 });
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(true);
+  const [recentActivityFailed, setRecentActivityFailed] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -100,6 +112,26 @@ export default function Dashboard() {
         }
       })
       .catch(() => {});
+
+    axios
+      .get('/api/v1/invoices/recent-activity/')
+      .then((res) => {
+        if (mounted) {
+          setRecentActivity(Array.isArray(res.data) ? res.data : []);
+          setRecentActivityFailed(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setRecentActivity([]);
+          setRecentActivityFailed(true);
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setRecentActivityLoading(false);
+        }
+      });
 
     return () => {
       mounted = false;
@@ -178,7 +210,39 @@ export default function Dashboard() {
       <Grid item xs={12}>
         <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
           <Typography variant="h6" gutterBottom>{t('recent_transactions')}</Typography>
-          <Typography>{t('no_transactions')}</Typography>
+          {recentActivityLoading ? (
+            <Typography color="text.secondary">{t('loading', 'Loading...')}</Typography>
+          ) : recentActivity.length === 0 ? (
+            <Typography color="text.secondary">
+              {recentActivityFailed
+                ? t('dashboard_recent_activity_fallback', 'Activity is temporarily unavailable.')
+                : t('no_transactions')}
+            </Typography>
+          ) : (
+            <Stack spacing={1} sx={{ mt: 1 }}>
+              {recentActivity.map((item, idx) => (
+                <Box
+                  key={`${item.transaction_type}-${item.reference_number}-${item.timestamp}-${idx}`}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr 0.7fr 0.8fr 1.1fr' },
+                    gap: 1,
+                    py: 1,
+                    borderBottom: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <Typography variant="body2">
+                    {toTitle(item.transaction_type)} • {item.reference_number}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">{item.customer || t('walk_in_customer', 'Walk-in')}</Typography>
+                  <Typography variant="body2">{formatCurrency(item.amount)}</Typography>
+                  <Typography variant="body2" color="text.secondary">{toTitle(item.method_status)}</Typography>
+                  <Typography variant="body2" color="text.secondary">{formatTimestamp(item.timestamp)}</Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
         </Paper>
       </Grid>
     </Grid>

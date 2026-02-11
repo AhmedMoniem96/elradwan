@@ -66,6 +66,15 @@ class ShiftSummarySerializer(serializers.Serializer):
     variance_total = serializers.DecimalField(max_digits=12, decimal_places=2)
 
 
+class RecentActivityItemSerializer(serializers.Serializer):
+    transaction_type = serializers.ChoiceField(choices=["invoice", "payment"])
+    reference_number = serializers.CharField()
+    customer = serializers.CharField(allow_blank=True, allow_null=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    method_status = serializers.CharField()
+    timestamp = serializers.DateTimeField()
+
+
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
