@@ -25,6 +25,7 @@ import LayersIcon from '@mui/icons-material/Layers';
 import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import WarehouseIcon from '@mui/icons-material/Warehouse';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import TranslateIcon from '@mui/icons-material/Translate';
@@ -238,6 +239,12 @@ export default function Layout() {
                   <AccountTreeIcon />
                 </ListItemIcon>
                 <ListItemText primary={t('branches')} />
+              </ListItemButton>
+              <ListItemButton onClick={() => navigate('/warehouses')}>
+                <ListItemIcon>
+                  <WarehouseIcon />
+                </ListItemIcon>
+                <ListItemText primary={t('warehouses')} />
               </ListItemButton>
               <ListItemButton onClick={() => navigate('/audit-logs')}>
                 <ListItemIcon>
