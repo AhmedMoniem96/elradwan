@@ -3,6 +3,56 @@
 from django.db import migrations
 
 
+def _safe_rename_index(model_name: str, old_name: str, new_name: str):
+    """Run an idempotent PostgreSQL index rename while preserving migration state."""
+
+    return migrations.SeparateDatabaseAndState(
+        database_operations=[
+            migrations.RunSQL(
+                sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{old_name}" RENAME TO "{new_name}"';
+                  END IF;
+                END $$;
+                """,
+                reverse_sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{new_name}" RENAME TO "{old_name}"';
+                  END IF;
+                END $$;
+                """,
+            )
+        ],
+        state_operations=[
+            migrations.RenameIndex(
+                model_name=model_name,
+                old_name=old_name,
+                new_name=new_name,
+            )
+        ],
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,74 +60,18 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RenameIndex(
-            model_name='cashshift',
-            new_name='sales_cashs_branch__c95ed4_idx',
-            old_name='sales_cashsh_branch__e09d5c_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='cashshift',
-            new_name='sales_cashs_cashier_442523_idx',
-            old_name='sales_cashsh_cashier_8176c2_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='customer',
-            new_name='sales_custo_branch__9cbb0d_idx',
-            old_name='customer_branch_phone_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='customer',
-            new_name='sales_custo_branch__ea3765_idx',
-            old_name='customer_branch_email_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='invoice',
-            new_name='sales_invoi_branch__063747_idx',
-            old_name='invoice_branch_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='invoice',
-            new_name='sales_invoi_status_027c24_idx',
-            old_name='invoice_status_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='invoiceline',
-            new_name='sales_invoi_invoice_c1a96c_idx',
-            old_name='invoiceline_invoice_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='invoiceline',
-            new_name='sales_invoi_product_fc6689_idx',
-            old_name='invoiceline_product_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='payment',
-            new_name='sales_payme_invoice_be34bc_idx',
-            old_name='payment_invoice_paid_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='refund',
-            new_name='sales_refun_return__c61805_idx',
-            old_name='refund_return_refunded_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='return',
-            new_name='sales_retur_invoice_f0a962_idx',
-            old_name='return_invoice_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='return',
-            new_name='sales_retur_branch__15feaf_idx',
-            old_name='return_branch_created_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='returnline',
-            new_name='sales_retur_return__c3a342_idx',
-            old_name='returnline_return_txn_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='returnline',
-            new_name='sales_retur_invoice_4fd9b8_idx',
-            old_name='returnline_invoice_line_idx',
-        ),
+        _safe_rename_index('cashshift', 'sales_cashsh_branch__e09d5c_idx', 'sales_cashs_branch__c95ed4_idx'),
+        _safe_rename_index('cashshift', 'sales_cashsh_cashier_8176c2_idx', 'sales_cashs_cashier_442523_idx'),
+        _safe_rename_index('customer', 'customer_branch_phone_idx', 'sales_custo_branch__9cbb0d_idx'),
+        _safe_rename_index('customer', 'customer_branch_email_idx', 'sales_custo_branch__ea3765_idx'),
+        _safe_rename_index('invoice', 'invoice_branch_created_idx', 'sales_invoi_branch__063747_idx'),
+        _safe_rename_index('invoice', 'invoice_status_created_idx', 'sales_invoi_status_027c24_idx'),
+        _safe_rename_index('invoiceline', 'invoiceline_invoice_idx', 'sales_invoi_invoice_c1a96c_idx'),
+        _safe_rename_index('invoiceline', 'invoiceline_product_idx', 'sales_invoi_product_fc6689_idx'),
+        _safe_rename_index('payment', 'payment_invoice_paid_idx', 'sales_payme_invoice_be34bc_idx'),
+        _safe_rename_index('refund', 'refund_return_refunded_idx', 'sales_refun_return__c61805_idx'),
+        _safe_rename_index('return', 'return_invoice_created_idx', 'sales_retur_invoice_f0a962_idx'),
+        _safe_rename_index('return', 'return_branch_created_idx', 'sales_retur_branch__15feaf_idx'),
+        _safe_rename_index('returnline', 'returnline_return_txn_idx', 'sales_retur_return__c3a342_idx'),
+        _safe_rename_index('returnline', 'returnline_invoice_line_idx', 'sales_retur_invoice_4fd9b8_idx'),
     ]

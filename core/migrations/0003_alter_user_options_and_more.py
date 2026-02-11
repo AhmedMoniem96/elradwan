@@ -3,6 +3,62 @@
 from django.db import migrations, models
 
 
+def _safe_rename_index(model_name: str, old_name: str, new_name: str):
+    """
+    Rename indexes defensively to support drifted PostgreSQL schemas.
+
+    In some environments, previous manual fixes or partial migrations already
+    created the "new" index names. In that case, the historical RenameIndex
+    operation can fail when the "old" name no longer exists.
+    """
+
+    return migrations.SeparateDatabaseAndState(
+        database_operations=[
+            migrations.RunSQL(
+                sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{old_name}" RENAME TO "{new_name}"';
+                  END IF;
+                END $$;
+                """,
+                reverse_sql=f"""
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{new_name}'
+                  ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public' AND indexname = '{old_name}'
+                  ) THEN
+                    EXECUTE 'ALTER INDEX "{new_name}" RENAME TO "{old_name}"';
+                  END IF;
+                END $$;
+                """,
+            )
+        ],
+        state_operations=[
+            migrations.RenameIndex(
+                model_name=model_name,
+                old_name=old_name,
+                new_name=new_name,
+            )
+        ],
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -14,28 +70,49 @@ class Migration(migrations.Migration):
             name='user',
             options={'verbose_name': 'user', 'verbose_name_plural': 'users'},
         ),
-        migrations.RenameIndex(
+        _safe_rename_index(
             model_name='auditlog',
-            new_name='core_auditl_created_dc23ea_idx',
             old_name='core_auditl_created_7a9f57_idx',
+            new_name='core_auditl_created_dc23ea_idx',
         ),
-        migrations.RenameIndex(
+        _safe_rename_index(
             model_name='auditlog',
-            new_name='core_auditl_action_29a2bf_idx',
             old_name='core_auditl_action_87cb84_idx',
+            new_name='core_auditl_action_29a2bf_idx',
         ),
-        migrations.RenameIndex(
+        _safe_rename_index(
             model_name='auditlog',
-            new_name='core_auditl_entity_a54c8a_idx',
             old_name='core_auditl_entity_8cbfef_idx',
+            new_name='core_auditl_entity_a54c8a_idx',
         ),
-        migrations.RenameIndex(
+        _safe_rename_index(
             model_name='auditlog',
-            new_name='core_auditl_actor_i_41600a_idx',
             old_name='core_auditl_actor_i_eb3a02_idx',
+            new_name='core_auditl_actor_i_41600a_idx',
         ),
-        migrations.AddIndex(
-            model_name='device',
-            index=models.Index(fields=['branch', 'is_active'], name='core_device_branch__f95e04_idx'),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    sql="""
+                    DO $$
+                    BEGIN
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_indexes
+                        WHERE schemaname = 'public' AND indexname = 'core_device_branch__f95e04_idx'
+                      ) THEN
+                        EXECUTE 'CREATE INDEX "core_device_branch__f95e04_idx" ON "core_device" ("branch_id", "is_active")';
+                      END IF;
+                    END $$;
+                    """,
+                    reverse_sql='DROP INDEX IF EXISTS "core_device_branch__f95e04_idx";',
+                )
+            ],
+            state_operations=[
+                migrations.AddIndex(
+                    model_name='device',
+                    index=models.Index(fields=['branch', 'is_active'], name='core_device_branch__f95e04_idx'),
+                )
+            ],
         ),
     ]
