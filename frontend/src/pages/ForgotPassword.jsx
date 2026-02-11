@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import axios from 'axios';
 import {
+  Alert,
   Avatar,
   Button,
   CssBaseline,
@@ -9,7 +11,7 @@ import {
   Typography,
   Container,
   Link,
-  Paper
+  Paper,
 } from '@mui/material';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import { useTranslation } from 'react-i18next';
@@ -18,12 +20,28 @@ export default function ForgotPassword() {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    // Here you would typically call an API to send the reset link
-    console.log('Reset link sent to:', email);
-    setSubmitted(true);
+    if (!email) {
+      setError(t('forgot_password_email_required'));
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      await axios.post('/api/v1/password-reset/request/', { email });
+      setSubmitted(true);
+    } catch (requestError) {
+      console.error('Password reset request failed', requestError);
+      setError(t('forgot_password_request_error'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -43,12 +61,17 @@ export default function ForgotPassword() {
           <Typography component="h1" variant="h5">
             {t('reset_password')}
           </Typography>
-          
+
           {!submitted ? (
             <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1, width: '100%' }}>
               <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 2 }}>
-                Enter your email address and we'll send you a link to reset your password.
+                {t('forgot_password_description')}
               </Typography>
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
               <TextField
                 margin="normal"
                 required
@@ -65,9 +88,10 @@ export default function ForgotPassword() {
                 type="submit"
                 fullWidth
                 variant="contained"
+                disabled={isSubmitting}
                 sx={{ mt: 3, mb: 2, py: 1.5 }}
               >
-                {t('send_reset_link')}
+                {isSubmitting ? t('forgot_password_submitting') : t('send_reset_link')}
               </Button>
               <Box sx={{ textAlign: 'center' }}>
                 <Link component={RouterLink} to="/login" variant="body2">
@@ -77,11 +101,11 @@ export default function ForgotPassword() {
             </Box>
           ) : (
             <Box sx={{ mt: 2, textAlign: 'center' }}>
-              <Typography variant="body1" gutterBottom>
-                Check your email!
-              </Typography>
+              <Alert severity="success" sx={{ mb: 2, textAlign: 'left' }}>
+                {t('forgot_password_success')}
+              </Alert>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                We have sent a password reset link to <strong>{email}</strong>.
+                {t('forgot_password_success_detail', { email })}
               </Typography>
               <Link component={RouterLink} to="/login" variant="body2">
                 {t('back_to_login')}

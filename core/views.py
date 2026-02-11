@@ -2,10 +2,14 @@ import csv
 
 from django.http import HttpResponse
 from django.utils.dateparse import parse_datetime
-from rest_framework import generics, viewsets
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
+from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from common.audit import create_audit_log_from_request
 from common.permissions import RoleCapabilityPermission, user_has_capability
@@ -17,8 +21,12 @@ from core.serializers import (
     BranchSerializer,
     DeviceSerializer,
     EmailOrUsernameTokenObtainPairSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     UserRegistrationSerializer,
 )
+
+User = get_user_model()
 
 
 def scoped_queryset_for_user(queryset, user):
@@ -204,3 +212,44 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 ]
             )
         return response
+
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    serializer_class = PasswordResetRequestSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        user = User.objects.filter(email__iexact=email).first()
+        if user:
+            token = default_token_generator.make_token(user)
+            send_mail(
+                subject="Password reset request",
+                message=(
+                    "Use this password reset token to complete your password reset request:\n"
+                    f"Email: {user.email}\n"
+                    f"Token: {token}"
+                ),
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+
+        return Response(
+            {"detail": "If an account exists for this email, reset instructions were sent."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password reset successful."}, status=status.HTTP_200_OK)
