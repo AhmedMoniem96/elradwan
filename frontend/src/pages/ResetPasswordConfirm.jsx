@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   Alert,
@@ -19,8 +19,13 @@ import { useTranslation } from 'react-i18next';
 export default function ResetPasswordConfirm() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
-  const [email, setEmail] = useState(searchParams.get('email') || '');
-  const [token, setToken] = useState(searchParams.get('token') || '');
+  const { uid: uidParam, token: tokenParam } = useParams();
+  const initialEmail = useMemo(() => searchParams.get('email') || '', [searchParams]);
+  const initialUid = useMemo(() => searchParams.get('uid') || uidParam || '', [searchParams, uidParam]);
+  const initialToken = useMemo(() => searchParams.get('token') || tokenParam || '', [searchParams, tokenParam]);
+  const [email, setEmail] = useState(initialEmail);
+  const [uid, setUid] = useState(initialUid);
+  const [token, setToken] = useState(initialToken);
   const [newPassword, setNewPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -28,7 +33,7 @@ export default function ResetPasswordConfirm() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!email || !token || !newPassword) {
+    if ((!email && !uid) || !token || !newPassword) {
       setError(t('reset_password_confirm_required_fields'));
       return;
     }
@@ -37,11 +42,17 @@ export default function ResetPasswordConfirm() {
     setError('');
 
     try {
-      await axios.post('/api/v1/password-reset/confirm/', {
-        email,
+      const payload = {
         token,
         new_password: newPassword,
-      });
+      };
+      if (email) {
+        payload.email = email;
+      }
+      if (uid) {
+        payload.uid = uid;
+      }
+      await axios.post('/api/v1/password-reset/confirm/', payload);
       setSuccess(true);
     } catch (requestError) {
       console.error('Password reset confirm failed', requestError);
@@ -75,7 +86,6 @@ export default function ResetPasswordConfirm() {
               )}
               <TextField
                 margin="normal"
-                required
                 fullWidth
                 id="email"
                 label={t('email')}
@@ -83,6 +93,16 @@ export default function ResetPasswordConfirm() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+              />
+              <TextField
+                margin="normal"
+                fullWidth
+                id="uid"
+                label={t('reset_password_uid')}
+                name="uid"
+                value={uid}
+                onChange={(e) => setUid(e.target.value)}
+                helperText={t('reset_password_uid_helper')}
               />
               <TextField
                 margin="normal"

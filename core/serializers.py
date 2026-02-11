@@ -2,6 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth import password_validation
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import get_user_model
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from core.models import AuditLog, Branch, Device
@@ -51,7 +53,8 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = serializers.EmailField(required=False)
+    uid = serializers.CharField(required=False)
     token = serializers.CharField()
     new_password = serializers.CharField(write_only=True, min_length=8)
 
@@ -59,13 +62,27 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         "invalid_reset_credentials": "Invalid password reset credentials.",
     }
 
-    def validate(self, attrs):
-        email = attrs.get("email", "")
-        token = attrs.get("token", "")
+    def _get_user(self, attrs):
+        email = attrs.get("email")
+        uid = attrs.get("uid")
 
-        try:
-            user = User.objects.get(email__iexact=email)
-        except User.DoesNotExist:
+        if email:
+            return User.objects.filter(email__iexact=email).first()
+
+        if uid:
+            try:
+                user_id = force_str(urlsafe_base64_decode(uid))
+                return User.objects.filter(pk=user_id).first()
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        return None
+
+    def validate(self, attrs):
+        token = attrs.get("token", "")
+        user = self._get_user(attrs)
+
+        if not user:
             self.fail("invalid_reset_credentials")
 
         if not default_token_generator.check_token(user, token):

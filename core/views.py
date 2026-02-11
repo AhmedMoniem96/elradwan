@@ -1,10 +1,15 @@
 import csv
+import logging
+from urllib.parse import urlencode
 
+from django.conf import settings
 from django.http import HttpResponse
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -27,6 +32,7 @@ from core.serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def scoped_queryset_for_user(queryset, user):
@@ -226,17 +232,28 @@ class PasswordResetRequestView(generics.GenericAPIView):
         user = User.objects.filter(email__iexact=email).first()
         if user:
             token = default_token_generator.make_token(user)
-            send_mail(
-                subject="Password reset request",
-                message=(
-                    "Use this password reset token to complete your password reset request:\n"
-                    f"Email: {user.email}\n"
-                    f"Token: {token}"
-                ),
-                from_email=None,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            reset_path = f"{settings.PASSWORD_RESET_FRONTEND_URL.rstrip('/')}/{uid}/{token}"
+            query = urlencode({"email": user.email, "token": token})
+            reset_url = f"{reset_path}?{query}"
+            try:
+                send_mail(
+                    subject="Password reset request",
+                    message=(
+                        "We received a request to reset your password.\n\n"
+                        f"Reset your password using this link:\n{reset_url}\n\n"
+                        "If you did not request this change, you can ignore this message."
+                    ),
+                    from_email=settings.PASSWORD_RESET_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+            except Exception:
+                logger.exception(
+                    "password_reset_email_send_failed",
+                    extra={"user_id": str(user.id), "email": user.email},
+                )
+
 
         return Response(
             {"detail": "If an account exists for this email, reset instructions were sent."},

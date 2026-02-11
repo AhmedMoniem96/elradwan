@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
   Alert,
@@ -18,7 +18,9 @@ import { useTranslation } from 'react-i18next';
 
 export default function ForgotPassword() {
   const { t } = useTranslation();
-  const [email, setEmail] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialEmail = useMemo(() => searchParams.get('email') || '', [searchParams]);
+  const [email, setEmail] = useState(initialEmail);
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');

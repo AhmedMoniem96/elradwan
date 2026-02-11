@@ -45,6 +45,7 @@ function RoutedApp() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPasswordConfirm />} />
+          <Route path="/reset-password/:uid/:token" element={<ResetPasswordConfirm />} />
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Layout />}>
