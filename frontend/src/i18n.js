@@ -73,6 +73,15 @@ const resources = {
       ,"sync_actionable_status_message": "No failed events. If receipts are delayed, tap \"Retry pending push\" and ask the cashier to stay online."
       ,"sync_nav_attention": "Action needed"
       ,"sync_nav_running": "Running"
+      ,"smart_customer_search": "Smart customer search"
+      ,"pos_customer_search_placeholder": "Type phone number or customer name"
+      ,"select_customer": "Assign"
+      ,"clear_selected_customer": "Clear selected customer"
+      ,"no_customers_matched_search": "No customers matched your search"
+      ,"unnamed_customer": "Unnamed customer"
+      ,"no_phone": "No phone"
+      ,"invoice_payload_customer_hint": "Selected customer ID"
+      ,"none": "None"
     }
   },
   ar: {
@@ -145,6 +154,15 @@ const resources = {
       ,"sync_actionable_status_message": "لا توجد أحداث فاشلة. إذا تأخرت الإيصالات، اضغط \"إعادة محاولة الرفع\" وتأكد من بقاء الكاشير متصلاً."
       ,"sync_nav_attention": "يتطلب إجراء"
       ,"sync_nav_running": "يعمل"
+      ,"smart_customer_search": "بحث ذكي عن العميل"
+      ,"pos_customer_search_placeholder": "اكتب رقم الهاتف أو اسم العميل"
+      ,"select_customer": "تعيين"
+      ,"clear_selected_customer": "مسح العميل المحدد"
+      ,"no_customers_matched_search": "لا يوجد عملاء مطابقون لبحثك"
+      ,"unnamed_customer": "عميل بدون اسم"
+      ,"no_phone": "بدون هاتف"
+      ,"invoice_payload_customer_hint": "معرّف العميل المحدد"
+      ,"none": "لا يوجد"
     }
   }
 };

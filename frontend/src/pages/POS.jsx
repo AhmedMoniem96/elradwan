@@ -22,6 +22,7 @@ const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 const MAX_SEARCH_RESULTS = 8;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
+const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
 const scoreProductMatch = (product, queryTokens) => {
   if (queryTokens.length === 0) {
@@ -72,10 +73,42 @@ const scoreProductMatch = (product, queryTokens) => {
   return score;
 };
 
+const scoreCustomerMatch = (customer, query) => {
+  const normalizedQuery = normalize(query);
+  const normalizedPhoneQuery = normalizePhone(query);
+  if (!normalizedQuery && !normalizedPhoneQuery) {
+    return 0;
+  }
+
+  const customerName = normalize(customer.name);
+  const customerPhone = normalizePhone(customer.phone);
+  let score = 0;
+
+  if (normalizedPhoneQuery && customerPhone) {
+    if (customerPhone === normalizedPhoneQuery) {
+      score = Math.max(score, 1200);
+    } else if (customerPhone.startsWith(normalizedPhoneQuery)) {
+      score = Math.max(score, 900);
+    } else if (customerPhone.includes(normalizedPhoneQuery)) {
+      score = Math.max(score, 700);
+    }
+  }
+
+  if (normalizedQuery && customerName.includes(normalizedQuery)) {
+    score = Math.max(score, 450);
+  }
+
+  score -= Math.min(customerName.length, 40) / 20;
+  return score;
+};
+
 export default function POS() {
   const { t } = useTranslation();
   const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [cart, setCart] = useState([]);
   const [error, setError] = useState('');
   const [invoiceTotal, setInvoiceTotal] = useState('0');
@@ -97,6 +130,18 @@ export default function POS() {
     };
 
     fetchProducts();
+
+    const fetchCustomers = async () => {
+      try {
+        const response = await axios.get('/api/v1/customers/');
+        const payload = Array.isArray(response.data) ? response.data : response.data.results || [];
+        setCustomers(payload);
+      } catch (err) {
+        console.error('Failed to load customers for POS', err);
+      }
+    };
+
+    fetchCustomers();
   }, []);
 
   const searchableProducts = useMemo(() => {
@@ -147,6 +192,39 @@ export default function POS() {
     }
     return Math.min(value, remaining);
   }, [paymentValue, paymentInputMode, parsedInvoiceTotal, remaining]);
+
+  const searchableCustomers = useMemo(() => {
+    const query = customerQuery.trim();
+    if (!query) {
+      return [];
+    }
+
+    return customers
+      .map((customer) => ({
+        customer,
+        score: scoreCustomerMatch(customer, query),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_SEARCH_RESULTS)
+      .map((item) => item.customer);
+  }, [customerQuery, customers]);
+
+  const invoicePayload = useMemo(
+    () => ({
+      total: Number(parsedInvoiceTotal.toFixed(2)),
+      customer_id: selectedCustomer?.id,
+      lines: cart.map((item) => ({
+        product_id: item.id,
+        quantity: item.quantity,
+        unit_price: Number(item.unitPrice.toFixed(2)),
+      })),
+      payments: payments.map((payment) => ({
+        amount: payment.amount,
+      })),
+    }),
+    [cart, parsedInvoiceTotal, payments, selectedCustomer],
+  );
 
   const addToCart = (product) => {
     setCart((prev) => {
@@ -211,6 +289,16 @@ export default function POS() {
     setPaymentInputMode('amount');
   };
 
+  const handleSelectCustomer = (customer) => {
+    setSelectedCustomer(customer);
+    setCustomerQuery('');
+  };
+
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerQuery('');
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" gutterBottom>
@@ -257,6 +345,58 @@ export default function POS() {
               ) : (
                 <ListItem>
                   <ListItemText primary="No products matched your search" />
+                </ListItem>
+              )}
+            </List>
+          )}
+
+          <Divider sx={{ my: 2 }} />
+
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>{t('smart_customer_search')}</Typography>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder={t('pos_customer_search_placeholder')}
+            value={customerQuery}
+            onChange={(e) => setCustomerQuery(e.target.value)}
+          />
+
+          {selectedCustomer && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+              <Chip
+                color="secondary"
+                label={`${selectedCustomer.name}${selectedCustomer.phone ? ` • ${selectedCustomer.phone}` : ''}`}
+              />
+              <Button size="small" onClick={clearSelectedCustomer}>
+                {t('clear_selected_customer')}
+              </Button>
+            </Stack>
+          )}
+
+          {customerQuery && (
+            <List dense sx={{ mt: 1 }}>
+              {searchableCustomers.length > 0 ? (
+                searchableCustomers.map((customer) => (
+                  <ListItem
+                    key={customer.id}
+                    disablePadding
+                    secondaryAction={(
+                      <Button size="small" variant="contained" onClick={() => handleSelectCustomer(customer)}>
+                        {t('select_customer')}
+                      </Button>
+                    )}
+                  >
+                    <ListItemButton onClick={() => handleSelectCustomer(customer)}>
+                      <ListItemText
+                        primary={customer.name || t('unnamed_customer')}
+                        secondary={customer.phone || t('no_phone')}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))
+              ) : (
+                <ListItem>
+                  <ListItemText primary={t('no_customers_matched_search')} />
                 </ListItem>
               )}
             </List>
@@ -345,6 +485,9 @@ export default function POS() {
 
           <Typography>{t('amount_paid')}: ${paidSoFar.toFixed(2)}</Typography>
           <Typography>{t('remaining_balance')}: ${remaining.toFixed(2)}</Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+            {t('invoice_payload_customer_hint')}: {invoicePayload.customer_id || t('none')}
+          </Typography>
 
           <List>
             {payments.map((payment, index) => (
