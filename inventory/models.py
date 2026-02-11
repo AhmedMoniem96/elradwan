@@ -239,6 +239,8 @@ class InventoryAlert(models.Model):
     current_quantity = models.DecimalField(max_digits=12, decimal_places=2)
     threshold_quantity = models.DecimalField(max_digits=12, decimal_places=2)
     suggested_reorder_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    generated_po = models.ForeignKey("PurchaseOrder", on_delete=models.SET_NULL, null=True, blank=True, related_name="source_alerts")
+    po_grouping_token = models.CharField(max_length=128, null=True, blank=True)
     is_read = models.BooleanField(default=False)
     resolved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -249,6 +251,7 @@ class InventoryAlert(models.Model):
             models.Index(fields=["branch", "is_read", "severity"]),
             models.Index(fields=["warehouse", "product"]),
             models.Index(fields=["branch", "updated_at"]),
+            models.Index(fields=["po_grouping_token"]),
         ]
         constraints = [
             models.UniqueConstraint(

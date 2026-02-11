@@ -15,6 +15,7 @@ from inventory.views import (
     ProductViewSet,
     PurchaseOrderViewSet,
     PurchaseReceiveHistoryView,
+    ReorderSuggestionCreatePOView,
     ReorderSuggestionExportView,
     StockIntelligenceView,
     StockTransferViewSet,
@@ -45,4 +46,5 @@ urlpatterns = router.urls + [
     path("stock-intelligence/", StockIntelligenceView.as_view(), name="stock-intelligence"),
     path("alerts/mark-read/", AlertMarkReadView.as_view(), name="alerts-mark-read"),
     path("reorder-suggestions/export/", ReorderSuggestionExportView.as_view(), name="reorder-suggestions-export"),
+    path("reorder-suggestions/create-po/", ReorderSuggestionCreatePOView.as_view(), name="reorder-suggestions-create-po"),
 ]

@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from core.models import Branch
-from inventory.models import Product, StockMove, StockTransfer, Warehouse
+from inventory.models import InventoryAlert, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, Warehouse
 
 
 class BranchScopedInventoryTests(TestCase):
@@ -362,3 +362,65 @@ class RolePermissionInventoryTests(TestCase):
         self.client.force_authenticate(user=self.supervisor)
         response = self.client.post(f"/api/v1/admin/stock-transfers/{self.transfer.id}/approve/", {}, format="json")
         self.assertEqual(response.status_code, 200)
+
+
+class AlertToPurchaseOrderTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="AP", name="Alert PO")
+        self.admin = self.user_model.objects.create_user(
+            username="alert-po-admin",
+            password="pass1234",
+            is_staff=True,
+            branch=self.branch,
+        )
+
+        self.supplier = Supplier.objects.create(branch=self.branch, name="Supplier A", code="SUP-A")
+        self.warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+        self.product = Product.objects.create(
+            branch=self.branch,
+            sku="AP-001",
+            name="Alert Product",
+            price=Decimal("11.00"),
+            cost=Decimal("4.00"),
+            minimum_quantity=Decimal("5.00"),
+            reorder_quantity=Decimal("10.00"),
+            preferred_supplier=self.supplier,
+        )
+
+    def test_create_po_from_alerts_and_idempotency(self):
+        self.client.force_authenticate(user=self.admin)
+
+        stock_intel_res = self.client.get("/api/v1/stock-intelligence/")
+        self.assertEqual(stock_intel_res.status_code, 200)
+
+        create_res = self.client.post(
+            "/api/v1/reorder-suggestions/create-po/",
+            {"warehouse_id": str(self.warehouse.id), "severity": "critical", "min_stockout_days": 0},
+            format="json",
+        )
+        self.assertEqual(create_res.status_code, 201)
+        payload = create_res.json()
+        self.assertEqual(payload["created_count"], 1)
+
+        po_id = payload["created_purchase_orders"][0]["purchase_order_id"]
+        self.assertTrue(PurchaseOrder.objects.filter(id=po_id).exists())
+
+        alert = InventoryAlert.objects.get(branch=self.branch, warehouse=self.warehouse, product=self.product)
+        self.assertIsNotNone(alert.generated_po_id)
+        self.assertIsNotNone(alert.resolved_at)
+        self.assertTrue(alert.po_grouping_token)
+
+        repeat_res = self.client.post(
+            "/api/v1/reorder-suggestions/create-po/",
+            {"warehouse_id": str(self.warehouse.id), "severity": "critical", "min_stockout_days": 0},
+            format="json",
+        )
+        self.assertEqual(repeat_res.status_code, 200)
+        repeat_payload = repeat_res.json()
+        self.assertEqual(repeat_payload["created_count"], 0)
+
+        self.assertEqual(PurchaseOrder.objects.filter(branch=self.branch).count(), 1)
+

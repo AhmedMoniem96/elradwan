@@ -1,14 +1,16 @@
 import csv
+import hashlib
 import io
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
 from common.utils import emit_outbox
-from inventory.models import InventoryAlert, Product, StockMove, Warehouse
+from inventory.models import InventoryAlert, Product, PurchaseOrder, PurchaseOrderLine, StockMove, Warehouse
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -145,6 +147,8 @@ def refresh_inventory_alerts(branch_id, intelligence=None):
                 "current_quantity": row["on_hand"],
                 "threshold_quantity": row["minimum_quantity"],
                 "suggested_reorder_quantity": row["suggested_reorder_quantity"],
+                "generated_po": None,
+                "po_grouping_token": None,
                 "resolved_at": None,
             },
         )
@@ -215,3 +219,190 @@ def export_reorder_pdf_text(branch_id):
             )
         lines.append("")
     return "\n".join(lines)
+
+
+def build_alert_grouping_token(alerts):
+    parts = []
+    for alert in alerts:
+        parts.append(
+            ":".join(
+                [
+                    str(alert.branch_id),
+                    str(alert.warehouse_id),
+                    str(alert.product.preferred_supplier_id),
+                    str(alert.product_id),
+                    str(alert.severity),
+                    str(alert.threshold_quantity),
+                    str(alert.suggested_reorder_quantity),
+                ]
+            )
+        )
+    raw = "|".join(sorted(parts))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _next_po_number(branch_id):
+    prefix = timezone.now().strftime("PO-%Y%m%d-")
+    existing = list(PurchaseOrder.objects.filter(branch_id=branch_id, po_number__startswith=prefix).values_list("po_number", flat=True))
+    serial = 1
+    if existing:
+        serial = max([int(str(number).split("-")[-1]) for number in existing if str(number).split("-")[-1].isdigit()] + [0]) + 1
+    return f"{prefix}{serial:04d}"
+
+
+def create_purchase_orders_from_alerts(branch_id, *, warehouse_id=None, severity=None, min_stockout_days=None):
+    refresh_inventory_alerts(branch_id)
+
+    alerts_qs = InventoryAlert.objects.filter(
+        branch_id=branch_id,
+        resolved_at__isnull=True,
+        product__preferred_supplier__isnull=False,
+    ).select_related("product", "warehouse", "product__preferred_supplier")
+
+    if warehouse_id:
+        alerts_qs = alerts_qs.filter(warehouse_id=warehouse_id)
+    if severity:
+        alerts_qs = alerts_qs.filter(severity=severity)
+
+    alerts = list(alerts_qs)
+    if min_stockout_days is not None:
+        alerts = [
+            alert
+            for alert in alerts
+            if alert.current_quantity <= 0 and (timezone.now() - alert.updated_at).days >= min_stockout_days
+        ]
+
+    grouped = defaultdict(list)
+    for alert in alerts:
+        grouped[(alert.product.preferred_supplier_id, alert.warehouse_id)].append(alert)
+
+    created_purchase_orders = []
+    skipped_groups = []
+
+    with transaction.atomic():
+        for (supplier_id, warehouse_group_id), grouped_alerts in grouped.items():
+            token = build_alert_grouping_token(grouped_alerts)
+            reused_po_id = (
+                InventoryAlert.objects.filter(branch_id=branch_id, po_grouping_token=token, generated_po__isnull=False)
+                .values_list("generated_po_id", flat=True)
+                .first()
+            )
+            if reused_po_id:
+                now = timezone.now()
+                InventoryAlert.objects.filter(id__in=[alert.id for alert in grouped_alerts]).update(
+                    generated_po_id=reused_po_id,
+                    po_grouping_token=token,
+                    is_read=True,
+                    resolved_at=now,
+                    updated_at=now,
+                )
+                skipped_groups.append(
+                    {
+                        "supplier_id": str(supplier_id),
+                        "warehouse_id": str(warehouse_group_id),
+                        "grouping_token": token,
+                        "existing_po_id": str(reused_po_id),
+                        "alert_ids": [str(alert.id) for alert in grouped_alerts],
+                    }
+                )
+                continue
+
+            po = PurchaseOrder.objects.create(
+                branch_id=branch_id,
+                supplier_id=supplier_id,
+                po_number=_next_po_number(branch_id),
+                status=PurchaseOrder.Status.DRAFT,
+                notes=f"Auto-generated from alerts for warehouse {warehouse_group_id}",
+            )
+
+            subtotal = Decimal("0")
+            tax_total = Decimal("0")
+            line_payload = []
+            for alert in grouped_alerts:
+                quantity = Decimal(alert.suggested_reorder_quantity or 0)
+                if quantity <= 0:
+                    quantity = max(Decimal(alert.threshold_quantity or 0) - Decimal(alert.current_quantity or 0), Decimal("0"))
+                if quantity <= 0:
+                    continue
+
+                unit_cost = Decimal(alert.product.cost or 0)
+                tax_rate = Decimal(alert.product.tax_rate or 0)
+                line_subtotal = quantity * unit_cost
+                line_tax = line_subtotal * tax_rate
+                line_total = _to_money(line_subtotal + line_tax)
+
+                line = PurchaseOrderLine.objects.create(
+                    purchase_order=po,
+                    product=alert.product,
+                    quantity=quantity,
+                    unit_cost=unit_cost,
+                    tax_rate=tax_rate,
+                    line_total=line_total,
+                )
+                subtotal += line_subtotal
+                tax_total += line_tax
+                line_payload.append(
+                    {
+                        "line_id": str(line.id),
+                        "product_id": str(alert.product_id),
+                        "product_name": alert.product.name,
+                        "quantity": str(quantity),
+                        "warehouse_id": str(alert.warehouse_id),
+                    }
+                )
+
+            if not line_payload:
+                po.delete()
+                continue
+
+            po.subtotal = _to_money(subtotal)
+            po.tax_total = _to_money(tax_total)
+            po.total = _to_money(subtotal + tax_total)
+            po.save(update_fields=["subtotal", "tax_total", "total", "updated_at"])
+
+            now = timezone.now()
+            InventoryAlert.objects.filter(id__in=[alert.id for alert in grouped_alerts]).update(
+                generated_po=po,
+                po_grouping_token=token,
+                is_read=True,
+                resolved_at=now,
+                updated_at=now,
+            )
+
+            for alert in grouped_alerts:
+                emit_outbox(
+                    branch_id=branch_id,
+                    entity="inventory_alert_update",
+                    entity_id=alert.id,
+                    op="upsert",
+                    payload={
+                        "alert_id": str(alert.id),
+                        "is_read": True,
+                        "resolved_at": now.isoformat(),
+                        "generated_po_id": str(po.id),
+                        "po_grouping_token": token,
+                    },
+                )
+
+            emit_outbox(branch_id, "purchase_order", po.id, "upsert", {"purchase_order_id": str(po.id), "status": po.status})
+
+            created_purchase_orders.append(
+                {
+                    "purchase_order_id": str(po.id),
+                    "po_number": po.po_number,
+                    "supplier_id": str(supplier_id),
+                    "warehouse_id": str(warehouse_group_id),
+                    "grouping_token": token,
+                    "line_count": len(line_payload),
+                    "alert_ids": [str(alert.id) for alert in grouped_alerts],
+                    "lines": line_payload,
+                    "total": str(po.total),
+                }
+            )
+
+    return {
+        "created_purchase_orders": created_purchase_orders,
+        "skipped_groups": skipped_groups,
+        "created_count": len(created_purchase_orders),
+        "skipped_count": len(skipped_groups),
+    }
