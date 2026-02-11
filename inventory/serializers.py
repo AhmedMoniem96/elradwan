@@ -36,6 +36,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     preferred_supplier_name = serializers.CharField(source="preferred_supplier.name", read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -46,6 +47,13 @@ class ProductSerializer(serializers.ModelSerializer):
             "sku",
             "barcode",
             "name",
+            "description",
+            "image",
+            "image_url",
+            "brand",
+            "unit",
+            "is_sellable_online",
+            "slug",
             "price",
             "cost",
             "tax_rate",
@@ -59,6 +67,14 @@ class ProductSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return ""
+        request = self.context.get("request")
+        if request is None:
+            return obj.image.url
+        return request.build_absolute_uri(obj.image.url)
 
 
 class WarehouseSerializer(serializers.ModelSerializer):

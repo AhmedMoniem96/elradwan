@@ -9,8 +9,10 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Avatar,
   List,
   ListItem,
+  ListItemAvatar,
   ListItemButton,
   ListItemText,
   Paper,
@@ -629,6 +631,9 @@ export default function POS() {
                             }
                           >
                             <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
+                              <ListItemAvatar>
+                                <Avatar variant="rounded" src={entry.image_url || ''} alt={entry.name} sx={{ width: 36, height: 36 }} />
+                              </ListItemAvatar>
                               <ListItemText
                                 primary={entry.name}
                                 secondary={`${entry.sku} • ${formatMoney(entry.price)}${entry.barcode ? ` • ${entry.barcode}` : ''}${entry.categoryName ? ` • ${entry.categoryName}` : ''}`}
