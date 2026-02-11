@@ -166,3 +166,63 @@ class AuditLogTests(TestCase):
 
         self.assertEqual(patch_res.status_code, 405)
         self.assertEqual(delete_res.status_code, 405)
+
+
+class PasswordResetTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.user = self.user_model.objects.create_user(
+            username="reset-user",
+            email="reset@example.com",
+            password="old-pass-123",
+        )
+
+    def test_password_reset_request_returns_generic_message_for_known_and_unknown_email(self):
+        known_response = self.client.post(
+            "/api/v1/password-reset/request/",
+            {"email": self.user.email},
+            format="json",
+        )
+        unknown_response = self.client.post(
+            "/api/v1/password-reset/request/",
+            {"email": "missing@example.com"},
+            format="json",
+        )
+
+        self.assertEqual(known_response.status_code, 200)
+        self.assertEqual(unknown_response.status_code, 200)
+        self.assertEqual(known_response.json()["detail"], unknown_response.json()["detail"])
+
+    def test_password_reset_confirm_updates_password_with_valid_token(self):
+        from django.contrib.auth.tokens import default_token_generator
+
+        token = default_token_generator.make_token(self.user)
+        response = self.client.post(
+            "/api/v1/password-reset/confirm/",
+            {
+                "email": self.user.email,
+                "token": token,
+                "new_password": "new-safe-pass-123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("new-safe-pass-123"))
+
+    def test_password_reset_confirm_rejects_invalid_token(self):
+        response = self.client.post(
+            "/api/v1/password-reset/confirm/",
+            {
+                "email": self.user.email,
+                "token": "invalid-token",
+                "new_password": "new-safe-pass-123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("old-pass-123"))

@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.contrib.auth import password_validation
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -42,6 +44,42 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
             except User.DoesNotExist:
                 pass
         return super().validate(attrs)
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    default_error_messages = {
+        "invalid_reset_credentials": "Invalid password reset credentials.",
+    }
+
+    def validate(self, attrs):
+        email = attrs.get("email", "")
+        token = attrs.get("token", "")
+
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            self.fail("invalid_reset_credentials")
+
+        if not default_token_generator.check_token(user, token):
+            self.fail("invalid_reset_credentials")
+
+        password_validation.validate_password(attrs["new_password"], user=user)
+        attrs["user"] = user
+        return attrs
+
+    def save(self):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user
 
 class BranchSerializer(serializers.ModelSerializer):
     class Meta:
