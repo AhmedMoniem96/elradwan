@@ -22,6 +22,7 @@ from sales.serializers import (
     CustomerSerializer,
     InvoiceSerializer,
     PaymentSerializer,
+    RecentActivityItemSerializer,
     ReturnSerializer,
     ShiftSummarySerializer,
     get_shift_report,
@@ -104,7 +105,12 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
-    permission_action_map = {"list": "sales.dashboard.view", "retrieve": "sales.dashboard.view", "dashboard_summary": "sales.dashboard.view"}
+    permission_action_map = {
+        "list": "sales.dashboard.view",
+        "retrieve": "sales.dashboard.view",
+        "dashboard_summary": "sales.dashboard.view",
+        "recent_activity": "sales.dashboard.view",
+    }
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
@@ -125,6 +131,60 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             "variance_total": qs.filter(closed_at__isnull=False).aggregate(total=Sum("variance"))["total"] or Decimal("0.00"),
         }
         return Response(ShiftSummarySerializer(summary).data)
+
+    @action(detail=False, methods=["get"], url_path="recent-activity")
+    def recent_activity(self, request):
+        invoice_rows = list(
+            self.get_queryset()
+            .select_related("customer")
+            .values(
+                "invoice_number",
+                "total",
+                "status",
+                "created_at",
+                "customer__name",
+            )
+            .order_by("-created_at")[:10]
+        )
+
+        payment_rows = list(
+            Payment.objects.select_related("invoice__customer")
+            .filter(invoice__in=self.get_queryset())
+            .values(
+                "invoice__invoice_number",
+                "amount",
+                "method",
+                "paid_at",
+                "invoice__customer__name",
+            )
+            .order_by("-paid_at")[:10]
+        )
+
+        activities = [
+            {
+                "transaction_type": "invoice",
+                "reference_number": row["invoice_number"],
+                "customer": row["customer__name"] or "",
+                "amount": row["total"],
+                "method_status": row["status"],
+                "timestamp": row["created_at"],
+            }
+            for row in invoice_rows
+        ] + [
+            {
+                "transaction_type": "payment",
+                "reference_number": row["invoice__invoice_number"],
+                "customer": row["invoice__customer__name"] or "",
+                "amount": row["amount"],
+                "method_status": row["method"],
+                "timestamp": row["paid_at"],
+            }
+            for row in payment_rows
+        ]
+
+        activities.sort(key=lambda item: item["timestamp"] or timezone.now(), reverse=True)
+        serializer = RecentActivityItemSerializer(activities[:10], many=True)
+        return Response(serializer.data)
 
 
 class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):

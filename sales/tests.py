@@ -79,6 +79,54 @@ class BranchScopedSalesTests(TestCase):
         created = Customer.objects.get(id=response.json()["id"])
         self.assertEqual(created.branch_id, self.branch_a.id)
 
+    def test_recent_activity_is_branch_scoped_and_compact(self):
+        invoice_a = Invoice.objects.create(
+            branch=self.branch_a,
+            device=self.device_a,
+            user=self.admin_a,
+            customer=self.customer_a,
+            invoice_number="INV-A-1",
+            local_invoice_no="L-A-1",
+            subtotal=Decimal("55.00"),
+            discount_total=Decimal("0.00"),
+            tax_total=Decimal("0.00"),
+            total=Decimal("55.00"),
+            event_id=uuid.uuid4(),
+            created_at=timezone.now(),
+        )
+        Payment.objects.create(
+            invoice=invoice_a,
+            method=Payment.Method.CARD,
+            amount=Decimal("20.00"),
+            paid_at=timezone.now(),
+            event_id=uuid.uuid4(),
+            device=self.device_a,
+        )
+        Payment.objects.create(
+            invoice=self.invoice_b,
+            method=Payment.Method.CASH,
+            amount=Decimal("10.00"),
+            paid_at=timezone.now(),
+            event_id=uuid.uuid4(),
+            device=self.device_b,
+        )
+
+        self.client.force_authenticate(user=self.admin_a)
+        response = self.client.get("/api/v1/invoices/recent-activity/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload)
+
+        for item in payload:
+            self.assertEqual(
+                sorted(item.keys()),
+                ["amount", "customer", "method_status", "reference_number", "timestamp", "transaction_type"],
+            )
+            self.assertIn(item["transaction_type"], ["invoice", "payment"])
+            self.assertEqual(item["reference_number"], "INV-A-1")
+            self.assertEqual(item["customer"], self.customer_a.name)
+
     def test_user_cannot_create_payment_for_other_branch_invoice(self):
         self.client.force_authenticate(user=self.admin_a)
 
