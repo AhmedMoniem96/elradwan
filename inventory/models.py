@@ -291,3 +291,27 @@ class InventoryAlert(models.Model):
                 condition=models.Q(resolved_at__isnull=True),
             ),
         ]
+
+
+class DemandForecast(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    snapshot_at = models.DateTimeField()
+    daily_demand = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    demand_7d = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    demand_14d = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    demand_30d = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    on_hand = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    days_of_cover = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    projected_stockout_date = models.DateField(null=True, blank=True)
+    recommended_reorder_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "snapshot_at"]),
+            models.Index(fields=["branch", "warehouse", "product", "snapshot_at"]),
+            models.Index(fields=["branch", "projected_stockout_date"]),
+        ]

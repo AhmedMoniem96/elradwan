@@ -60,6 +60,7 @@ export default function Inventory() {
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ supplier_id: '', amount: '0.00', method: 'bank_transfer', paid_at: new Date().toISOString().slice(0, 16), reference: '', notes: '' });
   const [stockIntel, setStockIntel] = useState({ rows: [], low_count: 0, critical_count: 0 });
+  const [stockoutRisk, setStockoutRisk] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [poPreview, setPoPreview] = useState(null);
   const [poFilters, setPoFilters] = useState({ branch_id: '', warehouse_id: '', severity: '', min_stockout_days: '' });
@@ -79,12 +80,13 @@ export default function Inventory() {
 
   const loadData = async () => {
     try {
-      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, unreadAlertsRes, suppliersRes, agingRes] = await Promise.all([
+      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, stockoutRiskRes, unreadAlertsRes, suppliersRes, agingRes] = await Promise.all([
         axios.get('/api/v1/products/'),
         axios.get('/api/v1/categories/'),
         axios.get('/api/v1/warehouses/'),
         axios.get('/api/v1/stock-transfers/'),
         axios.get('/api/v1/stock-intelligence/'),
+        axios.get('/api/v1/stock-intelligence/stockout-risk/?days=30'),
         axios.get('/api/v1/alerts/unread/'),
         axios.get('/api/v1/suppliers/'),
         axios.get('/api/v1/reports/supplier-aging/'),
@@ -94,6 +96,7 @@ export default function Inventory() {
       setWarehouses(warehousesRes.data);
       setTransfers(transferRes.data);
       setStockIntel(stockRes.data || { rows: [] });
+      setStockoutRisk(stockoutRiskRes.data || []);
       setAlerts(unreadAlertsRes.data || []);
       setSuppliers(suppliersRes.data || []);
       setSupplierAging(agingRes.data || []);
@@ -446,6 +449,9 @@ export default function Inventory() {
                 <TableCell>{t('on_hand')}</TableCell>
                 <TableCell>{t('minimum')}</TableCell>
                 <TableCell>{t('reorder')}</TableCell>
+                <TableCell>{t('days_of_cover', 'Days of cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date', 'Projected stockout date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty', 'Recommended reorder qty')}</TableCell>
                 <TableCell>{t('severity')}</TableCell>
               </TableRow>
             </TableHead>
@@ -458,6 +464,9 @@ export default function Inventory() {
                   <TableCell>{row.on_hand}</TableCell>
                   <TableCell>{row.minimum_quantity}</TableCell>
                   <TableCell>{row.suggested_reorder_quantity}</TableCell>
+                  <TableCell>{row.days_of_cover || '-'}</TableCell>
+                  <TableCell>{row.projected_stockout_date || '-'}</TableCell>
+                  <TableCell>{row.recommended_reorder_quantity || row.suggested_reorder_quantity}</TableCell>
                   <TableCell>
                     <Chip size="small" color={row.severity === 'critical' ? 'error' : 'warning'} label={row.severity} />
                   </TableCell>
@@ -483,6 +492,36 @@ export default function Inventory() {
             ))}
           </Box>
         )}
+      </Paper>
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>{t('stockout_risk_30d', 'Stockout risk (next 30 days)')}</Typography>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('warehouse')}</TableCell>
+                <TableCell>{t('product')}</TableCell>
+                <TableCell>{t('on_hand')}</TableCell>
+                <TableCell>{t('days_of_cover', 'Days of cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date', 'Projected stockout date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty', 'Recommended reorder qty')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(stockoutRisk || []).map((row) => (
+                <TableRow key={`risk-${row.warehouse_id}-${row.product_id}`}>
+                  <TableCell>{row.warehouse_name}</TableCell>
+                  <TableCell>{row.product_name}</TableCell>
+                  <TableCell>{row.on_hand}</TableCell>
+                  <TableCell>{row.days_of_cover || '-'}</TableCell>
+                  <TableCell>{row.projected_stockout_date || '-'}</TableCell>
+                  <TableCell>{row.recommended_reorder_quantity}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>
