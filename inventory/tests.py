@@ -2,11 +2,13 @@ import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import Branch
-from inventory.models import InventoryAlert, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, Warehouse
+from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, Warehouse
 
 
 class BranchScopedInventoryTests(TestCase):
@@ -424,3 +426,61 @@ class AlertToPurchaseOrderTests(TestCase):
 
         self.assertEqual(PurchaseOrder.objects.filter(branch=self.branch).count(), 1)
 
+
+
+class ForecastingApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="FC", name="Forecast")
+        self.admin = self.user_model.objects.create_user(
+            username="forecast-admin",
+            password="pass1234",
+            is_staff=True,
+            role="admin",
+            branch=self.branch,
+        )
+
+        self.product = Product.objects.create(branch=self.branch, sku="FC-001", name="Forecast Item", price=Decimal("10.00"))
+        self.warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+        DemandForecast.objects.create(
+            branch=self.branch,
+            warehouse=self.warehouse,
+            product=self.product,
+            snapshot_at=timezone.now(),
+            daily_demand=Decimal("2.00"),
+            demand_7d=Decimal("14.00"),
+            demand_14d=Decimal("28.00"),
+            demand_30d=Decimal("60.00"),
+            on_hand=Decimal("10.00"),
+            days_of_cover=Decimal("5.00"),
+            projected_stockout_date=timezone.localdate(),
+            recommended_reorder_quantity=Decimal("50.00"),
+        )
+
+    def test_stock_intelligence_includes_forecast_fields(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get("/api/v1/stock-intelligence/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["rows"])
+        row = response.json()["rows"][0]
+        self.assertIn("days_of_cover", row)
+        self.assertIn("projected_stockout_date", row)
+        self.assertIn("recommended_reorder_quantity", row)
+
+    def test_forecast_and_stockout_risk_endpoints(self):
+        self.client.force_authenticate(user=self.admin)
+
+        forecast_response = self.client.get("/api/v1/stock-intelligence/forecast/")
+        risk_response = self.client.get("/api/v1/stock-intelligence/stockout-risk/?days=30")
+
+        self.assertEqual(forecast_response.status_code, 200)
+        self.assertEqual(risk_response.status_code, 200)
+        self.assertEqual(len(forecast_response.json()), 1)
+        self.assertEqual(forecast_response.json()[0]["recommended_reorder_quantity"], "50.00")
+
+    def test_refresh_forecasts_command_runs(self):
+        call_command("refresh_forecasts", branch_id=str(self.branch.id), lookback_days=30)

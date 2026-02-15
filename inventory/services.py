@@ -10,6 +10,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from common.utils import emit_outbox
+from inventory.forecasting import latest_forecasts_for_branch
 from inventory.models import InventoryAlert, Product, PurchaseOrder, PurchaseOrderLine, StockMove, Warehouse
 
 MONEY_QUANT = Decimal("0.01")
@@ -73,6 +74,10 @@ def ensure_transfer_stock_available(transfer):
 def compute_stock_intelligence(branch_id):
     products = Product.objects.filter(branch_id=branch_id, is_active=True)
     warehouses = Warehouse.objects.filter(branch_id=branch_id, is_active=True)
+    latest_forecasts = {
+        (forecast.warehouse_id, forecast.product_id): forecast
+        for forecast in latest_forecasts_for_branch(branch_id)
+    }
 
     rows = []
     low_count = 0
@@ -96,6 +101,7 @@ def compute_stock_intelligence(branch_id):
                 critical_count += 1
 
             suggested = reorder_qty if reorder_qty > 0 else max(minimum - on_hand, Decimal("0"))
+            forecast = latest_forecasts.get((warehouse.id, product.id))
             rows.append(
                 {
                     "warehouse_id": warehouse.id,
@@ -110,6 +116,12 @@ def compute_stock_intelligence(branch_id):
                     "on_hand": on_hand,
                     "severity": severity,
                     "suggested_reorder_quantity": max(suggested, Decimal("0")),
+                    "forecast_7d": forecast.demand_7d if forecast else Decimal("0"),
+                    "forecast_14d": forecast.demand_14d if forecast else Decimal("0"),
+                    "forecast_30d": forecast.demand_30d if forecast else Decimal("0"),
+                    "days_of_cover": forecast.days_of_cover if forecast else None,
+                    "projected_stockout_date": forecast.projected_stockout_date if forecast else None,
+                    "recommended_reorder_quantity": forecast.recommended_reorder_quantity if forecast else max(suggested, Decimal("0")),
                 }
             )
 

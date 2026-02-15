@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from decimal import Decimal
 
@@ -21,6 +21,7 @@ from core.models import User
 from core.views import scoped_queryset_for_user
 from inventory.models import (
     Category,
+    DemandForecast,
     InventoryAlert,
     Product,
     PurchaseOrder,
@@ -31,6 +32,7 @@ from inventory.models import (
     SupplierPayment,
     Warehouse,
 )
+from inventory.forecasting import latest_forecasts_for_branch
 from inventory.serializers import (
     CategorySerializer,
     GoodsReceiptSerializer,
@@ -498,6 +500,12 @@ class StockIntelligenceView(APIView):
                 "reorder_quantity": str(row["reorder_quantity"]),
                 "on_hand": str(row["on_hand"]),
                 "suggested_reorder_quantity": str(row["suggested_reorder_quantity"]),
+                "forecast_7d": str(row["forecast_7d"]),
+                "forecast_14d": str(row["forecast_14d"]),
+                "forecast_30d": str(row["forecast_30d"]),
+                "days_of_cover": str(row["days_of_cover"]) if row["days_of_cover"] is not None else None,
+                "projected_stockout_date": row["projected_stockout_date"],
+                "recommended_reorder_quantity": str(row["recommended_reorder_quantity"]),
             }
             for row in intelligence["rows"]
             if row["severity"]
@@ -510,6 +518,73 @@ class StockIntelligenceView(APIView):
                 "unread_alert_count": intelligence["unread_alert_count"],
                 "rows": serialized_rows,
             }
+        )
+
+
+class StockForecastView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view"}
+
+    def get(self, request):
+        rows = latest_forecasts_for_branch(request.user.branch_id)
+        payload = [
+            {
+                "warehouse_id": str(row.warehouse_id),
+                "warehouse_name": row.warehouse.name,
+                "product_id": str(row.product_id),
+                "product_name": row.product.name,
+                "snapshot_at": row.snapshot_at,
+                "daily_demand": str(row.daily_demand),
+                "demand_7d": str(row.demand_7d),
+                "demand_14d": str(row.demand_14d),
+                "demand_30d": str(row.demand_30d),
+                "on_hand": str(row.on_hand),
+                "days_of_cover": str(row.days_of_cover) if row.days_of_cover is not None else None,
+                "projected_stockout_date": row.projected_stockout_date,
+                "recommended_reorder_quantity": str(row.recommended_reorder_quantity),
+            }
+            for row in rows
+        ]
+        return Response(payload)
+
+
+class StockoutRiskView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view"}
+
+    def get(self, request):
+        days = request.query_params.get("days", "14")
+        try:
+            days = max(int(days), 0)
+        except (TypeError, ValueError):
+            raise ValidationError({"days": "Must be an integer."})
+
+        cutoff = timezone.localdate() + timedelta(days=days)
+        latest_ts = DemandForecast.objects.filter(branch_id=request.user.branch_id).order_by("-snapshot_at").values_list("snapshot_at", flat=True).first()
+        if not latest_ts:
+            return Response([])
+
+        qs = DemandForecast.objects.filter(
+            branch_id=request.user.branch_id,
+            snapshot_at=latest_ts,
+            projected_stockout_date__isnull=False,
+            projected_stockout_date__lte=cutoff,
+        ).select_related("warehouse", "product").order_by("projected_stockout_date", "warehouse__name", "product__name")
+
+        return Response(
+            [
+                {
+                    "warehouse_id": str(row.warehouse_id),
+                    "warehouse_name": row.warehouse.name,
+                    "product_id": str(row.product_id),
+                    "product_name": row.product.name,
+                    "on_hand": str(row.on_hand),
+                    "days_of_cover": str(row.days_of_cover) if row.days_of_cover is not None else None,
+                    "projected_stockout_date": row.projected_stockout_date,
+                    "recommended_reorder_quantity": str(row.recommended_reorder_quantity),
+                }
+                for row in qs
+            ]
         )
 
 
