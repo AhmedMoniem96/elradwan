@@ -9,6 +9,7 @@ import AuditLogs from './pages/AuditLogs';
 import Branches from './pages/Branches';
 import Warehouses from './pages/Warehouses';
 import Reports from './pages/Reports';
+import Suppliers from './pages/Suppliers';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -58,6 +59,7 @@ function RoutedApp() {
               </Route>
               <Route element={<ProtectedRoute capability="inventory.view" />}>
                 <Route path="inventory" element={<Inventory />} />
+                <Route path="suppliers" element={<Suppliers />} />
               </Route>
               <Route element={<ProtectedRoute capability="sync.view" />}>
                 <Route path="sync" element={<Sync />} />

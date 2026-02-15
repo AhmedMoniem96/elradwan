@@ -26,6 +26,7 @@ import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import WarehouseIcon from '@mui/icons-material/Warehouse';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import TranslateIcon from '@mui/icons-material/Translate';
@@ -297,12 +298,20 @@ export default function Layout() {
             </ListItemButton>
           )}
           {can('inventory.view') && (
-            <ListItemButton onClick={() => navigate('/inventory')}>
-              <ListItemIcon>
-                <BarChartIcon />
-              </ListItemIcon>
-              <ListItemText primary={t('inventory')} />
-            </ListItemButton>
+            <>
+              <ListItemButton onClick={() => navigate('/inventory')}>
+                <ListItemIcon>
+                  <BarChartIcon />
+                </ListItemIcon>
+                <ListItemText primary={t('inventory')} />
+              </ListItemButton>
+              <ListItemButton onClick={() => navigate('/suppliers')}>
+                <ListItemIcon>
+                  <LocalShippingIcon />
+                </ListItemIcon>
+                <ListItemText primary={t('suppliers')} />
+              </ListItemButton>
+            </>
           )}
           {can('sales.dashboard.view') && (
             <ListItemButton onClick={() => navigate('/reports')}>
