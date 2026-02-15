@@ -55,6 +55,10 @@ export default function Inventory() {
   const [categories, setCategories] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [transfers, setTransfers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierAging, setSupplierAging] = useState([]);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ supplier_id: '', amount: '0.00', method: 'bank_transfer', paid_at: new Date().toISOString().slice(0, 16), reference: '', notes: '' });
   const [stockIntel, setStockIntel] = useState({ rows: [], low_count: 0, critical_count: 0 });
   const [alerts, setAlerts] = useState([]);
   const [poPreview, setPoPreview] = useState(null);
@@ -75,13 +79,15 @@ export default function Inventory() {
 
   const loadData = async () => {
     try {
-      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, unreadAlertsRes] = await Promise.all([
+      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, unreadAlertsRes, suppliersRes, agingRes] = await Promise.all([
         axios.get('/api/v1/products/'),
         axios.get('/api/v1/categories/'),
         axios.get('/api/v1/warehouses/'),
         axios.get('/api/v1/stock-transfers/'),
         axios.get('/api/v1/stock-intelligence/'),
         axios.get('/api/v1/alerts/unread/'),
+        axios.get('/api/v1/suppliers/'),
+        axios.get('/api/v1/reports/supplier-aging/'),
       ]);
       setProducts(productsRes.data);
       setCategories(categoriesRes.data || []);
@@ -89,6 +95,8 @@ export default function Inventory() {
       setTransfers(transferRes.data);
       setStockIntel(stockRes.data || { rows: [] });
       setAlerts(unreadAlertsRes.data || []);
+      setSuppliers(suppliersRes.data || []);
+      setSupplierAging(agingRes.data || []);
       setDraftStatus(
         productsRes.data.reduce((acc, p) => {
           acc[p.id] = p.stock_status || '';
@@ -278,6 +286,50 @@ export default function Inventory() {
       console.error('Failed to complete transfer', err);
       setError(t('inventory_complete_transfer_error'));
     }
+  };
+
+  const submitSupplierPayment = async () => {
+    if (!paymentForm.supplier_id) return;
+    setIsSavingPayment(true);
+    try {
+      await axios.post(`/api/v1/suppliers/${paymentForm.supplier_id}/payments/`, {
+        amount: paymentForm.amount,
+        method: paymentForm.method,
+        paid_at: new Date(paymentForm.paid_at).toISOString(),
+        reference: paymentForm.reference,
+        notes: paymentForm.notes,
+      });
+      setPaymentForm((prev) => ({ ...prev, amount: '0.00', reference: '', notes: '' }));
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save supplier payment', err);
+      setError(t('inventory_supplier_payment_error', 'Failed to save supplier payment.'));
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  const exportSupplierAging = () => {
+    const header = ['Supplier', 'Total Purchased', 'Amount Paid', 'Balance Due', 'Current', '30 Days', '60 Days', '90+ Days'];
+    const rows = supplierAging.map((row) => [
+      row.supplier_name,
+      row.total_purchased,
+      row.amount_paid,
+      row.balance_due,
+      row.aging?.current || 0,
+      row.aging?.['30'] || 0,
+      row.aging?.['60'] || 0,
+      row.aging?.['90_plus'] || 0,
+    ]);
+    const csv = [header, ...rows].map((line) => line.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'supplier-aging.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -493,6 +545,66 @@ export default function Inventory() {
                       </Button>
                     </Stack>
                   </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
+          <Typography variant="h6">{t('supplier_ledger', 'Supplier ledger')}</Typography>
+          <Button size="small" variant="outlined" onClick={exportSupplierAging}>{t('export_csv')}</Button>
+        </Stack>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
+          <TextField
+            select
+            label={t('supplier')}
+            value={paymentForm.supplier_id}
+            onChange={(e) => setPaymentForm((prev) => ({ ...prev, supplier_id: e.target.value }))}
+            fullWidth
+          >
+            <MenuItem value="">{t('select_supplier', 'Select supplier')}</MenuItem>
+            {suppliers.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.name}</MenuItem>)}
+          </TextField>
+          <TextField label={t('amount_paid', 'Amount paid')} value={paymentForm.amount} onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))} fullWidth />
+          <TextField select label={t('method', 'Method')} value={paymentForm.method} onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))} fullWidth>
+            <MenuItem value="cash">Cash</MenuItem>
+            <MenuItem value="bank_transfer">Bank transfer</MenuItem>
+            <MenuItem value="card">Card</MenuItem>
+            <MenuItem value="cheque">Cheque</MenuItem>
+            <MenuItem value="other">Other</MenuItem>
+          </TextField>
+          <TextField type="datetime-local" label={t('paid_at', 'Paid at')} value={paymentForm.paid_at} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paid_at: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+          <Button variant="contained" disabled={isSavingPayment || !paymentForm.supplier_id} onClick={submitSupplierPayment}>{t('save')}</Button>
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('supplier')}</TableCell>
+                <TableCell>{t('total', 'Total')}</TableCell>
+                <TableCell>{t('amount_paid', 'Amount paid')}</TableCell>
+                <TableCell>{t('balance_due', 'Balance due')}</TableCell>
+                <TableCell>{t('current', 'Current')}</TableCell>
+                <TableCell>{t('days_30', '30 days')}</TableCell>
+                <TableCell>{t('days_60', '60 days')}</TableCell>
+                <TableCell>{t('days_90', '90+ days')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {supplierAging.map((row) => (
+                <TableRow key={row.supplier_id}>
+                  <TableCell>{row.supplier_name}</TableCell>
+                  <TableCell>{row.total_purchased}</TableCell>
+                  <TableCell>{row.amount_paid}</TableCell>
+                  <TableCell>{row.balance_due}</TableCell>
+                  <TableCell>{row.aging?.current || 0}</TableCell>
+                  <TableCell>{row.aging?.['30'] || 0}</TableCell>
+                  <TableCell>{row.aging?.['60'] || 0}</TableCell>
+                  <TableCell>{row.aging?.['90_plus'] || 0}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

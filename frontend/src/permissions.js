@@ -21,6 +21,8 @@ export const ROLE_CAPABILITY_MATRIX = {
     'stock.adjust',
     'stock.transfer.approve',
     'stock.transfer.complete',
+    'supplier.payment.create',
+    'supplier.payment.approve',
   ],
   admin: [
     'sales.dashboard.view',
@@ -38,6 +40,8 @@ export const ROLE_CAPABILITY_MATRIX = {
     'stock.adjust',
     'stock.transfer.approve',
     'stock.transfer.complete',
+    'supplier.payment.create',
+    'supplier.payment.approve',
   ],
 };
 
