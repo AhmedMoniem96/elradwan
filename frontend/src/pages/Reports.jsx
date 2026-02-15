@@ -15,8 +15,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Stack from '@mui/material/Stack';
 import { PageShell, SectionPanel } from '../components/PageLayout';
-
-const money = (v) => `$${Number(v || 0).toFixed(2)}`;
+import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
 
 const TableCard = ({ title, columns, rows }) => (
   <SectionPanel title={title} contentSx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -99,10 +98,10 @@ export default function Reports() {
       </Grid>
 
       {[
-        ['Revenue', money(grossMargin.revenue)],
-        ['COGS', money(grossMargin.cogs)],
-        ['Gross Margin', money(grossMargin.gross_margin)],
-        ['Margin %', `${Number(grossMargin.margin_pct || 0).toFixed(2)}%`],
+        ['Revenue', formatCurrency(grossMargin.revenue)],
+        ['COGS', formatCurrency(grossMargin.cogs)],
+        ['Gross Margin', formatCurrency(grossMargin.gross_margin)],
+        ['Margin %', `${formatNumber(Number(grossMargin.margin_pct || 0).toFixed(2))}%`],
       ].map(([label, value]) => (
         <Grid item xs={12} md={3} key={label}>
           <Card variant="panel"><CardContent><Typography variant="overline">{label}</Typography><Typography variant="h5">{value}</Typography></CardContent></Card>
@@ -114,7 +113,7 @@ export default function Reports() {
           <Typography variant="h6">Payment Method Split</Typography>
           {paymentSplit.map((p) => (
             <div key={p.method} style={{ marginTop: 10 }}>
-              <Typography variant="body2">{p.method.toUpperCase()} - {money(p.amount)} ({p.percentage}%)</Typography>
+              <Typography variant="body2">{p.method.toUpperCase()} - {formatCurrency(p.amount)} ({formatNumber(p.percentage)}%)</Typography>
               <LinearProgress variant="determinate" value={Number(p.percentage || 0)} />
             </div>
           ))}
@@ -124,7 +123,7 @@ export default function Reports() {
       <Grid item xs={12} md={6}>
         <TableCard
           title="Daily Sales"
-          columns={[{ key: 'day', label: 'Day' }, { key: 'invoice_count', label: 'Invoices' }, { key: 'gross_sales', label: 'Gross Sales', render: (v) => money(v) }]}
+          columns={[{ key: 'day', label: 'Day', render: (v) => formatDate(v) }, { key: 'invoice_count', label: 'Invoices', render: (v) => formatNumber(v) }, { key: 'gross_sales', label: 'Gross Sales', render: (v) => formatCurrency(v) }]}
           rows={dailySales}
         />
         <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('daily-sales')}>Export CSV</Button>
@@ -135,9 +134,9 @@ export default function Reports() {
           title="Top Products (drill-down)"
           columns={[
             { key: 'product__name', label: 'Product' },
-            { key: 'quantity', label: 'Qty' },
-            { key: 'revenue', label: 'Revenue', render: (v) => money(v) },
-            { key: 'gross_margin', label: 'Margin', render: (v) => money(v) },
+            { key: 'quantity', label: 'Qty', render: (v) => formatNumber(v) },
+            { key: 'revenue', label: 'Revenue', render: (v) => formatCurrency(v) },
+            { key: 'gross_margin', label: 'Margin', render: (v) => formatCurrency(v) },
           ]}
           rows={topProducts}
         />
@@ -149,9 +148,9 @@ export default function Reports() {
           title="Top Customers (drill-down)"
           columns={[
             { key: 'customer__name', label: 'Customer' },
-            { key: 'invoice_count', label: 'Invoices' },
-            { key: 'gross_sales', label: 'Sales', render: (v) => money(v) },
-            { key: 'balance_due', label: 'Outstanding', render: (v) => money(v) },
+            { key: 'invoice_count', label: 'Invoices', render: (v) => formatNumber(v) },
+            { key: 'gross_sales', label: 'Sales', render: (v) => formatCurrency(v) },
+            { key: 'balance_due', label: 'Outstanding', render: (v) => formatCurrency(v) },
           ]}
           rows={topCustomers}
         />
@@ -165,9 +164,9 @@ export default function Reports() {
             { key: 'invoice_number', label: 'Invoice' },
             { key: 'customer', label: 'Customer' },
             { key: 'status', label: 'Status' },
-            { key: 'amount_paid', label: 'Paid', render: (v) => money(v) },
-            { key: 'balance_due', label: 'Balance', render: (v) => money(v) },
-            { key: 'age_days', label: 'Age (days)' },
+            { key: 'amount_paid', label: 'Paid', render: (v) => formatCurrency(v) },
+            { key: 'balance_due', label: 'Balance', render: (v) => formatCurrency(v) },
+            { key: 'age_days', label: 'Age (days)', render: (v) => formatNumber(v) },
           ]}
           rows={arReport}
         />

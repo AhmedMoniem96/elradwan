@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
 const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 const MAX_GROUP_RESULTS = 5;
@@ -40,18 +41,6 @@ const MAX_TOTAL_RESULTS = 12;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
-const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
-const toDateTime = (value) => {
-  if (!value) {
-    return '-';
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
-};
-
 const scoreProductMatch = (product, queryTokens) => {
   const name = normalize(product.name);
   const sku = normalize(product.sku);
@@ -253,7 +242,7 @@ function ProductSearchPanel(props) {
                             <ListItemAvatar>
                               <Avatar variant="rounded" src={entry.image_url || ''} alt={entry.name} sx={{ width: 36, height: 36 }} />
                             </ListItemAvatar>
-                            <ListItemText primary={entry.name} secondary={`${entry.sku} • ${formatMoney(entry.price)}`} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
+                            <ListItemText primary={entry.name} secondary={`${entry.sku} • ${formatCurrency(entry.price)}`} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
                           </ListItemButton>
                         </ListItem>
                       );
@@ -304,13 +293,13 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
                     <Typography variant="body2" fontWeight={700} noWrap>{item.name}</Typography>
                     <Typography variant="caption" color="text.secondary">SKU: {item.sku || t('none')}</Typography>
                   </Box>
-                  <Typography variant="caption" color="text.secondary">{formatMoney(item.unitPrice)}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatCurrency(item.unitPrice)}</Typography>
                   <ButtonGroup size="small" sx={{ direction: isRTL ? 'rtl' : 'ltr', '& .MuiButton-root': { minWidth: 28 } }}>
                     <Button color="warning" onClick={() => updateQuantity(item.id, -1)}>-</Button>
                     <Button disabled>{item.quantity}</Button>
                     <Button color="primary" onClick={() => updateQuantity(item.id, 1)}>+</Button>
                   </ButtonGroup>
-                  <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatMoney(item.quantity * item.unitPrice)}</Typography>
+                  <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatCurrency(item.quantity * item.unitPrice)}</Typography>
                 </Stack>
               </Paper>
             ))}
@@ -349,12 +338,12 @@ function PaymentSummaryPanel(props) {
   return (
     <SectionCard title={t('payment')} subtitle={t('remaining_balance')} accent="success.main">
       <Stack spacing={1}>
-        <Typography variant="body2">{t('invoice_total')}: {formatMoney(cartSubtotal)}</Typography>
-        <Typography variant="body2">{t('pos_receipt_discount')}: {formatMoney(discountTotal)}</Typography>
-        <Typography variant="body2">{t('pos_receipt_tax')}: {formatMoney(taxTotal)}</Typography>
-        <Typography variant="h6" fontWeight={700}>{t('pos_receipt_totals')}: {formatMoney(parsedInvoiceTotal)}</Typography>
-        <Typography variant="body2">{t('amount_paid')}: {formatMoney(paidSoFar)}</Typography>
-        <Typography variant="body2" color={remaining > 0 ? 'warning.main' : 'success.main'}>{t('remaining_balance')}: {formatMoney(remaining)}</Typography>
+        <Typography variant="body2">{t('invoice_total')}: {formatCurrency(cartSubtotal)}</Typography>
+        <Typography variant="body2">{t('pos_receipt_discount')}: {formatCurrency(discountTotal)}</Typography>
+        <Typography variant="body2">{t('pos_receipt_tax')}: {formatCurrency(taxTotal)}</Typography>
+        <Typography variant="h6" fontWeight={700}>{t('pos_receipt_totals')}: {formatCurrency(parsedInvoiceTotal)}</Typography>
+        <Typography variant="body2">{t('amount_paid')}: {formatCurrency(paidSoFar)}</Typography>
+        <Typography variant="body2" color={remaining > 0 ? 'warning.main' : 'success.main'}>{t('remaining_balance')}: {formatCurrency(remaining)}</Typography>
       </Stack>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
@@ -410,7 +399,7 @@ function PaymentSummaryPanel(props) {
             <ListItem key={payment.id} divider>
               <ListItemText
                 primary={`${t('payment')} #${index + 1}`}
-                secondary={`${payment.label} → ${formatMoney(payment.amount)}`}
+                secondary={`${payment.label} → ${formatCurrency(payment.amount)}`}
                 sx={{ textAlign: isRTL ? 'right' : 'left' }}
               />
             </ListItem>
@@ -464,8 +453,8 @@ function ReceiptHistoryDialog(props) {
               <CardContent sx={{ p: 1.5 }}>
                 <Stack spacing={0.5}>
                   <Typography fontWeight={600}>{t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || t('none')}</Typography>
-                  <Typography variant="body2">{t('pos_receipt_datetime')}: {toDateTime(receipt.created_at)}</Typography>
-                  <Typography variant="body2">{t('pos_receipt_totals')}: {formatMoney(receipt.total)}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_datetime')}: {formatDateTime(receipt.created_at)}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_totals')}: {formatCurrency(receipt.total)}</Typography>
                   <Button size="small" onClick={() => setActiveReceipt(receipt)}>{t('pos_open_receipt_details')}</Button>
                 </Stack>
               </CardContent>
@@ -804,7 +793,7 @@ export default function POS() {
         label:
           paymentInputMode === 'percentage'
             ? `${paymentValue}%`
-            : `$${Number(paymentValue || 0).toFixed(2)}`,
+            : formatCurrency(paymentValue || 0),
       },
     ]);
     setPaymentValue('0');
@@ -1008,7 +997,7 @@ export default function POS() {
           {activeReceipt && (
             <Stack spacing={1.2} sx={{ py: 1 }}>
               <Typography>{t('pos_receipt_number')}: {activeReceipt.invoice_number || activeReceipt.local_invoice_no || t('none')}</Typography>
-              <Typography>{t('pos_receipt_datetime')}: {toDateTime(activeReceipt.created_at)}</Typography>
+              <Typography>{t('pos_receipt_datetime')}: {formatDateTime(activeReceipt.created_at)}</Typography>
               <Typography>{t('pos_receipt_cashier')}: {activeReceipt.user || t('none')}</Typography>
               <Typography>{t('pos_receipt_customer')}: {activeReceipt.customer?.name || t('unnamed_customer')}</Typography>
               <Typography>{t('phone')}: {activeReceipt.customer?.phone || t('no_phone')}</Typography>
@@ -1017,22 +1006,22 @@ export default function POS() {
               {(activeReceipt.lines || []).length > 0 ? (
                 activeReceipt.lines.map((line) => (
                   <Typography key={line.id} variant="body2">
-                    #{line.product} • {line.quantity} × {formatMoney(line.unit_price)} • {t('pos_receipt_discount')} {formatMoney(line.discount)} • {t('pos_receipt_tax')} {Number(line.tax_rate || 0) * 100}% • {t('pos_receipt_totals')} {formatMoney(line.line_total)}
+                    #{formatNumber(line.product)} • {formatNumber(line.quantity)} × {formatCurrency(line.unit_price)} • {t('pos_receipt_discount')} {formatCurrency(line.discount)} • {t('pos_receipt_tax')} {formatNumber(Number(line.tax_rate || 0) * 100)}% • {t('pos_receipt_totals')} {formatCurrency(line.line_total)}
                   </Typography>
                 ))
               ) : (
                 <Typography variant="body2" color="text.secondary">{t('none')}</Typography>
               )}
               <Divider />
-              <Typography>{t('pos_receipt_totals')}: {formatMoney(activeReceipt.total)}</Typography>
-              <Typography>{t('pos_receipt_discount')}: {formatMoney(activeReceipt.discount_total)}</Typography>
-              <Typography>{t('pos_receipt_tax')}: {formatMoney(activeReceipt.tax_total)}</Typography>
-              <Typography>{t('amount_paid')}: {formatMoney(activeReceipt.amount_paid)}</Typography>
-              <Typography>{t('pos_receipt_balance')}: {formatMoney(activeReceipt.balance_due)}</Typography>
+              <Typography>{t('pos_receipt_totals')}: {formatCurrency(activeReceipt.total)}</Typography>
+              <Typography>{t('pos_receipt_discount')}: {formatCurrency(activeReceipt.discount_total)}</Typography>
+              <Typography>{t('pos_receipt_tax')}: {formatCurrency(activeReceipt.tax_total)}</Typography>
+              <Typography>{t('amount_paid')}: {formatCurrency(activeReceipt.amount_paid)}</Typography>
+              <Typography>{t('pos_receipt_balance')}: {formatCurrency(activeReceipt.balance_due)}</Typography>
               <Typography>
-                {t('pos_receipt_payment_methods')}: {(activeReceipt.payments || []).map((paymentEntry) => `${paymentEntry.method} (${formatMoney(paymentEntry.amount)})`).join(', ') || t('none')}
+                {t('pos_receipt_payment_methods')}: {(activeReceipt.payments || []).map((paymentEntry) => `${paymentEntry.method} (${formatCurrency(paymentEntry.amount)})`).join(', ') || t('none')}
               </Typography>
-              <Typography>{t('pos_receipt_returns')}: {(activeReceipt.returns || []).length}</Typography>
+              <Typography>{t('pos_receipt_returns')}: {formatNumber((activeReceipt.returns || []).length)}</Typography>
             </Stack>
           )}
         </DialogContent>
