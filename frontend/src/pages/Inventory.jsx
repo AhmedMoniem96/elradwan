@@ -22,6 +22,8 @@ import {
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSync } from '../sync/SyncContext';
+import EmptyState from '../components/EmptyState';
+import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
@@ -70,6 +72,7 @@ export default function Inventory() {
   const [error, setError] = useState('');
   const [productForm, setProductForm] = useState(initialProductForm);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [transferForm, setTransferForm] = useState({
     source_warehouse_id: '',
     destination_warehouse_id: '',
@@ -80,6 +83,7 @@ export default function Inventory() {
   });
 
   const loadData = async () => {
+    setIsLoading(true);
     try {
       const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, stockoutRiskRes, unreadAlertsRes, suppliersRes, agingRes] = await Promise.all([
         axios.get('/api/v1/products/'),
@@ -111,6 +115,8 @@ export default function Inventory() {
     } catch (err) {
       console.error('Failed to load inventory data', err);
       setError(t('inventory_load_error'));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -340,6 +346,12 @@ export default function Inventory() {
     <PageShell>
       <PageHeader title={t('inventory')} />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {isLoading && (
+        <LoadingState
+          title="بنجهّز بيانات المخزون"
+          helperText="استنّى ثواني بسيطة لحد ما كل حاجة تكتمل."
+        />
+      )}
 
       <SectionPanel title={t('product_details', 'Product details')}>
         
@@ -538,7 +550,12 @@ export default function Inventory() {
             })}
           </Alert>
         ))}
-        {!alerts.length && <Typography color="text.secondary">{t('inventory_no_unread_alerts')}</Typography>}
+        {!alerts.length && (
+          <EmptyState
+            title="مفيش تنبيهات جديدة"
+            helperText={t('inventory_no_unread_alerts')}
+          />
+        )}
       </SectionPanel>
 
       <SectionPanel title={t('inventory_product_stock_status')}>
@@ -556,6 +573,13 @@ export default function Inventory() {
               </TableRow>
             </TableHead>
             <TableBody>
+              {!products.length && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyState title="مفيش منتجات متاحة" helperText="ضيف منتج جديد عشان يظهر هنا." />
+                  </TableCell>
+                </TableRow>
+              )}
               {products.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell>
@@ -699,6 +723,13 @@ export default function Inventory() {
               </TableRow>
             </TableHead>
             <TableBody>
+              {!transfers.length && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyState title="مفيش تحويلات مخزون لسه" helperText="لما تعمل تحويل جديد هتلاقيه هنا." />
+                  </TableCell>
+                </TableRow>
+              )}
               {transfers.map((transfer) => (
                 <TableRow key={transfer.id}>
                   <TableCell>{transfer.reference}</TableCell>

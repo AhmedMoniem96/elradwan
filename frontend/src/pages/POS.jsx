@@ -18,7 +18,6 @@ import {
   ListItemButton,
   ListItemText,
   Paper,
-  Skeleton,
   Stack,
   TextField,
   Typography,
@@ -32,6 +31,9 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import EmptyState from '../components/EmptyState';
+import ErrorState from '../components/ErrorState';
+import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
@@ -142,29 +144,6 @@ function SectionCard({ title, subtitle, children, accent }) {
   );
 }
 
-function StateMessage({ icon: Icon, title, helper, loading = false }) {
-  return (
-    <Stack
-      spacing={1}
-      alignItems="center"
-      justifyContent="center"
-      sx={{
-        py: 3,
-        px: 2,
-        borderRadius: 2,
-        border: '1px dashed',
-        borderColor: 'divider',
-        color: 'text.secondary',
-      }}
-    >
-      <Icon color="action" />
-      <Typography variant="body2" fontWeight={600}>{title}</Typography>
-      <Typography variant="caption">{helper}</Typography>
-      {loading && <Skeleton variant="rounded" height={34} width="100%" />}
-    </Stack>
-  );
-}
-
 function ProductSearchPanel(props) {
   const {
     t,
@@ -220,11 +199,10 @@ function ProductSearchPanel(props) {
 
       <Box sx={{ maxHeight: { xs: '30vh', md: '42vh' }, overflowY: 'auto' }}>
         {productsLoading ? (
-          <StateMessage
+          <LoadingState
             icon={Inventory2OutlinedIcon}
             title={t('pos_receipts_loading')}
-            helper={t('pos_load_products_error', { defaultValue: 'Loading products...' })}
-            loading
+            helperText={t('pos_load_products_error', { defaultValue: 'بنحمّل المنتجات حالاً...' })}
           />
         ) : (searchQuery || activeCategoryId) ? (
           <List dense sx={{ p: 0 }}>
@@ -267,11 +245,11 @@ function ProductSearchPanel(props) {
                 </Box>
               ))
             ) : (
-              <StateMessage icon={Inventory2OutlinedIcon} title={t('pos_no_search_results')} helper={t('pos_quick_add_hint', { defaultValue: 'Try another product name, SKU, or barcode.' })} />
+              <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_no_search_results')} helperText={t('pos_quick_add_hint', { defaultValue: 'جرّب اسم منتج تاني أو SKU أو باركود.' })} />
             )}
           </List>
         ) : (
-          <StateMessage icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helper={t('pos_quick_add_hint', { defaultValue: 'Search products then press Enter to add the top result.' })} />
+          <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helperText={t('pos_quick_add_hint', { defaultValue: 'دوّر على منتج واضغط Enter عشان تضيف أول نتيجة.' })} />
         )}
       </Box>
     </SectionCard>
@@ -283,7 +261,7 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
     <SectionCard title={t('cart')} subtitle={t('pos_cart_empty')} accent="warning.main">
       <Box sx={{ maxHeight: { xs: '30vh', md: '50vh' }, overflowY: 'auto' }}>
         {cart.length === 0 ? (
-          <StateMessage icon={PointOfSaleOutlinedIcon} title={t('pos_cart_empty')} helper={t('pos_quick_add_hint', { defaultValue: 'Add products from search results to start checkout.' })} />
+          <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_cart_empty')} helperText={t('pos_quick_add_hint', { defaultValue: 'ضيف منتجات من البحث عشان تبدأ البيع.' })} />
         ) : (
           <Stack spacing={1}>
             {cart.map((item) => (
@@ -392,7 +370,7 @@ function PaymentSummaryPanel(props) {
       </Button>
 
       {payments.length === 0 ? (
-        <StateMessage icon={PointOfSaleOutlinedIcon} title={t('pos_no_payments', { defaultValue: 'No payments recorded yet.' })} helper={t('payment_amount')} />
+        <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_no_payments', { defaultValue: 'لسه مفيش مدفوعات متسجلة.' })} helperText={t('payment_amount')} />
       ) : (
         <List dense>
           {payments.map((payment, index) => (
@@ -441,11 +419,11 @@ function ReceiptHistoryDialog(props) {
 
           {receiptsError && <Alert severity="error">{receiptsError}</Alert>}
           {receiptsLoading && (
-            <StateMessage icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helper={t('pos_receipts_quick_filter')} loading />
+            <LoadingState icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helperText={t('pos_receipts_quick_filter')} />
           )}
 
           {!receiptsLoading && filteredReceipts.length === 0 && (
-            <StateMessage icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_empty')} helper={t('pos_receipts_quick_filter_placeholder')} />
+            <EmptyState icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_empty')} helperText={t('pos_receipts_quick_filter_placeholder')} />
           )}
 
           {filteredReceipts.map((receipt) => (
@@ -901,7 +879,7 @@ export default function POS() {
           )}
         </Stack>
 
-        {!!error && <Alert severity="error">{error}</Alert>}
+        {!!error && <ErrorState title={t('pos_load_products_error', { defaultValue: 'في مشكلة في تحميل البيانات' })} helperText={error} actionLabel={t('retry', { defaultValue: 'جرّب تاني' })} onAction={() => window.location.reload()} />}
         {!!actionFeedback.message && (
           <Alert severity={actionFeedback.severity || 'info'}>{actionFeedback.message}</Alert>
         )}

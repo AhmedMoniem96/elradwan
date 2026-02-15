@@ -14,6 +14,10 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Stack from '@mui/material/Stack';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import EmptyState from '../components/EmptyState';
+import ErrorState from '../components/ErrorState';
+import LoadingState from '../components/LoadingState';
 import { PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
 
@@ -45,6 +49,8 @@ export default function Reports() {
   const [paymentSplit, setPaymentSplit] = useState([]);
   const [arReport, setArReport] = useState([]);
   const [grossMargin, setGrossMargin] = useState({ revenue: 0, cogs: 0, gross_margin: 0, margin_pct: 0 });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -54,14 +60,32 @@ export default function Reports() {
     return params.toString();
   }, [filters]);
 
-  const loadReports = () => {
-    axios.get('/api/v1/branches/').then((res) => setBranches(res.data || [])).catch(() => {});
-    axios.get(`/api/v1/reports/daily-sales/?${queryParams}`).then((res) => setDailySales(res.data.results || [])).catch(() => {});
-    axios.get(`/api/v1/reports/top-products/?${queryParams}`).then((res) => setTopProducts(res.data.results || [])).catch(() => {});
-    axios.get(`/api/v1/reports/top-customers/?${queryParams}`).then((res) => setTopCustomers(res.data.results || [])).catch(() => {});
-    axios.get(`/api/v1/reports/payment-method-split/?${queryParams}`).then((res) => setPaymentSplit(res.data.results || [])).catch(() => {});
-    axios.get(`/api/v1/reports/gross-margin/?${queryParams}`).then((res) => setGrossMargin(res.data || {})).catch(() => {});
-    axios.get(`/api/v1/reports/accounts-receivable/?${queryParams}`).then((res) => setArReport(res.data.results || [])).catch(() => {});
+  const loadReports = async () => {
+    setIsLoading(true);
+    try {
+      const [branchesRes, dailySalesRes, topProductsRes, topCustomersRes, paymentSplitRes, grossMarginRes, arReportRes] = await Promise.all([
+        axios.get('/api/v1/branches/'),
+        axios.get(`/api/v1/reports/daily-sales/?${queryParams}`),
+        axios.get(`/api/v1/reports/top-products/?${queryParams}`),
+        axios.get(`/api/v1/reports/top-customers/?${queryParams}`),
+        axios.get(`/api/v1/reports/payment-method-split/?${queryParams}`),
+        axios.get(`/api/v1/reports/gross-margin/?${queryParams}`),
+        axios.get(`/api/v1/reports/accounts-receivable/?${queryParams}`),
+      ]);
+
+      setBranches(branchesRes.data || []);
+      setDailySales(dailySalesRes.data.results || []);
+      setTopProducts(topProductsRes.data.results || []);
+      setTopCustomers(topCustomersRes.data.results || []);
+      setPaymentSplit(paymentSplitRes.data.results || []);
+      setGrossMargin(grossMarginRes.data || {});
+      setArReport(arReportRes.data.results || []);
+      setError('');
+    } catch {
+      setError('في مشكلة في تحميل التقارير. جرّب تعمل تحديث.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -75,6 +99,16 @@ export default function Reports() {
 
   return (
     <PageShell>
+    {error && (
+      <ErrorState
+        icon={InsightsOutlinedIcon}
+        title="التقارير مش راضية تتحمّل"
+        helperText={error}
+        actionLabel="جرّب تاني"
+        onAction={loadReports}
+      />
+    )}
+    {isLoading && <LoadingState icon={InsightsOutlinedIcon} title="بنجهّز التقارير" helperText="استنّى شوية وهتظهر البيانات." />}
     <Grid container spacing={2}>
       <Grid item xs={12}>
         <SectionPanel contentSx={{ p: 2 }}>
@@ -117,6 +151,7 @@ export default function Reports() {
               <LinearProgress variant="determinate" value={Number(p.percentage || 0)} />
             </div>
           ))}
+          {!paymentSplit.length && <EmptyState icon={InsightsOutlinedIcon} title="مفيش بيانات دفع" helperText="اختار فترة زمنية أو فرع مختلف." />}
           <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('payment-method-split')}>Export CSV</Button>
         </SectionPanel>
       </Grid>

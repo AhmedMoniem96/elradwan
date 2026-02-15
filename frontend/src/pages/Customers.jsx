@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Box,
   Button,
   Table,
   TableBody,
@@ -13,14 +14,18 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  IconButton
+  IconButton,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSync } from '../sync/SyncContext';
+import EmptyState from '../components/EmptyState';
+import ErrorState from '../components/ErrorState';
+import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 
 export default function Customers() {
@@ -34,17 +39,24 @@ export default function Customers() {
     email: ''
   });
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchCustomers();
   }, []);
 
   const fetchCustomers = async () => {
+    setIsLoading(true);
     try {
       const response = await axios.get('/api/v1/customers/');
       setCustomers(response.data);
+      setError('');
     } catch (error) {
       console.error('Error fetching customers:', error);
+      setError('مش قادرين نحمل العملاء دلوقتي. جرّب تاني.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -120,6 +132,38 @@ export default function Customers() {
       />
 
       <SectionPanel contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
+        {error && (
+          <Box sx={{ p: 2 }}>
+            <ErrorState
+              icon={GroupOutlinedIcon}
+              title="في مشكلة في تحميل العملاء"
+              helperText={error}
+              actionLabel="جرّب تاني"
+              onAction={fetchCustomers}
+            />
+          </Box>
+        )}
+        {!error && isLoading && (
+          <Box sx={{ p: 2 }}>
+            <LoadingState
+              icon={GroupOutlinedIcon}
+              title="بنحمّل بيانات العملاء"
+              helperText="استنّى ثانية وهتظهر البيانات."
+            />
+          </Box>
+        )}
+        {!error && !isLoading && customers.length === 0 && (
+          <Box sx={{ p: 2 }}>
+            <EmptyState
+              icon={GroupOutlinedIcon}
+              title="لسه مفيش عملاء"
+              helperText="ابدأ بإضافة عميل جديد عشان تتابع مبيعاتك بسهولة."
+              actionLabel={t('add_customer')}
+              onAction={() => handleOpen()}
+            />
+          </Box>
+        )}
+        {!error && !isLoading && customers.length > 0 && (
         <TableContainer>
         <Table>
           <TableHead>
@@ -149,6 +193,7 @@ export default function Customers() {
           </TableBody>
         </Table>
         </TableContainer>
+        )}
       </SectionPanel>
 
       <Dialog open={open} onClose={handleClose}>
