@@ -23,6 +23,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSync } from '../sync/SyncContext';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
 const emptyLine = { product: '', quantity: '1.00' };
 
@@ -459,11 +460,11 @@ export default function Inventory() {
                   <TableCell>{row.warehouse_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>
                   <TableCell>{row.preferred_supplier_name || t('none')}</TableCell>
-                  <TableCell>{row.on_hand}</TableCell>
+                  <TableCell>{formatNumber(row.on_hand)}</TableCell>
                   <TableCell>{row.minimum_quantity}</TableCell>
                   <TableCell>{row.suggested_reorder_quantity}</TableCell>
-                  <TableCell>{row.days_of_cover || '-'}</TableCell>
-                  <TableCell>{row.projected_stockout_date || '-'}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : '-'}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : '-'}</TableCell>
                   <TableCell>{row.recommended_reorder_quantity || row.suggested_reorder_quantity}</TableCell>
                   <TableCell>
                     <Chip size="small" color={row.severity === 'critical' ? 'error' : 'warning'} label={row.severity} />
@@ -511,10 +512,10 @@ export default function Inventory() {
                 <TableRow key={`risk-${row.warehouse_id}-${row.product_id}`}>
                   <TableCell>{row.warehouse_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>
-                  <TableCell>{row.on_hand}</TableCell>
-                  <TableCell>{row.days_of_cover || '-'}</TableCell>
-                  <TableCell>{row.projected_stockout_date || '-'}</TableCell>
-                  <TableCell>{row.recommended_reorder_quantity}</TableCell>
+                  <TableCell>{formatNumber(row.on_hand)}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : '-'}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : '-'}</TableCell>
+                  <TableCell>{formatNumber(row.recommended_reorder_quantity)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -562,7 +563,7 @@ export default function Inventory() {
                   </TableCell>
                   <TableCell>{product.name}</TableCell>
                   <TableCell>{product.sku}</TableCell>
-                  <TableCell>${Number(product.price).toFixed(2)}</TableCell>
+                  <TableCell>{formatCurrency(product.price)}</TableCell>
                   <TableCell width="35%">
                     <TextField
                       fullWidth
@@ -635,13 +636,13 @@ export default function Inventory() {
               {supplierAging.map((row) => (
                 <TableRow key={row.supplier_id}>
                   <TableCell>{row.supplier_name}</TableCell>
-                  <TableCell>{row.total_purchased}</TableCell>
-                  <TableCell>{row.amount_paid}</TableCell>
-                  <TableCell>{row.balance_due}</TableCell>
-                  <TableCell>{row.aging?.current || 0}</TableCell>
-                  <TableCell>{row.aging?.['30'] || 0}</TableCell>
-                  <TableCell>{row.aging?.['60'] || 0}</TableCell>
-                  <TableCell>{row.aging?.['90_plus'] || 0}</TableCell>
+                  <TableCell>{formatCurrency(row.total_purchased)}</TableCell>
+                  <TableCell>{formatCurrency(row.amount_paid)}</TableCell>
+                  <TableCell>{formatCurrency(row.balance_due)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.current || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['30'] || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['60'] || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['90_plus'] || 0)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
