@@ -9,6 +9,7 @@ const resources = {
       "pos": "POS",
       "customers": "Customers",
       "inventory": "Inventory",
+      "suppliers": "Suppliers",
       "sync_status": "Sync Status",
       "todays_sales": "Today's Sales",
       "active_register": "Active Register",
@@ -102,6 +103,21 @@ const resources = {
       ,"invoice_payload_customer_hint": "Selected customer ID"
       ,"none": "None"
       ,"pos_receipts_open": "Receipts History"
+      ,"pos_open_suppliers": "Suppliers Window"
+      ,"suppliers_subtitle": "Track supplier contacts, balances, and aging in one place."
+      ,"suppliers_search_label": "Search suppliers"
+      ,"suppliers_search_placeholder": "Find by supplier name or contact details"
+      ,"suppliers_loading": "Loading suppliers..."
+      ,"suppliers_load_error": "Failed to load suppliers"
+      ,"suppliers_primary_contact": "Primary contact"
+      ,"suppliers_balance": "Balance due"
+      ,"suppliers_aging_current": "Current"
+      ,"suppliers_aging_30": "30 days"
+      ,"suppliers_aging_60": "60 days"
+      ,"suppliers_aging_90_plus": "90+ days"
+      ,"suppliers_quick_payment": "Quick payment"
+      ,"suppliers_payment_error": "Failed to register supplier payment"
+      ,"suppliers_empty_state": "No suppliers matched your search"
       ,"pos_receipts_history": "Receipts & History"
       ,"pos_receipts_quick_filter": "Quick filter"
       ,"pos_receipts_quick_filter_placeholder": "Receipt # or customer phone"
@@ -224,6 +240,7 @@ const resources = {
       "pos": "نقطة البيع",
       "customers": "العملاء",
       "inventory": "المخزون",
+      "suppliers": "الموردون",
       "sync_status": "حالة المزامنة",
       "todays_sales": "مبيعات اليوم",
       "active_register": "الكاشير النشط",
@@ -317,6 +334,21 @@ const resources = {
       ,"invoice_payload_customer_hint": "معرّف العميل المحدد"
       ,"none": "لا يوجد"
       ,"pos_receipts_open": "سجل الإيصالات"
+      ,"pos_open_suppliers": "نافذة الموردين"
+      ,"suppliers_subtitle": "تابع جهات الاتصال والأرصدة وتقادم الديون للموردين في شاشة واحدة."
+      ,"suppliers_search_label": "بحث الموردين"
+      ,"suppliers_search_placeholder": "ابحث باسم المورد أو بيانات جهة الاتصال"
+      ,"suppliers_loading": "جارٍ تحميل الموردين..."
+      ,"suppliers_load_error": "تعذر تحميل الموردين"
+      ,"suppliers_primary_contact": "جهة الاتصال الرئيسية"
+      ,"suppliers_balance": "الرصيد المستحق"
+      ,"suppliers_aging_current": "الحالي"
+      ,"suppliers_aging_30": "30 يوماً"
+      ,"suppliers_aging_60": "60 يوماً"
+      ,"suppliers_aging_90_plus": "90+ يوماً"
+      ,"suppliers_quick_payment": "دفعة سريعة"
+      ,"suppliers_payment_error": "تعذر تسجيل دفعة المورد"
+      ,"suppliers_empty_state": "لا يوجد موردون مطابقون للبحث"
       ,"pos_receipts_history": "الإيصالات والسجل"
       ,"pos_receipts_quick_filter": "تصفية سريعة"
       ,"pos_receipts_quick_filter_placeholder": "رقم الإيصال أو هاتف العميل"

@@ -24,6 +24,8 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext';
 
 const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 const MAX_GROUP_RESULTS = 5;
@@ -156,6 +158,8 @@ function SectionCard({ title, subtitle, children, accent }) {
 
 export default function POS() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { can } = useAuth();
   const isRTL = i18n.dir() === 'rtl';
 
   const [products, setProducts] = useState([]);
@@ -596,6 +600,11 @@ export default function POS() {
           <Button variant="outlined" onClick={openReceiptsPanel}>
             {t('pos_receipts_open')}
           </Button>
+          {can('inventory.view') && (
+            <Button variant="outlined" onClick={() => navigate('/suppliers')}>
+              {t('pos_open_suppliers')}
+            </Button>
+          )}
           <Button
             variant="contained"
             color={canCheckout ? 'success' : 'primary'}
