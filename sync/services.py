@@ -1,8 +1,19 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
+
+REJECT_CODE_VALIDATION_FAILED = "validation_failed"
+REJECT_CODE_FORBIDDEN = "forbidden"
+REJECT_CODE_CONFLICT = "conflict"
+REJECT_CODE_DOMAIN_RULE_VIOLATION = "domain_rule_violation"
+ALLOWED_REJECT_CODES = {
+    REJECT_CODE_VALIDATION_FAILED,
+    REJECT_CODE_FORBIDDEN,
+    REJECT_CODE_CONFLICT,
+    REJECT_CODE_DOMAIN_RULE_VIOLATION,
+}
 
 from inventory.models import Product, StockMove, StockTransfer, StockTransferLine, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment
@@ -18,9 +29,10 @@ class EventResult:
 
 class EventRejectError(Exception):
     def __init__(self, reason: str, details: dict | None = None):
-        self.reason = reason
+        normalized_reason = reason if reason in ALLOWED_REJECT_CODES else REJECT_CODE_DOMAIN_RULE_VIOLATION
+        self.reason = normalized_reason
         self.details = details or {}
-        super().__init__(reason)
+        super().__init__(normalized_reason)
 
 
 def _get_active_shift(branch_id, device_id, user_id):
@@ -72,12 +84,12 @@ SUPPORTED_EVENT_TYPES = {
 }
 
 
-def process_sync_event(sync_event):
+def process_sync_event(sync_event, *, validate_only=False):
     event_type = sync_event.event_type
     if event_type not in SUPPORTED_EVENT_TYPES:
         return EventResult(
             accepted=False,
-            reason="validation_failed",
+            reason=REJECT_CODE_VALIDATION_FAILED,
             details={"event_type": f"Unsupported event_type '{event_type}'"},
         )
 
@@ -95,22 +107,28 @@ def process_sync_event(sync_event):
     try:
         with transaction.atomic():
             handler(sync_event)
+            if validate_only:
+                transaction.set_rollback(True)
         return EventResult(accepted=True)
     except EventRejectError as exc:
         return EventResult(accepted=False, reason=exc.reason, details=exc.details)
+    except IntegrityError as exc:
+        return EventResult(accepted=False, reason=REJECT_CODE_CONFLICT, details={"error": str(exc)})
+    except Exception as exc:  # noqa: BLE001
+        return EventResult(accepted=False, reason=REJECT_CODE_DOMAIN_RULE_VIOLATION, details={"error": str(exc)})
 
 
 def _validate_required(payload, fields):
     missing = [field for field in fields if payload.get(field) in (None, "")]
     if missing:
-        raise EventRejectError("validation_failed", {"missing_fields": missing})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"missing_fields": missing})
 
 
 def _validate_branch_scope(payload, sync_event):
     payload_branch_id = str(payload.get("branch_id", ""))
     if payload_branch_id != str(sync_event.branch_id):
         raise EventRejectError(
-            "forbidden",
+            REJECT_CODE_FORBIDDEN,
             {"branch_id": "Payload branch_id does not match device branch."},
         )
 
@@ -150,7 +168,7 @@ def _handle_customer_delete(sync_event):
 
     customer = Customer.objects.filter(id=payload["customer_id"], branch=sync_event.branch).first()
     if customer is None:
-        raise EventRejectError("validation_failed", {"customer_id": "Customer not found in branch."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"customer_id": "Customer not found in branch."})
 
     customer_id = customer.id
     customer.delete()
@@ -173,22 +191,22 @@ def _handle_stock_adjust(sync_event):
 
     quantity = Decimal(str(payload["quantity"]))
     if quantity == 0:
-        raise EventRejectError("validation_failed", {"quantity": "Quantity must be non-zero."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"quantity": "Quantity must be non-zero."})
 
     product = Product.objects.filter(id=payload["product_id"], branch=sync_event.branch).first()
     if product is None:
-        raise EventRejectError("validation_failed", {"product_id": "Product not found in branch."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"product_id": "Product not found in branch."})
     if not product.is_active:
-        raise EventRejectError("forbidden", {"product_id": "Product is inactive."})
+        raise EventRejectError(REJECT_CODE_FORBIDDEN, {"product_id": "Product is inactive."})
 
     warehouse = Warehouse.objects.filter(id=payload["warehouse_id"], branch=sync_event.branch).first()
     if warehouse is None:
-        raise EventRejectError("forbidden", {"warehouse_id": "Warehouse is not in branch."})
+        raise EventRejectError(REJECT_CODE_FORBIDDEN, {"warehouse_id": "Warehouse is not in branch."})
 
     reason = payload["reason"]
     valid_reasons = {choice[0] for choice in StockMove.Reason.choices}
     if reason not in valid_reasons:
-        raise EventRejectError("validation_failed", {"reason": "Invalid reason."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"reason": "Invalid reason."})
 
     stock_move = StockMove.objects.create(
         branch=sync_event.branch,
@@ -225,7 +243,7 @@ def _handle_product_stock_status_set(sync_event):
 
     product = Product.objects.filter(id=payload["product_id"], branch=sync_event.branch).first()
     if product is None:
-        raise EventRejectError("validation_failed", {"product_id": "Product not found in branch."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"product_id": "Product not found in branch."})
 
     product.stock_status = payload["stock_status"]
     product.save(update_fields=["stock_status", "updated_at"])
@@ -279,13 +297,13 @@ def _handle_stock_transfer_create(sync_event):
     source = Warehouse.objects.filter(id=payload["source_warehouse_id"], branch=sync_event.branch).first()
     destination = Warehouse.objects.filter(id=payload["destination_warehouse_id"], branch=sync_event.branch).first()
     if source is None or destination is None:
-        raise EventRejectError("validation_failed", {"warehouse": "Source and destination warehouses must belong to branch."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"warehouse": "Source and destination warehouses must belong to branch."})
     if source.id == destination.id:
-        raise EventRejectError("validation_failed", {"destination_warehouse_id": "Destination must differ from source warehouse."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"destination_warehouse_id": "Destination must differ from source warehouse."})
 
     lines = payload.get("lines") or []
     if not isinstance(lines, list) or not lines:
-        raise EventRejectError("validation_failed", {"lines": "At least one transfer line is required."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"lines": "At least one transfer line is required."})
 
     transfer = StockTransfer.objects.create(
         branch=sync_event.branch,
@@ -298,13 +316,13 @@ def _handle_stock_transfer_create(sync_event):
 
     for line in lines:
         if line.get("product_id") in (None, "") or line.get("quantity") in (None, ""):
-            raise EventRejectError("validation_failed", {"lines": "Each line requires product_id and quantity."})
+            raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"lines": "Each line requires product_id and quantity."})
         qty = Decimal(str(line["quantity"]))
         if qty <= 0:
-            raise EventRejectError("validation_failed", {"lines": "Line quantity must be positive."})
+            raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"lines": "Line quantity must be positive."})
         product = Product.objects.filter(id=line["product_id"], branch=sync_event.branch).first()
         if product is None:
-            raise EventRejectError("validation_failed", {"product_id": f"Unknown product {line['product_id']}"})
+            raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"product_id": f"Unknown product {line['product_id']}"})
         StockTransferLine.objects.create(transfer=transfer, product=product, quantity=qty)
 
     emit_outbox(sync_event.branch_id, "stock_transfer", transfer.id, "upsert", _serialize_transfer(transfer))
@@ -317,9 +335,9 @@ def _handle_stock_transfer_approve(sync_event):
 
     transfer = StockTransfer.objects.filter(id=payload["transfer_id"], branch=sync_event.branch).first()
     if transfer is None:
-        raise EventRejectError("validation_failed", {"transfer_id": "Transfer not found."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"transfer_id": "Transfer not found."})
     if transfer.status != StockTransfer.Status.DRAFT:
-        raise EventRejectError("validation_failed", {"status": "Only draft transfers can be approved."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"status": "Only draft transfers can be approved."})
 
     transfer.status = StockTransfer.Status.APPROVED
     transfer.approved_by = sync_event.user
@@ -336,9 +354,9 @@ def _handle_stock_transfer_complete(sync_event):
 
     transfer = StockTransfer.objects.prefetch_related("lines").filter(id=payload["transfer_id"], branch=sync_event.branch).first()
     if transfer is None:
-        raise EventRejectError("validation_failed", {"transfer_id": "Transfer not found."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"transfer_id": "Transfer not found."})
     if transfer.status != StockTransfer.Status.APPROVED:
-        raise EventRejectError("validation_failed", {"status": "Only approved transfers can be completed."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"status": "Only approved transfers can be completed."})
 
     shortages = []
     for line in transfer.lines.all():
@@ -352,7 +370,7 @@ def _handle_stock_transfer_complete(sync_event):
             shortages.append({"product_id": str(line.product_id), "available": str(available), "required": str(line.quantity)})
 
     if shortages:
-        raise EventRejectError("validation_failed", {"shortages": shortages})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"shortages": shortages})
 
     for line in transfer.lines.all():
         StockMove.objects.create(
@@ -401,29 +419,29 @@ def _handle_invoice_create(sync_event):
     _validate_branch_scope(payload, sync_event)
 
     if str(payload["device_id"]) != str(sync_event.device_id):
-        raise EventRejectError("forbidden", {"device_id": "Payload device_id mismatch."})
+        raise EventRejectError(REJECT_CODE_FORBIDDEN, {"device_id": "Payload device_id mismatch."})
     if str(payload["user_id"]) != str(sync_event.user_id):
-        raise EventRejectError("forbidden", {"user_id": "Payload user_id mismatch."})
+        raise EventRejectError(REJECT_CODE_FORBIDDEN, {"user_id": "Payload user_id mismatch."})
 
     active_shift = _get_active_shift(sync_event.branch_id, sync_event.device_id, sync_event.user_id)
     if active_shift is None:
-        raise EventRejectError("forbidden", {"shift": "Open shift required before creating invoices."})
+        raise EventRejectError(REJECT_CODE_FORBIDDEN, {"shift": "Open shift required before creating invoices."})
 
     lines = payload.get("lines") or []
     if not isinstance(lines, list) or not lines:
-        raise EventRejectError("validation_failed", {"lines": "At least one line is required."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"lines": "At least one line is required."})
 
     totals = payload.get("totals") or {}
     required_total_fields = ["subtotal", "discount_total", "tax_total", "total"]
     if any(field not in totals for field in required_total_fields):
-        raise EventRejectError("validation_failed", {"totals": "Missing totals fields."})
+        raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"totals": "Missing totals fields."})
 
     customer = None
     customer_payload = payload.get("customer")
     if customer_payload:
         customer_id = customer_payload.get("customer_id")
         if not customer_id:
-            raise EventRejectError("validation_failed", {"customer.customer_id": "Required when customer is provided."})
+            raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"customer.customer_id": "Required when customer is provided."})
         customer, _ = Customer.objects.update_or_create(
             id=customer_id,
             defaults={
@@ -439,7 +457,7 @@ def _handle_invoice_create(sync_event):
     for payment_payload in payload.get("payments") or []:
         for field in ["method", "amount", "paid_at"]:
             if payment_payload.get(field) in (None, ""):
-                raise EventRejectError("validation_failed", {f"payments.{field}": "Required."})
+                raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {f"payments.{field}": "Required."})
         total_paid += Decimal(str(payment_payload["amount"]))
 
     invoice_status = Invoice.Status.OPEN
@@ -470,10 +488,10 @@ def _handle_invoice_create(sync_event):
     for line in lines:
         for field in ["product_id", "qty", "unit_price", "discount", "tax_rate"]:
             if line.get(field) in (None, ""):
-                raise EventRejectError("validation_failed", {f"lines.{field}": "Required."})
+                raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {f"lines.{field}": "Required."})
         product = Product.objects.filter(id=line["product_id"], branch=sync_event.branch).first()
         if product is None:
-            raise EventRejectError("validation_failed", {"product_id": f"Unknown product {line['product_id']}"})
+            raise EventRejectError(REJECT_CODE_VALIDATION_FAILED, {"product_id": f"Unknown product {line['product_id']}"})
 
         quantity = Decimal(str(line["qty"]))
         unit_price = Decimal(str(line["unit_price"]))

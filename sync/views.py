@@ -3,13 +3,18 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.audit import create_audit_log_from_request
 from sync.models import SyncEvent, SyncOutbox
 from sync.permissions import (
     get_permitted_device,
     validation_failed_response,
 )
-from sync.serializers import SyncPullSerializer, SyncPushSerializer
-from sync.services import process_sync_event
+from sync.serializers import SyncConflictActionSerializer, SyncPullSerializer, SyncPushSerializer
+from sync.services import (
+    REJECT_CODE_CONFLICT,
+    REJECT_CODE_VALIDATION_FAILED,
+    process_sync_event,
+)
 
 
 class SyncPushView(APIView):
@@ -20,6 +25,7 @@ class SyncPushView(APIView):
 
         device_id = serializer.validated_data["device_id"]
         events = serializer.validated_data["events"]
+        validate_only = serializer.validated_data.get("validate_only", False)
 
         device, error_response = get_permitted_device(request.user, device_id)
         if error_response is not None:
@@ -34,7 +40,8 @@ class SyncPushView(APIView):
                 rejected.append(
                     {
                         "event_id": str(event["event_id"]),
-                        "reason": "validation_failed",
+                        "reason": REJECT_CODE_VALIDATION_FAILED,
+                        "code": REJECT_CODE_VALIDATION_FAILED,
                         "details": {"branch_id": "Payload branch_id does not match device branch."},
                     }
                 )
@@ -42,40 +49,57 @@ class SyncPushView(APIView):
 
             try:
                 with transaction.atomic():
-                    sync_event, created = SyncEvent.objects.get_or_create(
+                    sync_event = SyncEvent(
                         event_id=event["event_id"],
                         device=device,
-                        defaults={
-                            "branch": device.branch,
-                            "user": request.user,
-                            "event_type": event["event_type"],
-                            "payload": event["payload"],
-                        },
+                        branch=device.branch,
+                        user=request.user,
+                        event_type=event["event_type"],
+                        payload=event["payload"],
                     )
-                    if created:
-                        result = process_sync_event(sync_event)
-                        sync_event.processed_at = timezone.now()
 
-                        if result.accepted:
+                    if not validate_only:
+                        sync_event, created = SyncEvent.objects.get_or_create(
+                            event_id=event["event_id"],
+                            device=device,
+                            defaults={
+                                "branch": device.branch,
+                                "user": request.user,
+                                "event_type": event["event_type"],
+                                "payload": event["payload"],
+                            },
+                        )
+                        if not created:
+                            acknowledged.append(str(event["event_id"]))
+                            continue
+
+                    result = process_sync_event(sync_event, validate_only=validate_only)
+                    if result.accepted:
+                        acknowledged.append(str(event["event_id"]))
+                        if not validate_only:
+                            sync_event.processed_at = timezone.now()
                             sync_event.status = SyncEvent.Status.PROCESSED
                             sync_event.save(update_fields=["status", "processed_at"])
-                        else:
+                    else:
+                        if not validate_only:
+                            sync_event.processed_at = timezone.now()
                             sync_event.status = SyncEvent.Status.REJECTED
                             sync_event.save(update_fields=["status", "processed_at"])
-                            rejected.append(
-                                {
-                                    "event_id": str(event["event_id"]),
-                                    "reason": result.reason,
-                                    "details": result.details or {},
-                                }
-                            )
-                            continue
-                acknowledged.append(str(event["event_id"]))
+                        rejected.append(
+                            {
+                                "event_id": str(event["event_id"]),
+                                "reason": result.reason,
+                                "code": result.reason,
+                                "details": result.details or {},
+                            }
+                        )
+
             except IntegrityError as exc:
                 rejected.append(
                     {
                         "event_id": str(event["event_id"]),
-                        "reason": "conflict",
+                        "reason": REJECT_CODE_CONFLICT,
+                        "code": REJECT_CODE_CONFLICT,
                         "details": {"error": str(exc)},
                     }
                 )
@@ -88,8 +112,46 @@ class SyncPushView(APIView):
                 "acknowledged": acknowledged,
                 "rejected": rejected,
                 "server_cursor": server_cursor,
+                "validate_only": validate_only,
             }
         )
+
+
+class SyncConflictActionView(APIView):
+    def post(self, request):
+        serializer = SyncConflictActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_failed_response(serializer.errors)
+
+        device_id = serializer.validated_data["device_id"]
+        device, error_response = get_permitted_device(request.user, device_id)
+        if error_response is not None:
+            return error_response
+
+        action = serializer.validated_data["action"]
+        event_id = serializer.validated_data.get("event_id")
+        details = serializer.validated_data.get("details") or {}
+        reason = serializer.validated_data.get("reason")
+
+        create_audit_log_from_request(
+            request,
+            action=f"sync.conflict.{action}",
+            entity="sync_event",
+            entity_id=event_id,
+            branch=device.branch,
+            device=device,
+            before_snapshot={
+                "event_type": serializer.validated_data.get("event_type"),
+                "payload_snapshot": serializer.validated_data.get("payload_snapshot"),
+            },
+            after_snapshot={
+                "reason": reason,
+                "details": details,
+            },
+            event_id=event_id,
+        )
+
+        return Response({"status": "logged"})
 
 
 class SyncPullView(APIView):
