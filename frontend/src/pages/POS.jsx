@@ -169,6 +169,7 @@ export default function POS() {
   const [cart, setCart] = useState([]);
   const [error, setError] = useState('');
   const [invoiceTotal, setInvoiceTotal] = useState('0');
+  const [isTotalManuallyOverridden, setIsTotalManuallyOverridden] = useState(false);
   const [paymentInputMode, setPaymentInputMode] = useState('amount');
   const [paymentValue, setPaymentValue] = useState('0');
   const [payments, setPayments] = useState([]);
@@ -343,16 +344,21 @@ export default function POS() {
     [cart],
   );
 
-  const parsedInvoiceTotal = useMemo(
-    () => (Number(invoiceTotal) > 0 ? Number(invoiceTotal) : Number(cartSubtotal.toFixed(2))),
-    [invoiceTotal, cartSubtotal],
-  );
+  const parsedInvoiceTotal = useMemo(() => {
+    const normalizedCartSubtotal = Number(cartSubtotal.toFixed(2));
+    if (!isTotalManuallyOverridden) {
+      return normalizedCartSubtotal;
+    }
+
+    const enteredTotal = Number(invoiceTotal);
+    return enteredTotal > 0 ? enteredTotal : normalizedCartSubtotal;
+  }, [cartSubtotal, invoiceTotal, isTotalManuallyOverridden]);
 
   useEffect(() => {
-    if (!invoiceTotal || Number(invoiceTotal) === 0) {
-      setInvoiceTotal(String(Number(cartSubtotal.toFixed(2))));
+    if (!isTotalManuallyOverridden) {
+      setInvoiceTotal(cartSubtotal.toFixed(2));
     }
-  }, [cartSubtotal, invoiceTotal]);
+  }, [cartSubtotal, isTotalManuallyOverridden]);
 
   const paidSoFar = useMemo(() => payments.reduce((acc, p) => acc + p.amount, 0), [payments]);
   const remaining = Math.max(parsedInvoiceTotal - paidSoFar, 0);
@@ -411,9 +417,10 @@ export default function POS() {
 
   const addToCart = (product) => {
     setCart((prev) => {
+      let nextCart;
       const existing = prev.find((item) => item.id === product.id);
       if (existing) {
-        return prev.map((item) =>
+        nextCart = prev.map((item) =>
           item.id === product.id
             ? {
                 ...item,
@@ -421,26 +428,33 @@ export default function POS() {
               }
             : item,
         );
+      } else {
+        nextCart = [
+          ...prev,
+          {
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            quantity: 1,
+            unitPrice: Number(product.price || 0),
+          },
+        ];
       }
 
-      return [
-        ...prev,
-        {
-          id: product.id,
-          name: product.name,
-          sku: product.sku,
-          quantity: 1,
-          unitPrice: Number(product.price || 0),
-        },
-      ];
+      if (!isTotalManuallyOverridden) {
+        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+        setInvoiceTotal(nextSubtotal.toFixed(2));
+      }
+
+      return nextCart;
     });
     setActionFeedback({ severity: 'success', message: t('pos_item_added', { defaultValue: 'Item added to cart.' }) });
     setSearchQuery('');
   };
 
   const updateQuantity = (productId, delta) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      const nextCart = prev
         .map((item) =>
           item.id === productId
             ? {
@@ -449,8 +463,15 @@ export default function POS() {
               }
             : item,
         )
-        .filter((item) => item.quantity > 0),
-    );
+        .filter((item) => item.quantity > 0);
+
+      if (!isTotalManuallyOverridden) {
+        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+        setInvoiceTotal(nextSubtotal.toFixed(2));
+      }
+
+      return nextCart;
+    });
   };
 
   const handleAddPayment = () => {
@@ -496,6 +517,7 @@ export default function POS() {
       setSearchQuery('');
       setCustomerQuery('');
       setInvoiceTotal('0');
+      setIsTotalManuallyOverridden(false);
       setActionFeedback({
         severity: 'success',
         message: t('pos_sale_completed', { defaultValue: 'Sale completed successfully.' }),
@@ -793,14 +815,28 @@ export default function POS() {
 
           <Stack spacing={2} sx={{ position: { xs: 'sticky', md: 'static' }, bottom: { xs: 8, md: 'auto' } }}>
             <SectionCard title={t('payment')} subtitle={t('remaining_balance')} accent="success.main">
-              <TextField
-                label={t('invoice_total')}
-                type="number"
-                value={invoiceTotal}
-                inputProps={{ min: 0, step: '0.01' }}
-                onChange={(event) => setInvoiceTotal(event.target.value)}
-                fullWidth
-              />
+              <Stack direction="row" spacing={1} alignItems="flex-start">
+                <TextField
+                  label={t('invoice_total')}
+                  type="number"
+                  value={invoiceTotal}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  onChange={(event) => {
+                    setIsTotalManuallyOverridden(true);
+                    setInvoiceTotal(event.target.value);
+                  }}
+                  fullWidth
+                />
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    setInvoiceTotal(cartSubtotal.toFixed(2));
+                    setIsTotalManuallyOverridden(false);
+                  }}
+                >
+                  {t('pos_reset_to_cart_total', { defaultValue: 'Reset to cart total' })}
+                </Button>
+              </Stack>
 
               <TextField
                 label={paymentInputMode === 'percentage' ? t('payment_percentage') : t('payment_amount')}
