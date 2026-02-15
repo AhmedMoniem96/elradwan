@@ -17,11 +17,17 @@ import {
   ListItemAvatar,
   ListItemButton,
   ListItemText,
+  Paper,
   Skeleton,
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import PointOfSaleOutlinedIcon from '@mui/icons-material/PointOfSaleOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -144,6 +150,330 @@ function SectionCard({ title, subtitle, children, accent }) {
           {children}
         </Stack>
     </SectionPanel>
+  );
+}
+
+function StateMessage({ icon: Icon, title, helper, loading = false }) {
+  return (
+    <Stack
+      spacing={1}
+      alignItems="center"
+      justifyContent="center"
+      sx={{
+        py: 3,
+        px: 2,
+        borderRadius: 2,
+        border: '1px dashed',
+        borderColor: 'divider',
+        color: 'text.secondary',
+      }}
+    >
+      <Icon color="action" />
+      <Typography variant="body2" fontWeight={600}>{title}</Typography>
+      <Typography variant="caption">{helper}</Typography>
+      {loading && <Skeleton variant="rounded" height={34} width="100%" />}
+    </Stack>
+  );
+}
+
+function ProductSearchPanel(props) {
+  const {
+    t,
+    isRTL,
+    searchQuery,
+    setSearchQuery,
+    flatResults,
+    activeResultIndex,
+    setActiveResultIndex,
+    activateResult,
+    activeCategoryId,
+    categoriesById,
+    clearCategoryFilter,
+    productsLoading,
+    searchGroups,
+    addToCart,
+    handleSelectCategory,
+    handleSelectCustomer,
+  } = props;
+
+  return (
+    <SectionCard title={t('pos_smart_product_search')} subtitle={t('pos_product_search_placeholder')} accent="primary.main">
+      <TextField
+        fullWidth
+        size="medium"
+        placeholder={t('pos_product_search_placeholder')}
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (!flatResults.length) return;
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveResultIndex((prev) => Math.min(prev + 1, flatResults.length - 1));
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveResultIndex((prev) => Math.max(prev - 1, 0));
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            activateResult(flatResults[activeResultIndex] || flatResults[0]);
+          }
+        }}
+      />
+
+      {activeCategoryId && (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip
+            color="primary"
+            label={`${t('pos_category_filter_label')}: ${categoriesById.get(String(activeCategoryId))?.name || activeCategoryId}`}
+          />
+          <Button size="small" color="warning" onClick={clearCategoryFilter}>{t('clear')}</Button>
+        </Stack>
+      )}
+
+      <Box sx={{ maxHeight: { xs: '30vh', md: '42vh' }, overflowY: 'auto' }}>
+        {productsLoading ? (
+          <StateMessage
+            icon={Inventory2OutlinedIcon}
+            title={t('pos_receipts_loading')}
+            helper={t('pos_load_products_error', { defaultValue: 'Loading products...' })}
+            loading
+          />
+        ) : (searchQuery || activeCategoryId) ? (
+          <List dense sx={{ p: 0 }}>
+            {searchGroups.length > 0 ? (
+              searchGroups.map((group) => (
+                <Box key={group.key}>
+                  <Typography variant="caption" color="text.secondary" sx={{ px: 1, pt: 1, display: 'block', textAlign: isRTL ? 'right' : 'left' }}>{group.label}</Typography>
+                  {group.items.map((entry) => {
+                    const flatIndex = flatResults.findIndex((result) => result.item.id === entry.id && result.type === group.type);
+                    const isActive = flatIndex === activeResultIndex;
+                    if (group.type === 'product') {
+                      return (
+                        <ListItem key={`product-${entry.id}`} disablePadding secondaryAction={<Button size="small" variant="contained" color="primary" onClick={() => addToCart(entry)}>{t('add')}</Button>}>
+                          <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
+                            <ListItemAvatar>
+                              <Avatar variant="rounded" src={entry.image_url || ''} alt={entry.name} sx={{ width: 36, height: 36 }} />
+                            </ListItemAvatar>
+                            <ListItemText primary={entry.name} secondary={`${entry.sku} • ${formatMoney(entry.price)}`} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    }
+                    if (group.type === 'category') {
+                      return (
+                        <ListItem key={`category-${entry.id}`} disablePadding>
+                          <ListItemButton selected={isActive} onClick={() => handleSelectCategory(entry)}>
+                            <ListItemText primary={entry.name} secondary={t('pos_filter_products_by_category')} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    }
+                    return (
+                      <ListItem key={`customer-${entry.id}`} disablePadding secondaryAction={<Button size="small" variant="contained" color="primary" onClick={() => handleSelectCustomer(entry)}>{t('select_customer')}</Button>}>
+                        <ListItemButton selected={isActive} onClick={() => handleSelectCustomer(entry)}>
+                          <ListItemText primary={entry.name || t('unnamed_customer')} secondary={entry.phone || t('no_phone')} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })}
+                </Box>
+              ))
+            ) : (
+              <StateMessage icon={Inventory2OutlinedIcon} title={t('pos_no_search_results')} helper={t('pos_quick_add_hint', { defaultValue: 'Try another product name, SKU, or barcode.' })} />
+            )}
+          </List>
+        ) : (
+          <StateMessage icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helper={t('pos_quick_add_hint', { defaultValue: 'Search products then press Enter to add the top result.' })} />
+        )}
+      </Box>
+    </SectionCard>
+  );
+}
+
+function CartPanel({ t, isRTL, cart, updateQuantity }) {
+  return (
+    <SectionCard title={t('cart')} subtitle={t('pos_cart_empty')} accent="warning.main">
+      <Box sx={{ maxHeight: { xs: '30vh', md: '50vh' }, overflowY: 'auto' }}>
+        {cart.length === 0 ? (
+          <StateMessage icon={PointOfSaleOutlinedIcon} title={t('pos_cart_empty')} helper={t('pos_quick_add_hint', { defaultValue: 'Add products from search results to start checkout.' })} />
+        ) : (
+          <Stack spacing={1}>
+            {cart.map((item) => (
+              <Paper key={item.id} variant="outlined" sx={{ p: 1.2 }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={700} noWrap>{item.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">SKU: {item.sku || t('none')}</Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">{formatMoney(item.unitPrice)}</Typography>
+                  <ButtonGroup size="small" sx={{ direction: isRTL ? 'rtl' : 'ltr', '& .MuiButton-root': { minWidth: 28 } }}>
+                    <Button color="warning" onClick={() => updateQuantity(item.id, -1)}>-</Button>
+                    <Button disabled>{item.quantity}</Button>
+                    <Button color="primary" onClick={() => updateQuantity(item.id, 1)}>+</Button>
+                  </ButtonGroup>
+                  <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatMoney(item.quantity * item.unitPrice)}</Typography>
+                </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        )}
+      </Box>
+    </SectionCard>
+  );
+}
+
+function PaymentSummaryPanel(props) {
+  const {
+    t,
+    isRTL,
+    cartSubtotal,
+    parsedInvoiceTotal,
+    invoiceTotal,
+    setInvoiceTotal,
+    setIsTotalManuallyOverridden,
+    paymentInputMode,
+    setPaymentInputMode,
+    paymentValue,
+    setPaymentValue,
+    handleAddPayment,
+    handleCompleteSale,
+    canCheckout,
+    isCompletingSale,
+    paidSoFar,
+    remaining,
+    payments,
+    taxTotal,
+    discountTotal,
+    dockedMobile,
+  } = props;
+
+  return (
+    <SectionCard title={t('payment')} subtitle={t('remaining_balance')} accent="success.main">
+      <Stack spacing={1}>
+        <Typography variant="body2">{t('invoice_total')}: {formatMoney(cartSubtotal)}</Typography>
+        <Typography variant="body2">{t('pos_receipt_discount')}: {formatMoney(discountTotal)}</Typography>
+        <Typography variant="body2">{t('pos_receipt_tax')}: {formatMoney(taxTotal)}</Typography>
+        <Typography variant="h6" fontWeight={700}>{t('pos_receipt_totals')}: {formatMoney(parsedInvoiceTotal)}</Typography>
+        <Typography variant="body2">{t('amount_paid')}: {formatMoney(paidSoFar)}</Typography>
+        <Typography variant="body2" color={remaining > 0 ? 'warning.main' : 'success.main'}>{t('remaining_balance')}: {formatMoney(remaining)}</Typography>
+      </Stack>
+
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
+        <TextField
+          label={t('invoice_total')}
+          type="number"
+          size="small"
+          value={invoiceTotal}
+          inputProps={{ min: 0, step: '0.01' }}
+          onChange={(event) => {
+            setIsTotalManuallyOverridden(true);
+            setInvoiceTotal(event.target.value);
+          }}
+          fullWidth
+        />
+        <Button variant="outlined" color="warning" onClick={() => { setInvoiceTotal(cartSubtotal.toFixed(2)); setIsTotalManuallyOverridden(false); }}>
+          {t('pos_reset_to_cart_total', { defaultValue: 'Reset to cart total' })}
+        </Button>
+      </Stack>
+
+      <TextField
+        label={paymentInputMode === 'percentage' ? t('payment_percentage') : t('payment_amount')}
+        type="number"
+        size="small"
+        value={paymentValue}
+        inputProps={{ min: 0, step: '0.01' }}
+        onChange={(event) => setPaymentValue(event.target.value)}
+        fullWidth
+      />
+
+      <ButtonGroup variant="outlined" fullWidth>
+        <Button onClick={() => setPaymentInputMode('amount')}>{t('payment_amount')}</Button>
+        <Button onClick={() => setPaymentInputMode('percentage')}>{t('payment_percentage')}</Button>
+      </ButtonGroup>
+
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {PERCENTAGE_PRESETS.map((preset) => (
+          <Button key={preset} size="small" variant="contained" color="primary" onClick={() => { setPaymentInputMode('percentage'); setPaymentValue(String(preset)); }}>
+            {preset}%
+          </Button>
+        ))}
+      </Stack>
+
+      <Button variant="contained" color="primary" onClick={handleAddPayment} fullWidth>
+        {t('record_payment')}
+      </Button>
+
+      {payments.length === 0 ? (
+        <StateMessage icon={PointOfSaleOutlinedIcon} title={t('pos_no_payments', { defaultValue: 'No payments recorded yet.' })} helper={t('payment_amount')} />
+      ) : (
+        <List dense>
+          {payments.map((payment, index) => (
+            <ListItem key={payment.id} divider>
+              <ListItemText
+                primary={`${t('payment')} #${index + 1}`}
+                secondary={`${payment.label} → ${formatMoney(payment.amount)}`}
+                sx={{ textAlign: isRTL ? 'right' : 'left' }}
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+
+      <Button
+        variant="contained"
+        color="success"
+        disabled={!canCheckout || isCompletingSale}
+        onClick={handleCompleteSale}
+        size={dockedMobile ? 'large' : 'medium'}
+        fullWidth
+      >
+        {isCompletingSale
+          ? t('pos_completing_sale', { defaultValue: 'Completing Sale...' })
+          : t('pos_complete_sale', { defaultValue: 'Complete Sale' })}
+      </Button>
+    </SectionCard>
+  );
+}
+
+function ReceiptHistoryDialog(props) {
+  const { t, receiptsOpen, setReceiptsOpen, receiptQuickFilter, setReceiptQuickFilter, receiptsError, receiptsLoading, filteredReceipts, setActiveReceipt } = props;
+
+  return (
+    <Dialog open={receiptsOpen} onClose={() => setReceiptsOpen(false)} fullWidth maxWidth="lg">
+      <DialogTitle>{t('pos_receipts_history')}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ py: 1 }}>
+          <TextField
+            size="small"
+            label={t('pos_receipts_quick_filter')}
+            placeholder={t('pos_receipts_quick_filter_placeholder')}
+            value={receiptQuickFilter}
+            onChange={(event) => setReceiptQuickFilter(event.target.value)}
+          />
+
+          {receiptsError && <Alert severity="error">{receiptsError}</Alert>}
+          {receiptsLoading && (
+            <StateMessage icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helper={t('pos_receipts_quick_filter')} loading />
+          )}
+
+          {!receiptsLoading && filteredReceipts.length === 0 && (
+            <StateMessage icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_empty')} helper={t('pos_receipts_quick_filter_placeholder')} />
+          )}
+
+          {filteredReceipts.map((receipt) => (
+            <Card key={receipt.id} variant="outlined">
+              <CardContent sx={{ p: 1.5 }}>
+                <Stack spacing={0.5}>
+                  <Typography fontWeight={600}>{t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || t('none')}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_datetime')}: {toDateTime(receipt.created_at)}</Typography>
+                  <Typography variant="body2">{t('pos_receipt_totals')}: {formatMoney(receipt.total)}</Typography>
+                  <Button size="small" onClick={() => setActiveReceipt(receipt)}>{t('pos_open_receipt_details')}</Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -366,18 +696,6 @@ export default function POS() {
     return Math.min(value, remaining);
   }, [paymentValue, paymentInputMode, parsedInvoiceTotal, remaining]);
 
-  const searchableCustomers = useMemo(() => {
-    const query = customerQuery.trim();
-    if (!query) return [];
-
-    return customers
-      .map((customer) => ({ customer, score: scoreCustomerMatch(customer, query) }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_GROUP_RESULTS)
-      .map((item) => item.customer);
-  }, [customerQuery, customers]);
-
   useEffect(() => {
     setActiveResultIndex(0);
   }, [searchQuery, activeCategoryId]);
@@ -533,11 +851,6 @@ export default function POS() {
     setCustomerQuery('');
   };
 
-  const clearSelectedCustomer = () => {
-    setSelectedCustomer(null);
-    setCustomerQuery('');
-  };
-
   const handleSelectCategory = (category) => {
     setActiveCategoryId(category.id);
     setSearchQuery(category.name || '');
@@ -578,10 +891,14 @@ export default function POS() {
   };
 
   const canCheckout = cart.length > 0 && remaining === 0 && payments.length > 0;
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const taxTotal = 0;
+  const discountTotal = Math.max(cartSubtotal - parsedInvoiceTotal + taxTotal, 0);
 
   return (
     <PageShell>
-      <Stack spacing={2.5}>
+      <Stack spacing={2.5} sx={{ pb: { xs: 14, md: 0 } }}>
         <PageHeader title={t('pos')} subtitle={t('pos_intro_text')} />
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -593,16 +910,6 @@ export default function POS() {
               {t('pos_open_suppliers')}
             </Button>
           )}
-          <Button
-            variant="contained"
-            color={canCheckout ? 'success' : 'primary'}
-            disabled={!canCheckout || isCompletingSale}
-            onClick={handleCompleteSale}
-          >
-            {isCompletingSale
-              ? t('pos_completing_sale', { defaultValue: 'Completing Sale...' })
-              : t('pos_complete_sale', { defaultValue: 'Complete Sale' })}
-          </Button>
         </Stack>
 
         {!!error && <Alert severity="error">{error}</Alert>}
@@ -619,427 +926,81 @@ export default function POS() {
           }}
         >
           <Stack spacing={2}>
-            <SectionCard
-              title={t('pos_smart_product_search')}
-              subtitle={t('pos_product_search_placeholder')}
-              accent="primary.main"
-            >
-              <TextField
-                fullWidth
-                size="medium"
-                placeholder={t('pos_product_search_placeholder')}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (!flatResults.length) return;
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    setActiveResultIndex((prev) => Math.min(prev + 1, flatResults.length - 1));
-                  } else if (event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    setActiveResultIndex((prev) => Math.max(prev - 1, 0));
-                  } else if (event.key === 'Enter') {
-                    event.preventDefault();
-                    activateResult(flatResults[activeResultIndex] || flatResults[0]);
-                  }
-                }}
-              />
+            <ProductSearchPanel
+              t={t}
+              isRTL={isRTL}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              flatResults={flatResults}
+              activeResultIndex={activeResultIndex}
+              setActiveResultIndex={setActiveResultIndex}
+              activateResult={activateResult}
+              activeCategoryId={activeCategoryId}
+              categoriesById={categoriesById}
+              clearCategoryFilter={clearCategoryFilter}
+              productsLoading={productsLoading}
+              searchGroups={searchGroups}
+              addToCart={addToCart}
+              handleSelectCategory={handleSelectCategory}
+              handleSelectCustomer={handleSelectCustomer}
+            />
 
-              {activeCategoryId && (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Chip
-                    color="primary"
-                    label={`${t('pos_category_filter_label')}: ${categoriesById.get(String(activeCategoryId))?.name || activeCategoryId}`}
-                  />
-                  <Button size="small" onClick={clearCategoryFilter}>
-                    {t('clear')}
-                  </Button>
-                </Stack>
-              )}
-
-              {productsLoading ? (
-                <Stack spacing={1}>
-                  {Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={`search-skeleton-${index + 1}`} variant="rounded" height={54} />
-                  ))}
-                </Stack>
-              ) : (searchQuery || activeCategoryId) ? (
-                <List dense sx={{ p: 0 }}>
-                  {searchGroups.length > 0 ? (
-                    searchGroups.map((group) => (
-                      <Box key={group.key}>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ px: 1, pt: 1, display: 'block', textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {group.label}
-                        </Typography>
-                        {group.items.map((entry) => {
-                          const flatIndex = flatResults.findIndex(
-                            (result) => result.item.id === entry.id && result.type === group.type,
-                          );
-                          const isActive = flatIndex === activeResultIndex;
-                          if (group.type === 'product') {
-                            return (
-                              <ListItem
-                                key={`product-${entry.id}`}
-                                disablePadding
-                                secondaryAction={(
-                                  <Button
-                                    size="medium"
-                                    variant="contained"
-                                    sx={{ minWidth: 84 }}
-                                    onClick={() => addToCart(entry)}
-                                  >
-                                    {t('add')}
-                                  </Button>
-                                )}
-                              >
-                                <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
-                                  <ListItemAvatar>
-                                    <Avatar
-                                      variant="rounded"
-                                      src={entry.image_url || ''}
-                                      alt={entry.name}
-                                      sx={{ width: 40, height: 40 }}
-                                    />
-                                  </ListItemAvatar>
-                                  <ListItemText
-                                    primary={entry.name}
-                                    secondary={`${entry.sku} • ${formatMoney(entry.price)}${entry.barcode ? ` • ${entry.barcode}` : ''}${entry.categoryName ? ` • ${entry.categoryName}` : ''}`}
-                                    sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                                  />
-                                </ListItemButton>
-                              </ListItem>
-                            );
-                          }
-
-                          if (group.type === 'category') {
-                            return (
-                              <ListItem key={`category-${entry.id}`} disablePadding>
-                                <ListItemButton selected={isActive} onClick={() => handleSelectCategory(entry)}>
-                                  <ListItemText
-                                    primary={entry.name}
-                                    secondary={t('pos_filter_products_by_category')}
-                                    sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                                  />
-                                </ListItemButton>
-                              </ListItem>
-                            );
-                          }
-
-                          return (
-                            <ListItem
-                              key={`customer-${entry.id}`}
-                              disablePadding
-                              secondaryAction={(
-                                <Button size="small" variant="contained" onClick={() => handleSelectCustomer(entry)}>
-                                  {t('select_customer')}
-                                </Button>
-                              )}
-                            >
-                              <ListItemButton selected={isActive} onClick={() => handleSelectCustomer(entry)}>
-                                <ListItemText
-                                  primary={entry.name || t('unnamed_customer')}
-                                  secondary={entry.phone || t('no_phone')}
-                                  sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                                />
-                              </ListItemButton>
-                            </ListItem>
-                          );
-                        })}
-                      </Box>
-                    ))
-                  ) : (
-                    <ListItem>
-                      <ListItemText primary={t('pos_no_search_results')} />
-                    </ListItem>
-                  )}
-                </List>
-              ) : (
-                <Alert severity="info">{t('pos_quick_add_hint', { defaultValue: 'Search products then press Enter to add the top result.' })}</Alert>
-              )}
-            </SectionCard>
-
-            <SectionCard title={t('cart')} subtitle={t('pos_cart_empty')} accent="warning.main">
-              {cart.length === 0 ? (
-                <Alert severity="info">{t('pos_cart_empty')}</Alert>
-              ) : (
-                <Stack spacing={1.2}>
-                  {cart.map((item) => (
-                    <Card key={item.id} variant="outlined">
-                      <CardContent sx={{ p: 1.5 }}>
-                        <Stack spacing={1}>
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              flexDirection: isRTL ? 'row-reverse' : 'row',
-                              gap: 1,
-                            }}
-                          >
-                            <Box>
-                              <Typography variant="subtitle1" fontWeight={700}>
-                                {item.name}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {item.sku} • {formatMoney(item.unitPrice)} {t('pos_each')}
-                              </Typography>
-                            </Box>
-                            <Chip label={formatMoney(item.quantity * item.unitPrice)} color="primary" />
-                          </Box>
-                          <ButtonGroup
-                            size="large"
-                            sx={{
-                              direction: isRTL ? 'rtl' : 'ltr',
-                              '& .MuiButton-root': { minWidth: 56, fontWeight: 700 },
-                            }}
-                          >
-                            <Button color="error" onClick={() => updateQuantity(item.id, -1)}>-</Button>
-                            <Button disabled>{item.quantity}</Button>
-                            <Button color="success" onClick={() => updateQuantity(item.id, 1)}>+</Button>
-                          </ButtonGroup>
-                        </Stack>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Stack>
-              )}
-            </SectionCard>
+            <CartPanel t={t} isRTL={isRTL} cart={cart} updateQuantity={updateQuantity} />
           </Stack>
 
-          <Stack spacing={2} sx={{ position: { xs: 'sticky', md: 'static' }, bottom: { xs: 8, md: 'auto' } }}>
-            <SectionCard title={t('payment')} subtitle={t('remaining_balance')} accent="success.main">
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <TextField
-                  label={t('invoice_total')}
-                  type="number"
-                  value={invoiceTotal}
-                  inputProps={{ min: 0, step: '0.01' }}
-                  onChange={(event) => {
-                    setIsTotalManuallyOverridden(true);
-                    setInvoiceTotal(event.target.value);
-                  }}
-                  fullWidth
-                />
-                <Button
-                  variant="outlined"
-                  onClick={() => {
-                    setInvoiceTotal(cartSubtotal.toFixed(2));
-                    setIsTotalManuallyOverridden(false);
-                  }}
-                >
-                  {t('pos_reset_to_cart_total', { defaultValue: 'Reset to cart total' })}
-                </Button>
-              </Stack>
-
-              <TextField
-                label={paymentInputMode === 'percentage' ? t('payment_percentage') : t('payment_amount')}
-                type="number"
-                value={paymentValue}
-                inputProps={{ min: 0, step: '0.01' }}
-                onChange={(event) => setPaymentValue(event.target.value)}
-                fullWidth
-              />
-
-              <Stack spacing={1}>
-                <ButtonGroup variant="outlined" fullWidth>
-                  <Button onClick={() => setPaymentInputMode('amount')}>{t('payment_amount')}</Button>
-                  <Button onClick={() => setPaymentInputMode('percentage')}>{t('payment_percentage')}</Button>
-                </ButtonGroup>
-
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {PERCENTAGE_PRESETS.map((preset) => (
-                    <Button
-                      key={preset}
-                      size="small"
-                      variant="contained"
-                      color="secondary"
-                      onClick={() => {
-                        setPaymentInputMode('percentage');
-                        setPaymentValue(String(preset));
-                      }}
-                    >
-                      {preset}%
-                    </Button>
-                  ))}
-                </Stack>
-              </Stack>
-
-              <Button variant="contained" color="success" onClick={handleAddPayment} fullWidth size="large">
-                {t('record_payment')}
-              </Button>
-
-              <Divider />
-
-              <Typography sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {t('amount_paid')}: {formatMoney(paidSoFar)}
-              </Typography>
-              <Typography sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {t('remaining_balance')}: {formatMoney(remaining)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block">
-                {t('invoice_payload_customer_hint')}: {invoicePayload.customer_id || t('none')}
-              </Typography>
-
-              <List>
-                {payments.length === 0 ? (
-                  <ListItem>
-                    <ListItemText
-                      primary={t('pos_no_payments', { defaultValue: 'No payments recorded yet.' })}
-                      sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                    />
-                  </ListItem>
-                ) : (
-                  payments.map((payment, index) => (
-                    <ListItem key={payment.id} divider>
-                      <ListItemText
-                        primary={`${t('payment')} #${index + 1}`}
-                        secondary={`${payment.label} → ${formatMoney(payment.amount)}`}
-                        sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                      />
-                    </ListItem>
-                  ))
-                )}
-              </List>
-            </SectionCard>
-
-            <SectionCard
-              title={t('pos_receipt_summary', { defaultValue: 'Receipt / Customer Summary' })}
-              subtitle={t('smart_customer_search')}
-            >
-              <TextField
-                fullWidth
-                size="small"
-                placeholder={t('pos_customer_search_placeholder')}
-                value={customerQuery}
-                onChange={(event) => setCustomerQuery(event.target.value)}
-              />
-
-              {selectedCustomer && (
-                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                  <Chip
-                    color="secondary"
-                    label={`${selectedCustomer.name}${selectedCustomer.phone ? ` • ${selectedCustomer.phone}` : ''}`}
-                  />
-                  <Button size="small" onClick={clearSelectedCustomer}>
-                    {t('clear_selected_customer')}
-                  </Button>
-                </Stack>
-              )}
-
-              {customersLoading ? (
-                <Stack spacing={1}>
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <Skeleton key={`customer-skeleton-${index + 1}`} variant="rounded" height={44} />
-                  ))}
-                </Stack>
-              ) : customerQuery ? (
-                <List dense sx={{ p: 0 }}>
-                  {searchableCustomers.length > 0 ? (
-                    searchableCustomers.map((customer) => (
-                      <ListItem
-                        key={customer.id}
-                        disablePadding
-                        secondaryAction={(
-                          <Button size="small" variant="contained" onClick={() => handleSelectCustomer(customer)}>
-                            {t('select_customer')}
-                          </Button>
-                        )}
-                      >
-                        <ListItemButton onClick={() => handleSelectCustomer(customer)}>
-                          <ListItemText
-                            primary={customer.name || t('unnamed_customer')}
-                            secondary={customer.phone || t('no_phone')}
-                            sx={{ textAlign: isRTL ? 'right' : 'left' }}
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                    ))
-                  ) : (
-                    <ListItem>
-                      <ListItemText primary={t('no_customers_matched_search')} />
-                    </ListItem>
-                  )}
-                </List>
-              ) : (
-                <Typography variant="body2" color="text.secondary" sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                  {t('invoice_payload_customer_hint')}: {selectedCustomer?.id || t('none')}
-                </Typography>
-              )}
-
-              <Divider />
-              <Typography variant="body2" sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {t('invoice_total')}: {formatMoney(parsedInvoiceTotal)}
-              </Typography>
-              <Typography variant="body2" sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {t('cart')}: {cart.length}
-              </Typography>
-              <Typography variant="body2" sx={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {t('amount_paid')}: {formatMoney(paidSoFar)}
-              </Typography>
-            </SectionCard>
+          <Stack
+            spacing={2}
+            sx={{
+              position: { xs: 'fixed', md: 'sticky' },
+              bottom: { xs: 0, md: 'auto' },
+              top: { md: 16 },
+              left: { xs: 0, md: 'auto' },
+              right: { xs: 0, md: 'auto' },
+              zIndex: 10,
+              bgcolor: { xs: 'background.paper', md: 'transparent' },
+              p: { xs: 1.25, md: 0 },
+              borderTop: { xs: '1px solid', md: 'none' },
+              borderColor: 'divider',
+            }}
+          >
+            <PaymentSummaryPanel
+              t={t}
+              isRTL={isRTL}
+              cartSubtotal={cartSubtotal}
+              parsedInvoiceTotal={parsedInvoiceTotal}
+              invoiceTotal={invoiceTotal}
+              setInvoiceTotal={setInvoiceTotal}
+              setIsTotalManuallyOverridden={setIsTotalManuallyOverridden}
+              paymentInputMode={paymentInputMode}
+              setPaymentInputMode={setPaymentInputMode}
+              paymentValue={paymentValue}
+              setPaymentValue={setPaymentValue}
+              handleAddPayment={handleAddPayment}
+              handleCompleteSale={handleCompleteSale}
+              canCheckout={canCheckout}
+              isCompletingSale={isCompletingSale}
+              paidSoFar={paidSoFar}
+              remaining={remaining}
+              payments={payments}
+              taxTotal={taxTotal}
+              discountTotal={discountTotal}
+              dockedMobile={isMobile}
+            />
           </Stack>
         </Box>
       </Stack>
 
-      <Dialog open={receiptsOpen} onClose={() => setReceiptsOpen(false)} fullWidth maxWidth="lg">
-        <DialogTitle>{t('pos_receipts_history')}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ py: 1 }}>
-            <TextField
-              size="small"
-              label={t('pos_receipts_quick_filter')}
-              placeholder={t('pos_receipts_quick_filter_placeholder')}
-              value={receiptQuickFilter}
-              onChange={(event) => setReceiptQuickFilter(event.target.value)}
-            />
-
-            {receiptsError && <Alert severity="error">{receiptsError}</Alert>}
-            {receiptsLoading && <Typography color="text.secondary">{t('pos_receipts_loading')}</Typography>}
-
-            {!receiptsLoading && filteredReceipts.length === 0 && (
-              <Typography color="text.secondary">{t('pos_receipts_empty')}</Typography>
-            )}
-
-            {filteredReceipts.map((receipt) => (
-              <Card key={receipt.id} variant="outlined">
-                <CardContent sx={{ p: 1.5 }}>
-                  <Stack spacing={0.5}>
-                    <Typography fontWeight={600}>
-                      {t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || t('none')}
-                    </Typography>
-                    <Typography variant="body2">{t('pos_receipt_datetime')}: {toDateTime(receipt.created_at)}</Typography>
-                    <Typography variant="body2">{t('pos_receipt_cashier')}: {receipt.user || t('none')}</Typography>
-                    <Typography variant="body2">{t('pos_receipt_customer')}: {receipt.customer?.name || t('unnamed_customer')}</Typography>
-                    <Typography variant="body2">{t('phone')}: {receipt.customer?.phone || t('no_phone')}</Typography>
-                    <Typography variant="body2">
-                      {t('pos_receipt_line_items')}: {(receipt.lines || []).map((line) => `#${line.product} × ${line.quantity}`).join(', ') || t('none')}
-                    </Typography>
-                    <Typography variant="body2">
-                      {t('pos_receipt_totals')}: {formatMoney(receipt.total)} • {t('pos_receipt_discount')}: {formatMoney(receipt.discount_total)} • {t('pos_receipt_tax')}: {formatMoney(receipt.tax_total)}
-                    </Typography>
-                    <Typography variant="body2">
-                      {t('amount_paid')}: {formatMoney(receipt.amount_paid)} • {t('pos_receipt_balance')}: {formatMoney(receipt.balance_due)}
-                    </Typography>
-                    <Typography variant="body2">
-                      {t('pos_receipt_payment_methods')}: {(receipt.payments || []).map((paymentEntry) => paymentEntry.method).join(', ') || t('none')}
-                    </Typography>
-                    <Typography variant="body2">{t('pos_receipt_returns')}: {(receipt.returns || []).length}</Typography>
-                    <Box>
-                      <Button size="small" onClick={() => setActiveReceipt(receipt)}>
-                        {t('pos_open_receipt_details')}
-                      </Button>
-                    </Box>
-                  </Stack>
-                </CardContent>
-              </Card>
-            ))}
-          </Stack>
-        </DialogContent>
-      </Dialog>
+      <ReceiptHistoryDialog
+        t={t}
+        receiptsOpen={receiptsOpen}
+        setReceiptsOpen={setReceiptsOpen}
+        receiptQuickFilter={receiptQuickFilter}
+        setReceiptQuickFilter={setReceiptQuickFilter}
+        receiptsError={receiptsError}
+        receiptsLoading={receiptsLoading}
+        filteredReceipts={filteredReceipts}
+        setActiveReceipt={setActiveReceipt}
+      />
 
       <Dialog open={Boolean(activeReceipt)} onClose={() => setActiveReceipt(null)} fullWidth maxWidth="md">
         <DialogTitle>{t('pos_receipt_details')}</DialogTitle>
