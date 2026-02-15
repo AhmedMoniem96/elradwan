@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Grid from '@mui/material/Grid';
-import Paper from '@mui/material/Paper';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
@@ -12,12 +13,13 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Stack from '@mui/material/Stack';
+import { PageShell, SectionPanel } from '../components/PageLayout';
 
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
 
 const TableCard = ({ title, columns, rows }) => (
-  <Paper sx={{ p: 2, overflowX: 'auto' }}>
-    <Typography variant="h6" gutterBottom>{title}</Typography>
+  <SectionPanel title={title} contentSx={{ p: 2, '&:last-child': { pb: 2 } }}>
     <Table size="small">
       <TableHead>
         <TableRow>
@@ -32,7 +34,7 @@ const TableCard = ({ title, columns, rows }) => (
         ))}
       </TableBody>
     </Table>
-  </Paper>
+  </SectionPanel>
 );
 
 export default function Reports() {
@@ -73,12 +75,13 @@ export default function Reports() {
   };
 
   return (
+    <PageShell>
     <Grid container spacing={2}>
       <Grid item xs={12}>
-        <Paper sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        <SectionPanel contentSx={{ p: 2 }}>
+          <Stack direction="row" spacing={2} useFlexGap flexWrap="wrap" alignItems="center">
           <TextField
             select
-            size="small"
             label="Branch"
             value={filters.branch_id}
             onChange={(e) => setFilters((f) => ({ ...f, branch_id: e.target.value }))}
@@ -87,20 +90,27 @@ export default function Reports() {
             <MenuItem value="">All</MenuItem>
             {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
           </TextField>
-          <TextField size="small" type="date" label="From" InputLabelProps={{ shrink: true }} value={filters.date_from} onChange={(e) => setFilters((f) => ({ ...f, date_from: e.target.value }))} />
-          <TextField size="small" type="date" label="To" InputLabelProps={{ shrink: true }} value={filters.date_to} onChange={(e) => setFilters((f) => ({ ...f, date_to: e.target.value }))} />
-          <TextField size="small" label="Timezone" value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
+          <TextField type="date" label="From" InputLabelProps={{ shrink: true }} value={filters.date_from} onChange={(e) => setFilters((f) => ({ ...f, date_from: e.target.value }))} />
+          <TextField type="date" label="To" InputLabelProps={{ shrink: true }} value={filters.date_to} onChange={(e) => setFilters((f) => ({ ...f, date_to: e.target.value }))} />
+          <TextField label="Timezone" value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
           <Button variant="outlined" onClick={loadReports}>Refresh</Button>
-        </Paper>
+          </Stack>
+        </SectionPanel>
       </Grid>
 
-      <Grid item xs={12} md={3}><Paper sx={{ p: 2 }}><Typography variant="overline">Revenue</Typography><Typography variant="h5">{money(grossMargin.revenue)}</Typography></Paper></Grid>
-      <Grid item xs={12} md={3}><Paper sx={{ p: 2 }}><Typography variant="overline">COGS</Typography><Typography variant="h5">{money(grossMargin.cogs)}</Typography></Paper></Grid>
-      <Grid item xs={12} md={3}><Paper sx={{ p: 2 }}><Typography variant="overline">Gross Margin</Typography><Typography variant="h5">{money(grossMargin.gross_margin)}</Typography></Paper></Grid>
-      <Grid item xs={12} md={3}><Paper sx={{ p: 2 }}><Typography variant="overline">Margin %</Typography><Typography variant="h5">{Number(grossMargin.margin_pct || 0).toFixed(2)}%</Typography></Paper></Grid>
+      {[
+        ['Revenue', money(grossMargin.revenue)],
+        ['COGS', money(grossMargin.cogs)],
+        ['Gross Margin', money(grossMargin.gross_margin)],
+        ['Margin %', `${Number(grossMargin.margin_pct || 0).toFixed(2)}%`],
+      ].map(([label, value]) => (
+        <Grid item xs={12} md={3} key={label}>
+          <Card variant="panel"><CardContent><Typography variant="overline">{label}</Typography><Typography variant="h5">{value}</Typography></CardContent></Card>
+        </Grid>
+      ))}
 
       <Grid item xs={12} md={6}>
-        <Paper sx={{ p: 2 }}>
+        <SectionPanel title="Payment Method Split" contentSx={{ p: 2 }}>
           <Typography variant="h6">Payment Method Split</Typography>
           {paymentSplit.map((p) => (
             <div key={p.method} style={{ marginTop: 10 }}>
@@ -109,7 +119,7 @@ export default function Reports() {
             </div>
           ))}
           <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('payment-method-split')}>Export CSV</Button>
-        </Paper>
+        </SectionPanel>
       </Grid>
       <Grid item xs={12} md={6}>
         <TableCard
@@ -164,5 +174,6 @@ export default function Reports() {
         <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('accounts-receivable')}>Export CSV</Button>
       </Grid>
     </Grid>
+    </PageShell>
   );
 }
