@@ -1,7 +1,10 @@
 import uuid
+from datetime import datetime, time
+
+from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -25,6 +28,7 @@ from inventory.models import (
     StockTransfer,
     Supplier,
     SupplierContact,
+    SupplierPayment,
     Warehouse,
 )
 from inventory.serializers import (
@@ -35,6 +39,7 @@ from inventory.serializers import (
     PurchaseOrderSerializer,
     StockTransferSerializer,
     SupplierContactSerializer,
+    SupplierPaymentSerializer,
     SupplierSerializer,
     WarehouseSerializer,
 )
@@ -372,27 +377,86 @@ class AdminStockTransferViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         return Response(self.get_serializer(transfer).data)
 
 
+class SupplierPaymentCreateView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"post": "supplier.payment.create"}
+
+    def post(self, request, supplier_id):
+        supplier = scoped_queryset_for_user(Supplier.objects.all(), request.user).filter(id=supplier_id).first()
+        if supplier is None:
+            raise ValidationError("Supplier not found.")
+
+        payload = request.data.copy()
+        payload["supplier"] = supplier.id
+        payload["branch"] = supplier.branch_id
+        serializer = SupplierPaymentSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        payment = serializer.save()
+
+        remaining = Decimal(payment.amount)
+        open_pos = PurchaseOrder.objects.filter(supplier_id=supplier.id, total__gt=F("amount_paid")).order_by("payment_due_at", "due_date", "created_at")
+        for po in open_pos:
+            if remaining <= 0:
+                break
+            po_outstanding = Decimal(po.total) - Decimal(po.amount_paid)
+            allocation = min(po_outstanding, remaining)
+            po.amount_paid = Decimal(po.amount_paid) + allocation
+            po.save(update_fields=["amount_paid", "updated_at"])
+            remaining -= allocation
+
+        emit_outbox(supplier.branch_id, "supplier_payment", payment.id, "upsert", SupplierPaymentSerializer(payment).data)
+        return Response(SupplierPaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+
+
 class SupplierBalancesReportView(APIView):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"get": "inventory.view", "post": "inventory.view"}
 
     def get(self, request):
         po_qs = scoped_queryset_for_user(PurchaseOrder.objects.select_related("supplier"), request.user)
+        now = timezone.now()
         rows = []
         for supplier in Supplier.objects.filter(id__in=po_qs.values_list("supplier_id", flat=True).distinct()):
-            totals = po_qs.filter(supplier_id=supplier.id).aggregate(total=Sum("total"), paid=Sum("amount_paid"))
-            total = totals["total"] or 0
-            paid = totals["paid"] or 0
+            supplier_pos = po_qs.filter(supplier_id=supplier.id)
+            totals = supplier_pos.aggregate(total=Sum("total"), paid=Sum("amount_paid"))
+            total = Decimal(totals["total"] or 0)
+            paid = Decimal(totals["paid"] or 0)
+
+            aging = {"current": Decimal("0.00"), "30": Decimal("0.00"), "60": Decimal("0.00"), "90_plus": Decimal("0.00")}
+            for po in supplier_pos.filter(total__gt=F("amount_paid")):
+                due_amount = Decimal(po.total) - Decimal(po.amount_paid)
+                due_dt = po.payment_due_at or (timezone.make_aware(datetime.combine(po.due_date, time.min)) if po.due_date else po.expected_at or po.created_at)
+                age_days = max((now - due_dt).days, 0)
+                if age_days < 30:
+                    aging["current"] += due_amount
+                elif age_days < 60:
+                    aging["30"] += due_amount
+                elif age_days < 90:
+                    aging["60"] += due_amount
+                else:
+                    aging["90_plus"] += due_amount
+
             rows.append(
                 {
                     "supplier_id": str(supplier.id),
                     "supplier_name": supplier.name,
                     "total_purchased": total,
                     "amount_paid": paid,
-                    "balance_due": max(total - paid, 0),
+                    "balance_due": max(total - paid, Decimal("0.00")),
+                    "aging": aging,
                 }
             )
         return Response(rows)
+
+
+
+
+class SupplierAgingReportView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"get": "inventory.view"}
+
+    def get(self, request):
+        return SupplierBalancesReportView().get(request)
 
 
 class PurchaseReceiveHistoryView(APIView):

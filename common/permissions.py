@@ -22,6 +22,8 @@ ROLE_CAPABILITY_MATRIX = {
     "shift.close.override": {User.Role.SUPERVISOR, User.Role.ADMIN},
     "stock.transfer.approve": {User.Role.SUPERVISOR, User.Role.ADMIN},
     "stock.transfer.complete": {User.Role.SUPERVISOR, User.Role.ADMIN},
+    "supplier.payment.create": {User.Role.SUPERVISOR, User.Role.ADMIN},
+    "supplier.payment.approve": {User.Role.SUPERVISOR, User.Role.ADMIN},
 }
 
 

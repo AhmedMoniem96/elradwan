@@ -16,6 +16,7 @@ from inventory.models import (
     StockTransferLine,
     Supplier,
     SupplierContact,
+    SupplierPayment,
     Warehouse,
 )
 from inventory.services import ensure_transfer_stock_available, update_product_cost
@@ -103,8 +104,20 @@ class SupplierSerializer(serializers.ModelSerializer):
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrderLine
-        fields = ["id", "purchase_order", "product", "quantity", "quantity_received", "unit_cost", "tax_rate", "line_total"]
-        read_only_fields = ["id", "quantity_received", "line_total"]
+        fields = [
+            "id",
+            "purchase_order",
+            "product",
+            "quantity",
+            "quantity_received",
+            "unit_cost",
+            "received_unit_cost",
+            "received_line_total",
+            "received_cost_variance",
+            "tax_rate",
+            "line_total",
+        ]
+        read_only_fields = ["id", "quantity_received", "received_line_total", "received_cost_variance", "line_total"]
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
@@ -124,6 +137,8 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "total",
             "amount_paid",
             "balance_due",
+            "due_date",
+            "payment_due_at",
             "expected_at",
             "approved_at",
             "received_at",
@@ -178,9 +193,26 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         return po
 
 
+
+
+class SupplierPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplierPayment
+        fields = ["id", "supplier", "branch", "amount", "method", "paid_at", "reference", "notes", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        supplier = attrs.get("supplier") or getattr(self.instance, "supplier", None)
+        branch = attrs.get("branch") or getattr(self.instance, "branch", None)
+        branch_id = attrs.get("branch_id") or (branch.id if branch else getattr(self.instance, "branch_id", None))
+        if supplier and branch_id and supplier.branch_id != branch_id:
+            raise serializers.ValidationError({"supplier": "Supplier must belong to the same branch."})
+        return attrs
+
 class GoodsReceiptLineSerializer(serializers.Serializer):
     line_id = serializers.UUIDField()
     quantity_received = serializers.DecimalField(max_digits=12, decimal_places=2)
+    received_unit_cost = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
 
 
 class GoodsReceiptSerializer(serializers.Serializer):
@@ -201,12 +233,13 @@ class GoodsReceiptSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"lines": f"Line {line_id} is not part of this PO."})
             if qty <= 0:
                 raise serializers.ValidationError({"lines": "Received quantity must be greater than zero."})
+            received_unit_cost = Decimal(payload.get("received_unit_cost") or line.unit_cost)
 
             remaining = line.quantity - line.quantity_received
             if qty > remaining:
                 raise serializers.ValidationError({"lines": f"Received quantity exceeds remaining for line {line_id}."})
 
-            resolved_lines.append((line, qty))
+            resolved_lines.append((line, qty, received_unit_cost))
 
         attrs["_resolved_lines"] = resolved_lines
         return attrs
@@ -227,16 +260,19 @@ class GoodsReceiptSerializer(serializers.Serializer):
         if warehouse is None:
             raise serializers.ValidationError({"warehouse_id": "No warehouse found for branch."})
 
-        for line, qty in self.validated_data["_resolved_lines"]:
+        for line, qty, received_unit_cost in self.validated_data["_resolved_lines"]:
             line.quantity_received = _to_money(line.quantity_received + qty)
-            line.save(update_fields=["quantity_received"])
+            line.received_unit_cost = _to_money(received_unit_cost)
+            line.received_line_total = _to_money(line.quantity_received * line.received_unit_cost)
+            line.received_cost_variance = _to_money((line.received_unit_cost - line.unit_cost) * line.quantity_received)
+            line.save(update_fields=["quantity_received", "received_unit_cost", "received_line_total", "received_cost_variance"])
 
             StockMove.objects.create(
                 branch_id=po.branch_id,
                 warehouse=warehouse,
                 product=line.product,
                 quantity=qty,
-                unit_cost=line.unit_cost,
+                unit_cost=line.received_unit_cost or line.unit_cost,
                 reason=StockMove.Reason.PURCHASE,
                 source_ref_type="inventory.purchase_order",
                 source_ref_id=po.id,
@@ -250,7 +286,7 @@ class GoodsReceiptSerializer(serializers.Serializer):
             update_product_cost(
                 product=line.product,
                 incoming_qty=qty,
-                incoming_unit_cost=line.unit_cost,
+                incoming_unit_cost=line.received_unit_cost or line.unit_cost,
                 current_stock_qty=current_stock_qty,
             )
 

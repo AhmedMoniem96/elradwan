@@ -19,7 +19,9 @@ from inventory.views import (
     ReorderSuggestionExportView,
     StockIntelligenceView,
     StockTransferViewSet,
+    SupplierAgingReportView,
     SupplierBalancesReportView,
+    SupplierPaymentCreateView,
     SupplierViewSet,
     WarehouseViewSet,
 )
@@ -42,6 +44,8 @@ router.register(r"admin/stock-transfers", AdminStockTransferViewSet, basename="a
 
 urlpatterns = router.urls + [
     path("reports/supplier-balances/", SupplierBalancesReportView.as_view(), name="supplier-balances"),
+    path("reports/supplier-aging/", SupplierAgingReportView.as_view(), name="supplier-aging"),
+    path("suppliers/<uuid:supplier_id>/payments/", SupplierPaymentCreateView.as_view(), name="supplier-payment-create"),
     path("reports/purchases/received-history/", PurchaseReceiveHistoryView.as_view(), name="received-history"),
     path("stock-intelligence/", StockIntelligenceView.as_view(), name="stock-intelligence"),
     path("alerts/mark-read/", AlertMarkReadView.as_view(), name="alerts-mark-read"),

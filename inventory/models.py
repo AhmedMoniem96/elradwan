@@ -146,6 +146,8 @@ class PurchaseOrder(models.Model):
     tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    due_date = models.DateField(null=True, blank=True)
+    payment_due_at = models.DateTimeField(null=True, blank=True)
     expected_at = models.DateTimeField(null=True, blank=True)
     approved_at = models.DateTimeField(null=True, blank=True)
     received_at = models.DateTimeField(null=True, blank=True)
@@ -168,6 +170,9 @@ class PurchaseOrderLine(models.Model):
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     quantity_received = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2)
+    received_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    received_line_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    received_cost_variance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default=0)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
 
@@ -209,6 +214,32 @@ class StockTransfer(models.Model):
         indexes = [
             models.Index(fields=["branch", "status", "created_at"]),
             models.Index(fields=["source_warehouse", "destination_warehouse"]),
+        ]
+
+
+class SupplierPayment(models.Model):
+    class Method(models.TextChoices):
+        CASH = "cash", "Cash"
+        BANK_TRANSFER = "bank_transfer", "Bank transfer"
+        CARD = "card", "Card"
+        CHEQUE = "cheque", "Cheque"
+        OTHER = "other", "Other"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="payments")
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    method = models.CharField(max_length=32, choices=Method.choices)
+    paid_at = models.DateTimeField()
+    reference = models.CharField(max_length=128, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "paid_at"]),
+            models.Index(fields=["supplier", "paid_at"]),
         ]
 
 
