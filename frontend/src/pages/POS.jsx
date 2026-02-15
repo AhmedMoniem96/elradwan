@@ -26,6 +26,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 
 const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 const MAX_GROUP_RESULTS = 5;
@@ -138,21 +139,11 @@ const scoreCustomerMatch = (customer, query) => {
 
 function SectionCard({ title, subtitle, children, accent }) {
   return (
-    <Card variant="outlined" sx={{ borderColor: accent || 'divider' }}>
-      <CardContent sx={{ p: 2.5 }}>
+    <SectionPanel title={title} subtitle={subtitle} contentSx={{ borderColor: accent || 'divider' }}>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6">{title}</Typography>
-            {subtitle ? (
-              <Typography variant="body2" color="text.secondary">
-                {subtitle}
-              </Typography>
-            ) : null}
-          </Box>
           {children}
         </Stack>
-      </CardContent>
-    </Card>
+    </SectionPanel>
   );
 }
 
@@ -589,12 +580,9 @@ export default function POS() {
   const canCheckout = cart.length > 0 && remaining === 0 && payments.length > 0;
 
   return (
-    <Box sx={{ p: { xs: 1.5, md: 3 } }}>
+    <PageShell>
       <Stack spacing={2.5}>
-        <Box>
-          <Typography variant="h4">{t('pos')}</Typography>
-          <Typography color="text.secondary">{t('pos_intro_text')}</Typography>
-        </Box>
+        <PageHeader title={t('pos')} subtitle={t('pos_intro_text')} />
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <Button variant="outlined" onClick={openReceiptsPanel}>
@@ -1088,6 +1076,6 @@ export default function POS() {
           )}
         </DialogContent>
       </Dialog>
-    </Box>
+    </PageShell>
   );
 }

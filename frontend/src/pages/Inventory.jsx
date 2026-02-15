@@ -8,7 +8,6 @@ import {
   Divider,
   FormControlLabel,
   MenuItem,
-  Paper,
   Stack,
   Switch,
   Table,
@@ -23,6 +22,7 @@ import {
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSync } from '../sync/SyncContext';
+import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 
 const emptyLine = { product: '', quantity: '1.00' };
 
@@ -336,14 +336,12 @@ export default function Inventory() {
   };
 
   return (
-    <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        {t('inventory')}
-      </Typography>
+    <PageShell>
+      <PageHeader title={t('inventory')} />
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>{t('product_details', 'Product details')}</Typography>
+      <SectionPanel title={t('product_details', 'Product details')}>
+        
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField label={t('name')} value={productForm.name} onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))} fullWidth />
@@ -393,9 +391,9 @@ export default function Inventory() {
             <Button variant="outlined" onClick={clearProductForm}>{t('clear')}</Button>
           </Stack>
         </Stack>
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <SectionPanel title={t('inventory_low_critical_stock')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('inventory_low_critical_stock')}</Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -492,10 +490,10 @@ export default function Inventory() {
             ))}
           </Box>
         )}
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>{t('stockout_risk_30d', 'Stockout risk (next 30 days)')}</Typography>
+      <SectionPanel title={t('stockout_risk_30d', 'Stockout risk (next 30 days)')}>
+        
         <TableContainer>
           <Table size="small">
             <TableHead>
@@ -522,9 +520,9 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <SectionPanel title={t('inventory_unread_alerts')}>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('inventory_unread_alerts')}</Typography>
           <Button size="small" variant="contained" disabled={!alerts.length} onClick={markAlertsRead}>{t('inventory_mark_all_read')}</Button>
@@ -540,10 +538,10 @@ export default function Inventory() {
           </Alert>
         ))}
         {!alerts.length && <Typography color="text.secondary">{t('inventory_no_unread_alerts')}</Typography>}
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_product_stock_status')}</Typography>
+      <SectionPanel title={t('inventory_product_stock_status')}>
+        
         <TableContainer>
           <Table>
             <TableHead>
@@ -589,10 +587,10 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      </SectionPanel>
 
 
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <SectionPanel title={t('supplier_ledger', 'Supplier ledger')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('supplier_ledger', 'Supplier ledger')}</Typography>
           <Button size="small" variant="outlined" onClick={exportSupplierAging}>{t('export_csv')}</Button>
@@ -649,10 +647,10 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_create_stock_transfer')}</Typography>
+      <SectionPanel title={t('inventory_create_stock_transfer')}>
+        
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField select label={t('inventory_source_warehouse')} value={transferForm.source_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, source_warehouse_id: e.target.value }))} fullWidth>
@@ -683,10 +681,10 @@ export default function Inventory() {
             <Button variant="contained" disabled={!canCreateTransfer} onClick={createTransfer}>{t('inventory_create_transfer')}</Button>
           </Stack>
         </Stack>
-      </Paper>
+      </SectionPanel>
 
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>{t('inventory_stock_transfers')}</Typography>
+      <SectionPanel title={t('inventory_stock_transfers')} contentSx={{ mb: 0 }}>
+        
         <TableContainer>
           <Table>
             <TableHead>
@@ -718,8 +716,8 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      </SectionPanel>
       <Divider sx={{ mt: 2 }} />
-    </Box>
+    </PageShell>
   );
 }

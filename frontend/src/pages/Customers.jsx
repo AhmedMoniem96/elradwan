@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
   Button,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +21,7 @@ import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSync } from '../sync/SyncContext';
+import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 
 export default function Customers() {
   const { t } = useTranslation();
@@ -106,19 +105,22 @@ export default function Customers() {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">{t('customers')}</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpen()}
-        >
-          {t('add_customer')}
-        </Button>
-      </Box>
+    <PageShell>
+      <PageHeader
+        title={t('customers')}
+        action={(
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpen()}
+          >
+            {t('add_customer')}
+          </Button>
+        )}
+      />
 
-      <TableContainer component={Paper}>
+      <SectionPanel contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
+        <TableContainer>
         <Table>
           <TableHead>
             <TableRow>
@@ -146,7 +148,8 @@ export default function Customers() {
             ))}
           </TableBody>
         </Table>
-      </TableContainer>
+        </TableContainer>
+      </SectionPanel>
 
       <Dialog open={open} onClose={handleClose}>
         <DialogTitle>{isEditing ? t('edit') : t('add_customer')}</DialogTitle>
@@ -181,6 +184,6 @@ export default function Customers() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageShell>
   );
 }
