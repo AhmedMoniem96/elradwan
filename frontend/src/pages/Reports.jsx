@@ -72,27 +72,46 @@ export default function Reports() {
     return params.toString();
   }, [filters]);
 
+  const withQuery = (path, extraParams) => {
+    const params = new URLSearchParams(queryParams);
+    if (extraParams) {
+      Object.entries(extraParams).forEach(([key, value]) => {
+        params.set(key, value);
+      });
+    }
+    const serialized = params.toString();
+    return serialized ? `${path}?${serialized}` : path;
+  };
+
   const loadReports = async () => {
     setIsLoading(true);
     try {
-      const [branchesRes, dailySalesRes, topProductsRes, topCustomersRes, paymentSplitRes, grossMarginRes, arReportRes] = await Promise.all([
+      const [branchesRes, dailySalesRes, topProductsRes, topCustomersRes, paymentSplitRes, grossMarginRes, arReportRes] = await Promise.allSettled([
         axios.get('/api/v1/branches/'),
-        axios.get(`/api/v1/reports/daily-sales/?${queryParams}`),
-        axios.get(`/api/v1/reports/top-products/?${queryParams}`),
-        axios.get(`/api/v1/reports/top-customers/?${queryParams}`),
-        axios.get(`/api/v1/reports/payment-method-split/?${queryParams}`),
-        axios.get(`/api/v1/reports/gross-margin/?${queryParams}`),
-        axios.get(`/api/v1/reports/accounts-receivable/?${queryParams}`),
+        axios.get(withQuery('/api/v1/reports/daily-sales/')),
+        axios.get(withQuery('/api/v1/reports/top-products/')),
+        axios.get(withQuery('/api/v1/reports/top-customers/')),
+        axios.get(withQuery('/api/v1/reports/payment-method-split/')),
+        axios.get(withQuery('/api/v1/reports/gross-margin/')),
+        axios.get(withQuery('/api/v1/reports/accounts-receivable/')),
       ]);
 
-      setBranches(normalizeCollectionResponse(branchesRes.data));
-      setDailySales(normalizeCollectionResponse(dailySalesRes.data));
-      setTopProducts(normalizeCollectionResponse(topProductsRes.data));
-      setTopCustomers(normalizeCollectionResponse(topCustomersRes.data));
-      setPaymentSplit(normalizeCollectionResponse(paymentSplitRes.data));
-      setGrossMargin(grossMarginRes.data || {});
-      setArReport(normalizeCollectionResponse(arReportRes.data));
-      setError('');
+      const failedRequests = [branchesRes, dailySalesRes, topProductsRes, topCustomersRes, paymentSplitRes, grossMarginRes, arReportRes]
+        .filter((response) => response.status === 'rejected');
+
+      setBranches(branchesRes.status === 'fulfilled' ? normalizeCollectionResponse(branchesRes.value.data) : []);
+      setDailySales(dailySalesRes.status === 'fulfilled' ? normalizeCollectionResponse(dailySalesRes.value.data) : []);
+      setTopProducts(topProductsRes.status === 'fulfilled' ? normalizeCollectionResponse(topProductsRes.value.data) : []);
+      setTopCustomers(topCustomersRes.status === 'fulfilled' ? normalizeCollectionResponse(topCustomersRes.value.data) : []);
+      setPaymentSplit(paymentSplitRes.status === 'fulfilled' ? normalizeCollectionResponse(paymentSplitRes.value.data) : []);
+      setGrossMargin(grossMarginRes.status === 'fulfilled' ? grossMarginRes.value.data || {} : { revenue: 0, cogs: 0, gross_margin: 0, margin_pct: 0 });
+      setArReport(arReportRes.status === 'fulfilled' ? normalizeCollectionResponse(arReportRes.value.data) : []);
+
+      if (failedRequests.length > 0) {
+        setError('في بيانات من التقارير ما اتحمّلتش. جرّب تعمل تحديث.');
+      } else {
+        setError('');
+      }
     } catch {
       setError('في مشكلة في تحميل التقارير. جرّب تعمل تحديث.');
     } finally {
@@ -128,7 +147,7 @@ export default function Reports() {
   };
 
   const exportCsv = (endpoint) => {
-    const url = `/api/v1/reports/${endpoint}/?${queryParams}&format=csv`;
+    const url = withQuery(`/api/v1/reports/${endpoint}/`, { format: 'csv' });
     window.open(url, '_blank');
   };
 
