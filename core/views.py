@@ -1,6 +1,5 @@
 import csv
 import logging
-from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import HttpResponse
@@ -234,8 +233,7 @@ class PasswordResetRequestView(generics.GenericAPIView):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             reset_path = f"{settings.PASSWORD_RESET_FRONTEND_URL.rstrip('/')}/{uid}/{token}"
-            query = urlencode({"email": user.email, "token": token})
-            reset_url = f"{reset_path}?{query}"
+            reset_url = reset_path
             try:
                 send_mail(
                     subject="Password reset request",
