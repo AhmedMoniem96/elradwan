@@ -16,21 +16,64 @@ import {
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useTranslation } from 'react-i18next';
 
+
+const LOGIN_ERROR_CODE_TRANSLATION_KEYS = {
+  invalid_credentials: 'auth.invalid_credentials',
+  invalid_login: 'auth.invalid_credentials',
+  authentication_failed: 'auth.invalid_credentials',
+  inactive_user: 'auth.inactive_user',
+  user_inactive: 'auth.inactive_user',
+  validation_error: 'auth.validation_error',
+};
+
+const resolveLoginErrorMessage = ({ t, code, message }) => {
+  const translationKey = code ? LOGIN_ERROR_CODE_TRANSLATION_KEYS[code] : null;
+
+  if (translationKey) {
+    return t(translationKey);
+  }
+
+  if (message) {
+    return message;
+  }
+
+  return t('auth.login_failed_fallback');
+};
+
 export default function Login() {
   const { t } = useTranslation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const success = await login(username, password);
-    if (success) {
+    setError('');
+    setFieldErrors({ username: '', password: '' });
+
+    const result = await login(username, password);
+    if (result?.ok) {
       navigate('/');
-    } else {
-      setError(t('Invalid username or password'));
+      return;
+    }
+
+    const nextFieldErrors = {
+      username: result?.fieldErrors?.username || '',
+      password: result?.fieldErrors?.password || '',
+    };
+
+    setFieldErrors(nextFieldErrors);
+
+    const hasFieldErrors = Boolean(nextFieldErrors.username || nextFieldErrors.password);
+    if (!hasFieldErrors) {
+      setError(resolveLoginErrorMessage({
+        t,
+        code: result?.code,
+        message: result?.message,
+      }));
     }
   };
 
@@ -90,6 +133,8 @@ export default function Login() {
                 autoFocus
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                error={Boolean(fieldErrors.username)}
+                helperText={fieldErrors.username || ''}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     color: '#f5f5f5',
@@ -107,6 +152,8 @@ export default function Login() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                error={Boolean(fieldErrors.password)}
+                helperText={fieldErrors.password || ''}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     color: '#f5f5f5',

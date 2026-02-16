@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { getStoredDeviceId } from './sync/SyncContext';
 import { hasCapability } from './permissions';
+import { parseApiError } from './utils/api';
 
 const AuthContext = createContext(null);
 const ACTIVE_BRANCH_ID_KEY = 'active_branch_id';
@@ -149,10 +150,16 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('refresh_token', refresh);
       setLoading(true);
       setToken(access);
-      return true;
+      return { ok: true };
     } catch (error) {
       console.error('Login failed', error);
-      return false;
+      const parsedError = parseApiError(error);
+      return {
+        ok: false,
+        code: parsedError.code,
+        message: parsedError.message,
+        fieldErrors: parsedError.fieldErrors,
+      };
     }
   };
 
