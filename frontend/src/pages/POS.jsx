@@ -40,6 +40,7 @@ import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatter
 const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'wallet', 'other'];
 const MAX_GROUP_RESULTS = 5;
 const MAX_TOTAL_RESULTS = 12;
+const HELD_CARTS_STORAGE_KEY = 'pos_held_carts_v1';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
@@ -448,10 +449,71 @@ function ReceiptHistoryDialog(props) {
   );
 }
 
+function HeldCartsDialog(props) {
+  const {
+    t,
+    heldCartsOpen,
+    setHeldCartsOpen,
+    heldCartSearch,
+    setHeldCartSearch,
+    filteredHeldCarts,
+    onResumeHeldCart,
+    onDeleteHeldCart,
+  } = props;
+
+  return (
+    <Dialog open={heldCartsOpen} onClose={() => setHeldCartsOpen(false)} fullWidth maxWidth="md">
+      <DialogTitle>{t('pos_held_carts', { defaultValue: 'Held carts' })}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ py: 1 }}>
+          <TextField
+            size="small"
+            label={t('search', { defaultValue: 'Search' })}
+            placeholder={t('pos_held_carts_search_placeholder', { defaultValue: 'Search by note, customer, or time' })}
+            value={heldCartSearch}
+            onChange={(event) => setHeldCartSearch(event.target.value)}
+          />
+
+          {filteredHeldCarts.length === 0 ? (
+            <EmptyState
+              icon={PointOfSaleOutlinedIcon}
+              title={t('pos_held_carts_empty', { defaultValue: 'No held carts found' })}
+              helperText={t('pos_held_carts_empty_hint', { defaultValue: 'Hold a cart from the POS screen to resume it later.' })}
+            />
+          ) : (
+            filteredHeldCarts.map((heldCart) => (
+              <Card key={heldCart.id} variant="outlined">
+                <CardContent sx={{ p: 1.5 }}>
+                  <Stack spacing={0.5}>
+                    <Typography fontWeight={700}>{heldCart.note || t('pos_held_carts_no_note', { defaultValue: 'No note' })}</Typography>
+                    <Typography variant="body2">{t('customer')}: {heldCart.customer?.name || t('walk_in_customer', { defaultValue: 'Walk-in customer' })}</Typography>
+                    <Typography variant="body2">{t('pos_receipt_totals')}: {formatCurrency(heldCart.total)}</Typography>
+                    <Typography variant="body2">{t('pos_receipt_datetime')}: {formatDateTime(heldCart.created_at)}</Typography>
+                    <Typography variant="body2">{t('pos_receipt_cashier')}: {heldCart.cashier || t('none')}</Typography>
+                    <Typography variant="body2">{t('pos_receipt_line_items')}: {formatNumber((heldCart.items || []).length)}</Typography>
+                    <Stack direction="row" spacing={1} sx={{ pt: 0.5 }}>
+                      <Button size="small" variant="contained" onClick={() => onResumeHeldCart(heldCart)}>
+                        {t('resume', { defaultValue: 'Resume' })}
+                      </Button>
+                      <Button size="small" color="error" onClick={() => onDeleteHeldCart(heldCart.id)}>
+                        {t('delete', { defaultValue: 'Delete' })}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </Stack>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function POS() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const isRTL = i18n.dir() === 'rtl';
 
   const [products, setProducts] = useState([]);
@@ -480,6 +542,10 @@ export default function POS() {
   const [receiptsError, setReceiptsError] = useState('');
   const [receiptQuickFilter, setReceiptQuickFilter] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [heldCartNote, setHeldCartNote] = useState('');
+  const [heldCartsOpen, setHeldCartsOpen] = useState(false);
+  const [heldCarts, setHeldCarts] = useState([]);
+  const [heldCartSearch, setHeldCartSearch] = useState('');
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -524,6 +590,23 @@ export default function POS() {
     fetchCategories();
     fetchCustomers();
   }, [t]);
+
+  useEffect(() => {
+    try {
+      const rawHeldCarts = localStorage.getItem(HELD_CARTS_STORAGE_KEY);
+      if (!rawHeldCarts) return;
+      const parsedHeldCarts = JSON.parse(rawHeldCarts);
+      if (Array.isArray(parsedHeldCarts)) {
+        setHeldCarts(parsedHeldCarts);
+      }
+    } catch (err) {
+      console.error('Failed to read held carts from local storage', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(HELD_CARTS_STORAGE_KEY, JSON.stringify(heldCarts));
+  }, [heldCarts]);
 
   const categoriesById = useMemo(
     () => new Map(categories.map((category) => [String(category.id), category])),
@@ -694,6 +777,22 @@ export default function POS() {
       return (query && receiptNo.includes(query)) || (queryPhone && customerPhone.includes(queryPhone));
     });
   }, [receiptQuickFilter, receipts]);
+
+  const filteredHeldCarts = useMemo(() => {
+    const query = normalize(heldCartSearch);
+    if (!query) {
+      return heldCarts;
+    }
+
+    return heldCarts.filter((heldCart) => {
+      const customerName = normalize(heldCart.customer?.name);
+      const customerPhone = normalize(heldCart.customer?.phone);
+      const note = normalize(heldCart.note);
+      const createdAtIso = normalize(heldCart.created_at);
+      const createdAtFormatted = normalize(formatDateTime(heldCart.created_at));
+      return [customerName, customerPhone, note, createdAtIso, createdAtFormatted].some((entry) => entry.includes(query));
+    });
+  }, [heldCartSearch, heldCarts]);
 
   const addToCart = (product) => {
     setCart((prev) => {
@@ -879,6 +978,70 @@ export default function POS() {
     loadReceipts();
   };
 
+  const handleHoldCurrentCart = () => {
+    if (!cart.length) {
+      setActionFeedback({
+        severity: 'error',
+        message: t('pos_hold_cart_empty', { defaultValue: 'Add items before holding a cart.' }),
+      });
+      return;
+    }
+
+    const heldCart = {
+      id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+      cashier: user?.username || user?.id || t('none'),
+      note: heldCartNote.trim(),
+      customer: selectedCustomer
+        ? {
+            id: selectedCustomer.id,
+            name: selectedCustomer.name,
+            phone: selectedCustomer.phone,
+          }
+        : null,
+      items: cart,
+      total: Number(parsedInvoiceTotal.toFixed(2)),
+      invoiceTotal,
+      isTotalManuallyOverridden,
+    };
+
+    setHeldCarts((prev) => [heldCart, ...prev]);
+    setHeldCartNote('');
+    setCart([]);
+    setPayments([]);
+    setSelectedCustomer(null);
+    setPaymentValue('0');
+    setInvoiceTotal('0');
+    setIsTotalManuallyOverridden(false);
+    setSearchQuery('');
+    setCustomerQuery('');
+
+    // Optional future enhancement: mirror held cart payload to backend endpoint for multi-device sync.
+    setActionFeedback({
+      severity: 'success',
+      message: t('pos_hold_cart_saved', { defaultValue: 'Cart held successfully.' }),
+    });
+  };
+
+  const handleResumeHeldCart = (heldCart) => {
+    setCart(Array.isArray(heldCart.items) ? heldCart.items : []);
+    setSelectedCustomer(heldCart.customer || null);
+    setInvoiceTotal(String(heldCart.invoiceTotal ?? heldCart.total ?? 0));
+    setIsTotalManuallyOverridden(Boolean(heldCart.isTotalManuallyOverridden));
+    setPayments([]);
+    setPaymentValue('0');
+    setHeldCarts((prev) => prev.filter((entry) => entry.id !== heldCart.id));
+    setHeldCartsOpen(false);
+    setActionFeedback({
+      severity: 'success',
+      message: t('pos_hold_cart_resumed', { defaultValue: 'Held cart resumed.' }),
+    });
+  };
+
+  const handleDeleteHeldCart = (heldCartId) => {
+    setHeldCarts((prev) => prev.filter((entry) => entry.id !== heldCartId));
+  };
+
   const canCheckout = cart.length > 0 && remaining === 0 && payments.length > 0;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -893,6 +1056,9 @@ export default function POS() {
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <Button variant="outlined" onClick={openReceiptsPanel}>
             {t('pos_receipts_open')}
+          </Button>
+          <Button variant="outlined" onClick={() => setHeldCartsOpen(true)}>
+            {t('pos_held_carts_open', { defaultValue: 'Held carts' })} ({heldCarts.length})
           </Button>
           {can('inventory.view') && (
             <Button variant="outlined" onClick={() => navigate('/suppliers')}>
@@ -915,6 +1081,26 @@ export default function POS() {
           }}
         >
           <Stack spacing={2}>
+            <SectionCard
+              title={t('pos_hold_cart_title', { defaultValue: 'Hold current cart' })}
+              subtitle={t('pos_hold_cart_subtitle', { defaultValue: 'Save this cart to resume it later on this device.' })}
+              accent="info.main"
+            >
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
+                  size="small"
+                  label={t('note', { defaultValue: 'Note' })}
+                  placeholder={t('pos_held_cart_note_placeholder', { defaultValue: 'Optional note (table, order name, etc.)' })}
+                  value={heldCartNote}
+                  onChange={(event) => setHeldCartNote(event.target.value)}
+                  fullWidth
+                />
+                <Button variant="contained" onClick={handleHoldCurrentCart}>
+                  {t('pos_hold_cart_action', { defaultValue: 'Hold cart' })}
+                </Button>
+              </Stack>
+            </SectionCard>
+
             <ProductSearchPanel
               t={t}
               isRTL={isRTL}
@@ -989,6 +1175,17 @@ export default function POS() {
         receiptsLoading={receiptsLoading}
         filteredReceipts={filteredReceipts}
         setActiveReceipt={setActiveReceipt}
+      />
+
+      <HeldCartsDialog
+        t={t}
+        heldCartsOpen={heldCartsOpen}
+        setHeldCartsOpen={setHeldCartsOpen}
+        heldCartSearch={heldCartSearch}
+        setHeldCartSearch={setHeldCartSearch}
+        filteredHeldCarts={filteredHeldCarts}
+        onResumeHeldCart={handleResumeHeldCart}
+        onDeleteHeldCart={handleDeleteHeldCart}
       />
 
       <Dialog open={Boolean(activeReceipt)} onClose={() => setActiveReceipt(null)} fullWidth maxWidth="md">
