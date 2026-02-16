@@ -3,25 +3,18 @@ import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-
-const formatCurrency = (value) => {
-  const numeric = Number(value || 0);
-  if (Number.isNaN(numeric)) return '$0.00';
-  return `$${numeric.toFixed(2)}`;
-};
-
-const formatTimestamp = (value) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString();
-};
+import KpiCard from '../components/KpiCard';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatNumber,
+} from '../utils/formatters';
 
 const toTitle = (value) => (value ? String(value).replace(/_/g, ' ') : '');
 
@@ -32,11 +25,17 @@ const dateKey = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+const parseDateKey = (value, endOfDay = false) => {
+  const date = new Date(`${value}T00:00:00`);
+  if (endOfDay) {
+    date.setHours(23, 59, 59, 999);
+  }
+  return date;
+};
+
 const formatTrendLabel = (value) => {
   if (!value) return '';
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatDate(`${value}T00:00:00`);
 };
 
 const buildDateRange = (days) => {
@@ -52,15 +51,13 @@ const buildDateRange = (days) => {
   };
 };
 
-const normalizeDailySales = (rows, windowDays) => {
+const normalizeDailySales = (rows, dateFrom, dateTo) => {
   const byDay = new Map((rows || []).map((item) => [item.day, item]));
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const start = parseDateKey(dateFrom);
+  const end = parseDateKey(dateTo);
   const timeline = [];
 
-  for (let index = windowDays - 1; index >= 0; index -= 1) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - index);
+  for (let day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
     const key = dateKey(day);
     const source = byDay.get(key);
     timeline.push({
@@ -71,6 +68,57 @@ const normalizeDailySales = (rows, windowDays) => {
   }
 
   return timeline;
+};
+
+const sumRows = (rows, field) => rows.reduce((sum, item) => sum + Number(item?.[field] || 0), 0);
+
+const computeDeltaPct = (current, previous) => {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+  if (previous === 0) {
+    return current === 0 ? 0 : 100;
+  }
+  return ((current - previous) / Math.abs(previous)) * 100;
+};
+
+const trendFromDelta = (delta) => {
+  if (!Number.isFinite(delta)) return 'flat';
+  if (delta > 0.01) return 'up';
+  if (delta < -0.01) return 'down';
+  return 'flat';
+};
+
+const getRangeByPreset = (period, customRange) => {
+  if (period === 'today') {
+    return buildDateRange(1);
+  }
+
+  if (period === '7d') {
+    return buildDateRange(7);
+  }
+
+  if (period === '30d') {
+    return buildDateRange(30);
+  }
+
+  if (period === 'custom' && customRange.date_from && customRange.date_to) {
+    return customRange;
+  }
+
+  return buildDateRange(7);
+};
+
+const getPreviousEquivalentRange = (range) => {
+  const currentStart = parseDateKey(range.date_from);
+  const currentEnd = parseDateKey(range.date_to, true);
+  const spanMs = currentEnd.getTime() - currentStart.getTime() + 1;
+
+  const previousEnd = new Date(currentStart.getTime() - 1);
+  const previousStart = new Date(previousEnd.getTime() - spanMs + 1);
+
+  return {
+    date_from: dateKey(previousStart),
+    date_to: dateKey(previousEnd),
+  };
 };
 
 function MiniBarChart({ title, data }) {
@@ -112,7 +160,7 @@ function MiniHorizontalChart({ title, data }) {
           <Box key={item.label}>
             <Stack direction="row" justifyContent="space-between">
               <Typography variant="body2">{item.label}</Typography>
-              <Typography variant="body2" color="text.secondary">{item.value}</Typography>
+              <Typography variant="body2" color="text.secondary">{formatNumber(item.value)}</Typography>
             </Stack>
             <Box sx={{ mt: 0.5, width: '100%', height: 10, bgcolor: 'action.hover', borderRadius: 1 }}>
               <Box
@@ -174,6 +222,9 @@ function TrendChart({
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const [periodPreset, setPeriodPreset] = useState('today');
+  const [customRange, setCustomRange] = useState({ date_from: '', date_to: '' });
+
   const [shiftSummary, setShiftSummary] = useState({
     active_shift_count: 0,
     expected_cash_total: '0.00',
@@ -183,31 +234,74 @@ export default function Dashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(true);
   const [recentActivityFailed, setRecentActivityFailed] = useState(false);
+  const [kpiLoading, setKpiLoading] = useState(true);
+
   const [trendWindowDays, setTrendWindowDays] = useState(7);
   const [salesSeries, setSalesSeries] = useState([]);
   const [paymentSplitSeries, setPaymentSplitSeries] = useState([]);
 
+  const [salesTotals, setSalesTotals] = useState({ current: 0, previous: 0 });
+  const [accountsReceivableTotals, setAccountsReceivableTotals] = useState({ current: 0, previous: 0 });
+
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+
+  const activeRange = useMemo(() => getRangeByPreset(periodPreset, customRange), [periodPreset, customRange]);
 
   useEffect(() => {
     let mounted = true;
-    axios
-      .get('/api/v1/invoices/dashboard-summary/')
-      .then((res) => {
-        if (mounted) {
-          setShiftSummary((prev) => ({ ...prev, ...(res.data || {}) }));
-        }
-      })
-      .catch(() => {});
 
-    axios
-      .get('/api/v1/stock-intelligence/')
-      .then((res) => {
-        if (mounted) {
-          setStockSummary((prev) => ({ ...prev, ...(res.data || {}) }));
-        }
+    if (periodPreset === 'custom' && (!customRange.date_from || !customRange.date_to)) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setKpiLoading(true);
+
+    const previousRange = getPreviousEquivalentRange(activeRange);
+    const currentParams = new URLSearchParams({ ...activeRange, timezone }).toString();
+    const previousParams = new URLSearchParams({ ...previousRange, timezone }).toString();
+
+    Promise.all([
+      axios.get('/api/v1/invoices/dashboard-summary/'),
+      axios.get('/api/v1/stock-intelligence/'),
+      axios.get(`/api/v1/reports/daily-sales/?${currentParams}`),
+      axios.get(`/api/v1/reports/daily-sales/?${previousParams}`),
+      axios.get(`/api/v1/reports/accounts-receivable/?${currentParams}`),
+      axios.get(`/api/v1/reports/accounts-receivable/?${previousParams}`),
+    ])
+      .then(([shiftRes, stockRes, salesCurrentRes, salesPreviousRes, arCurrentRes, arPreviousRes]) => {
+        if (!mounted) return;
+
+        setShiftSummary((prev) => ({ ...prev, ...(shiftRes.data || {}) }));
+        setStockSummary((prev) => ({ ...prev, ...(stockRes.data || {}) }));
+
+        const currentSales = sumRows(salesCurrentRes.data?.results || [], 'gross_sales');
+        const previousSales = sumRows(salesPreviousRes.data?.results || [], 'gross_sales');
+        setSalesTotals({ current: currentSales, previous: previousSales });
+
+        const currentAr = sumRows(arCurrentRes.data?.results || [], 'balance_due');
+        const previousAr = sumRows(arPreviousRes.data?.results || [], 'balance_due');
+        setAccountsReceivableTotals({ current: currentAr, previous: previousAr });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!mounted) return;
+        setSalesTotals({ current: 0, previous: 0 });
+        setAccountsReceivableTotals({ current: 0, previous: 0 });
+      })
+      .finally(() => {
+        if (mounted) {
+          setKpiLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeRange, customRange.date_from, customRange.date_to, periodPreset, timezone]);
+
+  useEffect(() => {
+    let mounted = true;
 
     axios
       .get('/api/v1/invoices/recent-activity/')
@@ -236,12 +330,12 @@ export default function Dashboard() {
       .get(`/api/v1/reports/daily-sales/?${params}`)
       .then((res) => {
         if (mounted) {
-          setSalesSeries(normalizeDailySales(res.data?.results || [], trendWindowDays));
+          setSalesSeries(normalizeDailySales(res.data?.results || [], date_from, date_to));
         }
       })
       .catch(() => {
         if (mounted) {
-          setSalesSeries(normalizeDailySales([], trendWindowDays));
+          setSalesSeries(normalizeDailySales([], date_from, date_to));
         }
       });
 
@@ -287,41 +381,100 @@ export default function Dashboard() {
     [stockSummary.critical_count, stockSummary.low_count, stockSummary.unread_alert_count, t],
   );
 
+  const salesDelta = computeDeltaPct(salesTotals.current, salesTotals.previous);
+  const arDelta = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
+
+  const kpis = [
+    {
+      title: t('todays_sales', 'Sales'),
+      value: formatCurrency(salesTotals.current),
+      deltaPct: salesDelta,
+      trend: trendFromDelta(salesDelta),
+    },
+    {
+      title: t('active_register', 'Open shifts'),
+      value: formatNumber(shiftSummary.active_shift_count || 0),
+      deltaPct: null,
+      trend: 'flat',
+    },
+    {
+      title: t('dashboard_stock_alerts', 'Low / critical alerts'),
+      value: `${formatNumber(stockSummary.low_count || 0)} / ${formatNumber(stockSummary.critical_count || 0)}`,
+      deltaPct: null,
+      trend: 'flat',
+    },
+    {
+      title: t('dashboard_accounts_receivable', 'Accounts receivable'),
+      value: formatCurrency(accountsReceivableTotals.current),
+      deltaPct: arDelta,
+      trend: trendFromDelta(arDelta),
+    },
+    {
+      title: t('dashboard_shift_variance', 'Cash variance'),
+      value: formatCurrency(shiftSummary.variance_total),
+      deltaPct: null,
+      trend: 'flat',
+    },
+  ];
+
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={6} lg={4}>
-        <Paper sx={{ p: 2, height: 220 }}>
-          <Typography variant="h6" gutterBottom>{t('todays_sales')}</Typography>
-          <Typography component="p" variant="h4">{formatCurrency(shiftSummary.expected_cash_total)}</Typography>
-          <Typography color="text.secondary" sx={{ mt: 1 }}>
-            {t('active_register')}: {shiftSummary.active_shift_count}
-          </Typography>
-          <Chip size="small" sx={{ mt: 2 }} label={`${t('dashboard_live_status', 'Live')}: ${t('online')}`} color="success" variant="outlined" />
-        </Paper>
-      </Grid>
-
-      <Grid item xs={12} md={6} lg={4}>
-        <Paper sx={{ p: 2, height: 220 }}>
-          <Typography variant="h6" gutterBottom>{t('dashboard_shift_variance', 'Shift variance')}</Typography>
-          <Typography component="p" variant="h4">{formatCurrency(shiftSummary.variance_total)}</Typography>
-          <Typography color="text.secondary" sx={{ mt: 1 }}>
-            {t('dashboard_variance_hint', 'Closed-shift cumulative variance')}
-          </Typography>
-        </Paper>
-      </Grid>
-
-      <Grid item xs={12} md={12} lg={4}>
-        <Paper sx={{ p: 2, height: 220 }}>
-          <Typography variant="h6" gutterBottom>{t('dashboard_stock_alerts', 'Stock alerts')}</Typography>
-          <Stack direction="row" spacing={1} sx={{ mb: 1, mt: 1 }}>
-            <Chip color="error" label={`${t('dashboard_critical_stock', 'Critical')}: ${stockSummary.critical_count}`} />
-            <Chip color="warning" label={`${t('dashboard_low_stock', 'Low')}: ${stockSummary.low_count}`} />
+      <Grid item xs={12}>
+        <Paper sx={{ p: 2 }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: 130 }}>
+              {t('dashboard_period', 'Period')}
+            </Typography>
+            <TextField
+              select
+              size="small"
+              value={periodPreset}
+              onChange={(event) => setPeriodPreset(event.target.value)}
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="today">{t('dashboard_period_today', 'Today')}</MenuItem>
+              <MenuItem value="7d">{t('dashboard_period_7d', 'Last 7 days')}</MenuItem>
+              <MenuItem value="30d">{t('dashboard_period_30d', 'Last 30 days')}</MenuItem>
+              <MenuItem value="custom">{t('dashboard_period_custom', 'Custom range')}</MenuItem>
+            </TextField>
+            {periodPreset === 'custom' && (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
+                  size="small"
+                  type="date"
+                  label={t('from', 'From')}
+                  InputLabelProps={{ shrink: true }}
+                  value={customRange.date_from}
+                  onChange={(event) => setCustomRange((prev) => ({ ...prev, date_from: event.target.value }))}
+                />
+                <TextField
+                  size="small"
+                  type="date"
+                  label={t('to', 'To')}
+                  InputLabelProps={{ shrink: true }}
+                  value={customRange.date_to}
+                  onChange={(event) => setCustomRange((prev) => ({ ...prev, date_to: event.target.value }))}
+                />
+              </Stack>
+            )}
+            <Typography variant="caption" color="text.secondary" sx={{ marginInlineStart: 'auto' }}>
+              {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
+            </Typography>
           </Stack>
-          <Typography color="text.secondary" sx={{ mt: 2 }}>
-            {t('dashboard_unread_alerts', 'Unread alerts')}: {stockSummary.unread_alert_count}
-          </Typography>
         </Paper>
       </Grid>
+
+      {kpis.map((kpi) => (
+        <Grid key={kpi.title} item xs={12} sm={6} lg={3} xl={2}>
+          <KpiCard
+            title={kpi.title}
+            value={kpi.value}
+            deltaPct={kpi.deltaPct}
+            trend={kpi.trend}
+            loading={kpiLoading}
+          />
+        </Grid>
+      ))}
 
       <Grid item xs={12} md={6}>
         <Stack spacing={2}>
@@ -361,7 +514,7 @@ export default function Dashboard() {
           <TrendChart
             title={t('dashboard_invoice_count_trend', 'Invoice count')}
             points={invoicesTrendData}
-            yFormatter={(value) => Number(value).toFixed(0)}
+            yFormatter={formatNumber}
             peakLabel={t('dashboard_peak_value', 'Peak')}
             color="secondary.main"
           />
@@ -411,7 +564,7 @@ export default function Dashboard() {
                   <Typography variant="body2" color="text.secondary">{item.customer || t('walk_in_customer', 'Walk-in')}</Typography>
                   <Typography variant="body2">{formatCurrency(item.amount)}</Typography>
                   <Typography variant="body2" color="text.secondary">{toTitle(item.method_status)}</Typography>
-                  <Typography variant="body2" color="text.secondary">{formatTimestamp(item.timestamp)}</Typography>
+                  <Typography variant="body2" color="text.secondary">{formatDateTime(item.timestamp)}</Typography>
                 </Box>
               ))}
             </Stack>
