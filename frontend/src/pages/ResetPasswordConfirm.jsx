@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import { useTranslation } from 'react-i18next';
+import { formatFieldErrors, parseApiError } from '../utils/api';
 
 export default function ResetPasswordConfirm() {
   const { t } = useTranslation();
@@ -56,7 +57,10 @@ export default function ResetPasswordConfirm() {
       setSuccess(true);
     } catch (requestError) {
       console.error('Password reset confirm failed', requestError);
-      setError(t('reset_password_confirm_error'));
+      const parsedError = parseApiError(requestError);
+      const fieldMessage = formatFieldErrors(parsedError.fieldErrors);
+      const parsedMessage = fieldMessage || parsedError.message;
+      setError(parsedMessage || t('reset_password_confirm_error'));
     } finally {
       setIsSubmitting(false);
     }

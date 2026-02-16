@@ -20,6 +20,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { formatFieldErrors, parseApiError } from '../utils/api';
 
 const toRows = (payload) => (Array.isArray(payload) ? payload : payload?.results || []);
 const formatMoney = (value) => Number(value || 0).toFixed(2);
@@ -68,7 +69,9 @@ export default function Suppliers() {
       setAgingRows(toRows(agingResponse.data));
     } catch (err) {
       console.error('Failed to load supplier window data', err);
-      setError(t('suppliers_load_error'));
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('suppliers_load_error'));
     } finally {
       setIsLoading(false);
     }
@@ -144,7 +147,10 @@ export default function Suppliers() {
       setAgingRows(toRows(agingResponse.data));
     } catch (err) {
       console.error('Failed to register supplier payment', err);
-      setError(t('suppliers_payment_error'));
+      const parsedError = parseApiError(err);
+      const fieldMessage = formatFieldErrors(parsedError.fieldErrors);
+      setPaymentErrors((prev) => ({ ...prev, [supplierId]: fieldMessage || '' }));
+      setError(parsedError.message || (!fieldMessage ? t('suppliers_payment_error') : ''));
     } finally {
       setSubmittingSupplierId(null);
     }

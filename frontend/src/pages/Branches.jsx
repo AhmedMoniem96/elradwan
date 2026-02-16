@@ -26,7 +26,7 @@ import ToggleOnIcon from '@mui/icons-material/ToggleOn';
 import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import { normalizeCollectionResponse } from '../utils/api';
+import { formatFieldErrors, normalizeCollectionResponse, parseApiError } from '../utils/api';
 
 const initialForm = {
   code: '',
@@ -57,8 +57,9 @@ export default function Branches() {
       const response = await axios.get('/api/v1/branches/');
       setBranches(normalizeCollectionResponse(response.data));
     } catch (err) {
-      const apiMessage = err.response?.data?.detail;
-      setError(apiMessage || t('branches_load_error'));
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('branches_load_error'));
     } finally {
       setLoading(false);
     }
@@ -118,11 +119,9 @@ export default function Branches() {
       setSuccess(isEditing ? t('branches_update_success') : t('branches_create_success'));
       handleCloseDialog();
     } catch (err) {
-      const data = err.response?.data;
-      const firstFieldError = data && typeof data === 'object'
-        ? Object.values(data).flat().find((message) => typeof message === 'string')
-        : null;
-      setError(firstFieldError || data?.detail || t('branches_save_error'));
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('branches_save_error'));
     } finally {
       setSaving(false);
     }
@@ -137,8 +136,9 @@ export default function Branches() {
       await loadBranches();
       setSuccess(branch.is_active ? t('branches_deactivate_success') : t('branches_reactivate_success'));
     } catch (err) {
-      const apiMessage = err.response?.data?.detail;
-      setError(apiMessage || t('branches_toggle_status_error'));
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('branches_toggle_status_error'));
     }
   };
 
