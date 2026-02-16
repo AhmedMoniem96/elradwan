@@ -262,6 +262,14 @@ class CashShiftTests(TestCase):
             branch=self.branch,
         )
         self.device = Device.objects.create(branch=self.branch, name="POS", identifier="pos-1")
+        self.inactive_device = Device.objects.create(
+            branch=self.branch,
+            name="POS Inactive",
+            identifier="pos-inactive",
+            is_active=False,
+        )
+        self.other_branch = Branch.objects.create(code="CS2", name="Cash Shift 2")
+        self.other_branch_device = Device.objects.create(branch=self.other_branch, name="POS 2", identifier="pos-2")
         self.customer = Customer.objects.create(branch=self.branch, name="Customer")
 
         self.invoice = Invoice.objects.create(
@@ -296,6 +304,51 @@ class CashShiftTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("active cash shift", str(response.json()).lower())
+
+    def test_cannot_open_shift_with_other_branch_device(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/v1/shifts/open/",
+            {
+                "device": str(self.other_branch_device.id),
+                "opening_amount": "50.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json(),
+            {"device": ["Device does not belong to the authenticated user branch."]},
+        )
+
+    def test_cannot_open_shift_with_inactive_device(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/v1/shifts/open/",
+            {
+                "device": str(self.inactive_device.id),
+                "opening_amount": "50.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"device": ["Device is inactive."]})
+
+    def test_open_shift_succeeds_with_valid_branch_device(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/v1/shifts/open/",
+            {
+                "device": str(self.device.id),
+                "opening_amount": "50.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["device"], str(self.device.id))
 
     def test_open_and_close_shift_report(self):
         self.client.force_authenticate(user=self.user)
