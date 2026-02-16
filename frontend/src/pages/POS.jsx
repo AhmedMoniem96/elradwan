@@ -37,7 +37,6 @@ import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
-const PERCENTAGE_PRESETS = [25, 50, 75, 100];
 const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'wallet', 'other'];
 const MAX_GROUP_RESULTS = 5;
 const MAX_TOTAL_RESULTS = 12;
@@ -137,10 +136,20 @@ const scoreCustomerMatch = (customer, query) => {
 
 function SectionCard({ title, subtitle, children, accent }) {
   return (
-    <SectionPanel title={title} subtitle={subtitle} contentSx={{ borderColor: accent || 'divider' }}>
-        <Stack spacing={2}>
-          {children}
-        </Stack>
+    <SectionPanel
+      title={title}
+      subtitle={subtitle}
+      contentSx={{
+        border: '1px solid',
+        borderColor: accent || 'divider',
+        borderRadius: 3,
+        background: (theme) => `linear-gradient(165deg, ${theme.palette.background.paper} 0%, ${theme.palette.action.hover} 100%)`,
+        boxShadow: (theme) => `0 20px 40px ${theme.palette.action.selected}`,
+      }}
+    >
+      <Stack spacing={2}>
+        {children}
+      </Stack>
     </SectionPanel>
   );
 }
@@ -298,8 +307,6 @@ function PaymentSummaryPanel(props) {
     invoiceTotal,
     setInvoiceTotal,
     setIsTotalManuallyOverridden,
-    paymentInputMode,
-    setPaymentInputMode,
     paymentValue,
     setPaymentValue,
     paymentMethod,
@@ -346,7 +353,7 @@ function PaymentSummaryPanel(props) {
       </Stack>
 
       <TextField
-        label={paymentInputMode === 'percentage' ? t('payment_percentage') : t('payment_amount')}
+        label={t('payment_amount')}
         type="number"
         size="small"
         value={paymentValue}
@@ -354,20 +361,6 @@ function PaymentSummaryPanel(props) {
         onChange={(event) => setPaymentValue(event.target.value)}
         fullWidth
       />
-
-      <ButtonGroup variant="outlined" fullWidth>
-        <Button onClick={() => setPaymentInputMode('amount')}>{t('payment_amount')}</Button>
-        <Button onClick={() => setPaymentInputMode('percentage')}>{t('payment_percentage')}</Button>
-      </ButtonGroup>
-
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-        {PERCENTAGE_PRESETS.map((preset) => (
-          <Button key={preset} size="small" variant="contained" color="primary" onClick={() => { setPaymentInputMode('percentage'); setPaymentValue(String(preset)); }}>
-            {preset}%
-          </Button>
-        ))}
-      </Stack>
-
       <ButtonGroup variant="outlined" fullWidth>
         {PAYMENT_METHODS.map((method) => (
           <Button key={method} variant={paymentMethod === method ? 'contained' : 'outlined'} onClick={() => setPaymentMethod(method)}>
@@ -473,7 +466,6 @@ export default function POS() {
   const [error, setError] = useState('');
   const [invoiceTotal, setInvoiceTotal] = useState('0');
   const [isTotalManuallyOverridden, setIsTotalManuallyOverridden] = useState(false);
-  const [paymentInputMode, setPaymentInputMode] = useState('amount');
   const [paymentValue, setPaymentValue] = useState('0');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [payments, setPayments] = useState([]);
@@ -669,11 +661,8 @@ export default function POS() {
 
   const computedPaymentAmount = useMemo(() => {
     const value = Number(paymentValue) || 0;
-    if (paymentInputMode === 'percentage') {
-      return Math.min((parsedInvoiceTotal * value) / 100, remaining);
-    }
     return Math.min(value, remaining);
-  }, [paymentValue, paymentInputMode, parsedInvoiceTotal, remaining]);
+  }, [paymentValue, remaining]);
 
   useEffect(() => {
     setActiveResultIndex(0);
@@ -780,14 +769,10 @@ export default function POS() {
         id: crypto.randomUUID(),
         method: paymentMethod,
         amount: Number(computedPaymentAmount.toFixed(2)),
-        label:
-          paymentInputMode === 'percentage'
-            ? `${paymentValue}%`
-            : formatCurrency(paymentValue || 0),
+        label: formatCurrency(paymentValue || 0),
       },
     ]);
     setPaymentValue('0');
-    setPaymentInputMode('amount');
     setActionFeedback({
       severity: 'success',
       message: t('pos_payment_recorded', { defaultValue: 'Payment recorded successfully.' }),
@@ -975,8 +960,6 @@ export default function POS() {
               invoiceTotal={invoiceTotal}
               setInvoiceTotal={setInvoiceTotal}
               setIsTotalManuallyOverridden={setIsTotalManuallyOverridden}
-              paymentInputMode={paymentInputMode}
-              setPaymentInputMode={setPaymentInputMode}
               paymentValue={paymentValue}
               setPaymentValue={setPaymentValue}
               paymentMethod={paymentMethod}
