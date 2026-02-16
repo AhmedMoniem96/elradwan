@@ -5,6 +5,7 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
+import FormHelperText from '@mui/material/FormHelperText';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import LinearProgress from '@mui/material/LinearProgress';
@@ -17,6 +18,7 @@ import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
@@ -51,10 +53,12 @@ const parseReportsFiltersFromQuery = (params, fallbackTimezone) => ({
 });
 
 export default function Reports() {
+  const { t } = useTranslation();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const [searchParams, setSearchParams] = useSearchParams();
   const [branches, setBranches] = useState([]);
   const [filters, setFilters] = useState(() => parseReportsFiltersFromQuery(searchParams, timezone));
+  const [appliedFilters, setAppliedFilters] = useState(() => parseReportsFiltersFromQuery(searchParams, timezone));
   const [dailySales, setDailySales] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
@@ -63,14 +67,26 @@ export default function Reports() {
   const [grossMargin, setGrossMargin] = useState({ revenue: 0, cogs: 0, gross_margin: 0, margin_pct: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [dateValidationError, setDateValidationError] = useState('');
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => {
+    Object.entries(appliedFilters).forEach(([k, v]) => {
       if (v) params.set(k, v);
     });
     return params.toString();
-  }, [filters]);
+  }, [appliedFilters]);
+
+  const validateDateRangeFilters = (nextFilters) => {
+    const hasFrom = Boolean(nextFilters.date_from);
+    const hasTo = Boolean(nextFilters.date_to);
+
+    if (hasFrom !== hasTo) {
+      return 'reports_date_range_requires_both';
+    }
+
+    return '';
+  };
 
   const withQuery = (path, extraParams) => {
     const params = new URLSearchParams(queryParams);
@@ -128,22 +144,38 @@ export default function Reports() {
     const hasChanges = Object.keys(incomingFilters).some((key) => incomingFilters[key] !== filters[key]);
     if (hasChanges) {
       setFilters(incomingFilters);
+      setAppliedFilters(incomingFilters);
+      setDateValidationError(validateDateRangeFilters(incomingFilters));
     }
   }, [filters, searchParams, timezone]);
 
   useEffect(() => {
     const nextParams = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => {
+    Object.entries(appliedFilters).forEach(([key, value]) => {
       if (value) nextParams.set(key, value);
     });
 
     if (nextParams.toString() !== searchParams.toString()) {
       setSearchParams(nextParams);
     }
-  }, [filters, searchParams, setSearchParams]);
+  }, [appliedFilters, searchParams, setSearchParams]);
+
+  const applyFilters = () => {
+    const validationError = validateDateRangeFilters(filters);
+    setDateValidationError(validationError);
+
+    if (validationError) {
+      return;
+    }
+
+    setAppliedFilters(filters);
+  };
 
   const clearFilters = () => {
-    setFilters({ branch_id: '', date_from: '', date_to: '', timezone });
+    const resetFilters = { branch_id: '', date_from: '', date_to: '', timezone };
+    setDateValidationError('');
+    setFilters(resetFilters);
+    setAppliedFilters(resetFilters);
   };
 
   const exportCsv = (endpoint) => {
@@ -183,10 +215,35 @@ export default function Reports() {
                 <MenuItem value="">All</MenuItem>
                 {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
               </TextField>
-              <TextField type="date" label="From" InputLabelProps={{ shrink: true }} value={filters.date_from} onChange={(e) => setFilters((f) => ({ ...f, date_from: e.target.value }))} />
-              <TextField type="date" label="To" InputLabelProps={{ shrink: true }} value={filters.date_to} onChange={(e) => setFilters((f) => ({ ...f, date_to: e.target.value }))} />
+              <Stack spacing={0.5}>
+                <Stack direction="row" spacing={2}>
+                  <TextField
+                    type="date"
+                    label="From"
+                    InputLabelProps={{ shrink: true }}
+                    value={filters.date_from}
+                    error={Boolean(dateValidationError)}
+                    onChange={(e) => {
+                      setFilters((f) => ({ ...f, date_from: e.target.value }));
+                      setDateValidationError('');
+                    }}
+                  />
+                  <TextField
+                    type="date"
+                    label="To"
+                    InputLabelProps={{ shrink: true }}
+                    value={filters.date_to}
+                    error={Boolean(dateValidationError)}
+                    onChange={(e) => {
+                      setFilters((f) => ({ ...f, date_to: e.target.value }));
+                      setDateValidationError('');
+                    }}
+                  />
+                </Stack>
+                {dateValidationError && <FormHelperText error>{t(dateValidationError)}</FormHelperText>}
+              </Stack>
               <TextField label="Timezone" value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
-              <Button variant="contained" onClick={loadReports}>Refresh</Button>
+              <Button variant="contained" onClick={applyFilters}>Refresh</Button>
               <Button variant="text" onClick={clearFilters}>Clear filters</Button>
             </Stack>
           </SectionPanel>
