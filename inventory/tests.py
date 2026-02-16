@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import Branch
+from sync.models import SyncOutbox
 from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, Warehouse
 
 
@@ -70,6 +71,24 @@ class BranchScopedInventoryTests(TestCase):
         created = Product.objects.get(id=response.json()["id"])
         self.assertEqual(created.branch_id, self.branch_a.id)
 
+
+    def test_admin_create_product_handles_uuid_in_outbox_payload(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "sku": "A-UUID",
+                "name": "UUID Product",
+                "price": "11.00",
+                "tax_rate": "0.0000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        outbox_row = SyncOutbox.objects.filter(entity="product", op="upsert").latest("id")
+        self.assertEqual(outbox_row.payload["entity_id"], response.json()["id"])
 
     def test_admin_create_product_duplicate_sku_returns_validation_error(self):
         self.client.force_authenticate(user=self.admin_a)
