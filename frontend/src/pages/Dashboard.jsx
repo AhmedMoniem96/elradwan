@@ -125,7 +125,7 @@ const getRangeByPreset = (period, customRange) => {
   return buildDateRange(7);
 };
 
-const DASHBOARD_PANEL_MIN_HEIGHT = 290;
+const DASHBOARD_PANEL_MIN_HEIGHT = 360;
 const ALL_BRANCHES_VALUE = '__all__';
 
 
@@ -177,23 +177,23 @@ function MiniBarChart({ title, data, labelColor = 'text.secondary' }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h6" gutterBottom>{title}</Typography>
-      <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 170, mt: 1 }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
+      <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 220, mt: 1.5 }}>
         {data.map((item) => (
           <Box key={item.label} sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="caption" sx={{ color: labelColor }}>{formatCurrency(item.value)}</Typography>
+            <Typography variant="body2" sx={{ color: labelColor, fontWeight: 600 }}>{formatCurrency(item.value)}</Typography>
             <Box
               sx={{
                 height: `${Math.max((item.value / max) * 100, item.value > 0 ? 6 : 2)}px`,
-                maxHeight: 120,
+                maxHeight: 165,
                 minHeight: 2,
                 borderRadius: 1,
                 bgcolor: item.color,
-                mt: 0.5,
+                mt: 1,
               }}
             />
-            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: labelColor }}>{item.label}</Typography>
+            <Typography variant="body2" sx={{ mt: 1.25, display: 'block', color: labelColor }}>{item.label}</Typography>
           </Box>
         ))}
       </Stack>
@@ -205,16 +205,16 @@ function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, label
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h6" gutterBottom>{title}</Typography>
-      <Stack spacing={1.5} sx={{ mt: 2 }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
+      <Stack spacing={2} sx={{ mt: 2.25 }}>
         {data.map((item) => (
           <Box key={item.label}>
             <Stack direction="row" justifyContent="space-between">
-              <Typography variant="body2">{item.label}</Typography>
-              <Typography variant="body2" sx={{ color: labelColor }}>{valueFormatter(item.value)}</Typography>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>{item.label}</Typography>
+              <Typography variant="body1" sx={{ color: labelColor, fontWeight: 600 }}>{valueFormatter(item.value)}</Typography>
             </Stack>
-            <Box sx={{ mt: 0.5, width: '100%', height: 10, bgcolor: 'action.hover', borderRadius: 1 }}>
+            <Box sx={{ mt: 0.75, width: '100%', height: 14, bgcolor: 'action.hover', borderRadius: 2 }}>
               <Box
                 sx={{
                   width: `${Math.max((item.value / max) * 100, item.value > 0 ? 5 : 0)}%`,
@@ -244,7 +244,7 @@ function TrendChart({
   const min = Math.min(...values, 0);
   const range = max - min || 1;
   const width = 100;
-  const height = 42;
+  const height = 56;
 
   const polyline = points
     .map((point, idx) => {
@@ -255,12 +255,12 @@ function TrendChart({
     .join(' ');
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h6" gutterBottom>{title}</Typography>
-      <Typography variant="caption" sx={{ color: labelColor }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
+      <Typography variant="body2" sx={{ color: labelColor }}>
         {peakLabel}: {yFormatter(max)}
       </Typography>
-      <Box sx={{ mt: 1.5, mb: 1.5, height: 180, bgcolor: 'action.hover', borderRadius: 2, p: 1.5, color }}>
+      <Box sx={{ mt: 1.5, mb: 2, height: 240, bgcolor: 'action.hover', borderRadius: 2.5, p: 1.75, color }}>
         <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" width="100%" height="100%">
           <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="2" />
         </svg>
@@ -275,8 +275,8 @@ function TrendChart({
 
 function QuickActions({ title, actions }) {
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="subtitle1" gutterBottom>{title}</Typography>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
         {actions.map((action) => (
           <Button
@@ -297,8 +297,8 @@ function QuickActions({ title, actions }) {
 
 function SectionCard({ title, subtitle, children }) {
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h6">{title}</Typography>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+      <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
       {subtitle && (
         <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
       )}

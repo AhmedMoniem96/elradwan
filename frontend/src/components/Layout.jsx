@@ -509,7 +509,7 @@ export default function Layout() {
         }}
       >
         <Toolbar />
-        <Container maxWidth="lg" sx={{ mt: (theme) => theme.customSpacing?.pageY || 3, mb: (theme) => theme.customSpacing?.pageY || 3 }}>
+        <Container maxWidth="xl" sx={{ mt: (theme) => theme.customSpacing?.pageY || 3, mb: (theme) => theme.customSpacing?.pageY || 3 }}>
           <Outlet />
         </Container>
       </Box>
