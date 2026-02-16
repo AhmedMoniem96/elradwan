@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 
 from core.models import Branch, Device
 from inventory.models import Product, StockMove, Warehouse
-from sales.models import Customer, Invoice, InvoiceLine, Payment, Return
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Return
 
 
 class BranchScopedSalesTests(TestCase):
@@ -578,3 +578,104 @@ class ReportingTests(TestCase):
         response = self.client.get("/api/v1/reports/dashboard-metrics/")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["date_range"], "Both date_from and date_to are required.")
+
+
+class PosInvoiceCreateTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="PI", name="POS Invoice")
+        self.device = Device.objects.create(branch=self.branch, name="POS Device", identifier="pos-invoice-device")
+        self.customer = Customer.objects.create(branch=self.branch, name="POS Customer")
+        self.product = Product.objects.create(
+            branch=self.branch,
+            sku="POS-INV-1",
+            name="POS Product",
+            price=Decimal("25.00"),
+            cost=Decimal("10.00"),
+        )
+
+        self.cashier = user_model.objects.create_user(
+            username="pos-cashier",
+            password="pass1234",
+            branch=self.branch,
+            role="cashier",
+        )
+        self.admin = user_model.objects.create_user(
+            username="pos-admin",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
+
+    def test_cashier_can_create_pos_invoice(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "50.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "2.00",
+                        "unit_price": "25.00",
+                    }
+                ],
+                "initial_payment": {"amount": "50.00", "method": "cash"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        invoice = Invoice.objects.get(id=response.json()["id"])
+        self.assertEqual(invoice.user_id, self.cashier.id)
+        self.assertEqual(invoice.device_id, self.device.id)
+        self.assertEqual(invoice.status, Invoice.Status.PAID)
+        self.assertEqual(invoice.lines.count(), 1)
+        self.assertEqual(invoice.payments.count(), 1)
+
+    def test_create_pos_invoice_requires_open_shift(self):
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "total": "25.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "unit_price": "25.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("active cash shift", str(response.json()).lower())
+
+    def test_admin_can_create_pos_invoice_with_sales_pos_access(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.admin, device=self.device, opening_amount=Decimal("20.00"))
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "total": "25.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "unit_price": "25.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)

@@ -676,9 +676,9 @@ export default function POS() {
         quantity: item.quantity,
         unit_price: Number(item.unitPrice.toFixed(2)),
       })),
-      payments: payments.map((payment) => ({ amount: payment.amount })),
+      initial_payment: payments.length ? { method: 'cash', amount: paidSoFar } : null,
     }),
-    [cart, parsedInvoiceTotal, payments, selectedCustomer],
+    [cart, parsedInvoiceTotal, paidSoFar, payments.length, selectedCustomer],
   );
 
   const filteredReceipts = useMemo(() => {
@@ -790,7 +790,7 @@ export default function POS() {
     setIsCompletingSale(true);
     setActionFeedback({ severity: '', message: '' });
     try {
-      await axios.post('/api/v1/invoices/', invoicePayload);
+      await axios.post('/api/v1/pos/invoices/', invoicePayload);
       setCart([]);
       setPayments([]);
       setSelectedCustomer(null);
@@ -804,9 +804,22 @@ export default function POS() {
       });
     } catch (err) {
       console.error('Failed to complete sale', err);
+      const status = err?.response?.status;
+      let message = t('pos_complete_sale_error', { defaultValue: 'Unable to complete sale. Please try again.' });
+
+      if (status === 405) {
+        message = t('pos_complete_sale_method_not_allowed', {
+          defaultValue: 'POS sale endpoint is not enabled. Contact your supervisor to enable POS invoice creation.',
+        });
+      } else if (status === 403) {
+        message = t('pos_complete_sale_forbidden', {
+          defaultValue: 'You are not allowed to create POS invoices. Ask your supervisor/admin for POS create permission.',
+        });
+      }
+
       setActionFeedback({
         severity: 'error',
-        message: t('pos_complete_sale_error', { defaultValue: 'Unable to complete sale. Please try again.' }),
+        message,
       });
     } finally {
       setIsCompletingSale(false);

@@ -19,6 +19,7 @@ from sales.views import (
     CustomerViewSet,
     InvoiceViewSet,
     PaymentViewSet,
+    PosInvoiceCreateView,
     ReturnViewSet,
 )
 
@@ -37,6 +38,7 @@ from django.urls import path
 
 urlpatterns += [
     path("shifts/open/", CashShiftOpenView.as_view(), name="shift-open"),
+    path("pos/invoices/", PosInvoiceCreateView.as_view(), name="pos-invoice-create"),
     path("shifts/current/", CashShiftCurrentView.as_view(), name="shift-current"),
     path("shifts/<uuid:shift_id>/close/", CashShiftCloseView.as_view(), name="shift-close"),
     path("shifts/<uuid:shift_id>/report/", CashShiftReportView.as_view(), name="shift-report"),

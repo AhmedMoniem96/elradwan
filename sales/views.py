@@ -22,6 +22,7 @@ from sales.serializers import (
     CashShiftSerializer,
     CustomerSerializer,
     InvoiceSerializer,
+    PosInvoiceCreateSerializer,
     PaymentSerializer,
     RecentActivityItemSerializer,
     ReturnSerializer,
@@ -343,6 +344,57 @@ class AdminInvoiceViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         )
         return Response(self.get_serializer(invoice).data)
 
+
+class PosInvoiceCreateView(APIView):
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"post": "sales.pos.access"}
+
+    def post(self, request):
+        serializer = PosInvoiceCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        invoice = serializer.save()
+
+        invoice_payload = InvoiceSerializer(invoice).data
+        emit_outbox(
+            branch_id=invoice.branch_id,
+            entity="invoice",
+            entity_id=invoice.id,
+            op="upsert",
+            payload=invoice_payload,
+        )
+        create_audit_log_from_request(
+            request,
+            action="invoice.create",
+            entity="invoice",
+            entity_id=invoice.id,
+            after_snapshot=invoice_payload,
+            event_id=invoice.event_id,
+            branch=invoice.branch,
+            device=invoice.device,
+        )
+
+        payment = serializer.validated_data.get("_created_payment")
+        if payment is not None:
+            payment_payload = PaymentSerializer(payment).data
+            emit_outbox(
+                branch_id=payment.invoice.branch_id,
+                entity="payment",
+                entity_id=payment.id,
+                op="upsert",
+                payload=payment_payload,
+            )
+            create_audit_log_from_request(
+                request,
+                action="payment.create",
+                entity="payment",
+                entity_id=payment.id,
+                after_snapshot=payment_payload,
+                event_id=payment.event_id,
+                branch=payment.invoice.branch,
+                device=payment.device,
+            )
+
+        return Response(invoice_payload, status=status.HTTP_201_CREATED)
 
 class CashShiftOpenView(APIView):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
