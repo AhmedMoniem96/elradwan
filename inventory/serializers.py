@@ -32,7 +32,7 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ["id", "branch", "name", "parent", "is_active", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -67,7 +67,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
     def get_image_url(self, obj):
         if not obj.image:
@@ -82,7 +82,7 @@ class WarehouseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Warehouse
         fields = ["id", "branch", "name", "is_primary", "is_active", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
 class SupplierContactSerializer(serializers.ModelSerializer):
@@ -98,7 +98,7 @@ class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
         fields = ["id", "branch", "name", "code", "is_active", "created_at", "updated_at", "contacts"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
@@ -147,7 +147,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             "updated_at",
             "lines",
         ]
-        read_only_fields = ["id", "subtotal", "tax_total", "total", "approved_at", "received_at", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "subtotal", "tax_total", "total", "approved_at", "received_at", "created_at", "updated_at"]
 
     def get_balance_due(self, obj):
         return max(obj.total - obj.amount_paid, Decimal("0.00"))
