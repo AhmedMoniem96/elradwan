@@ -33,14 +33,28 @@ import { normalizeCollectionResponse } from '../utils/api';
 const emptyLine = { product: '', quantity: '1.00' };
 
 const STOCK_STATUS_OPTIONS = [
-  { value: 'in_stock', labelKey: 'inventory_status_in_stock', defaultLabel: 'In stock', color: 'success.main' },
-  { value: 'low_stock', labelKey: 'inventory_status_low_stock', defaultLabel: 'Low stock', color: 'warning.main' },
-  { value: 'out_of_stock', labelKey: 'inventory_status_out_of_stock', defaultLabel: 'Out of stock', color: 'error.main' },
-  { value: 'backorder', labelKey: 'inventory_status_backorder', defaultLabel: 'Backorder', color: 'info.main' },
-  { value: 'discontinued', labelKey: 'inventory_status_discontinued', defaultLabel: 'Discontinued', color: 'text.disabled' },
+  { value: 'in_stock', labelKey: 'inventory_status_in_stock', color: 'success.main' },
+  { value: 'low_stock', labelKey: 'inventory_status_low_stock', color: 'warning.main' },
+  { value: 'out_of_stock', labelKey: 'inventory_status_out_of_stock', color: 'error.main' },
+  { value: 'backorder', labelKey: 'inventory_status_backorder', color: 'info.main' },
+  { value: 'discontinued', labelKey: 'inventory_status_discontinued', color: 'text.disabled' },
+];
+
+const PO_SEVERITY_OPTIONS = [
+  { value: 'low', labelKey: 'inventory_po_severity_low' },
+  { value: 'critical', labelKey: 'inventory_po_severity_critical' },
+];
+
+const TRANSFER_STATUS_OPTIONS = [
+  { value: 'draft', labelKey: 'inventory_transfer_status_draft' },
+  { value: 'approved', labelKey: 'inventory_transfer_status_approved' },
+  { value: 'completed', labelKey: 'inventory_transfer_status_completed' },
+  { value: 'cancelled', labelKey: 'inventory_transfer_status_cancelled' },
+  { value: 'rejected', labelKey: 'inventory_transfer_status_rejected' },
 ];
 
 const getStockStatusMeta = (status) => STOCK_STATUS_OPTIONS.find((option) => option.value === status);
+const getTransferStatusMeta = (status) => TRANSFER_STATUS_OPTIONS.find((option) => option.value === status);
 
 
 const parsePoFiltersFromQuery = (params) => ({
@@ -214,7 +228,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to create purchase order from suggestions', err);
-      setError(t('inventory_create_po_from_suggestions_error', 'Failed to create PO from suggestions.'));
+      setError(t('inventory_create_po_from_suggestions_error'));
     } finally {
       setIsCreatingPO(false);
     }
@@ -315,7 +329,7 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to save product', err);
-      setError(t('inventory_save_product_error', 'Failed to save product details.'));
+      setError(t('inventory_save_product_error'));
     } finally {
       setIsSavingProduct(false);
     }
@@ -360,14 +374,14 @@ export default function Inventory() {
       await loadData();
     } catch (err) {
       console.error('Failed to save supplier payment', err);
-      setError(t('inventory_supplier_payment_error', 'Failed to save supplier payment.'));
+      setError(t('inventory_supplier_payment_error'));
     } finally {
       setIsSavingPayment(false);
     }
   };
 
   const exportSupplierAging = () => {
-    const header = ['Supplier', 'Total Purchased', 'Amount Paid', 'Balance Due', 'Current', '30 Days', '60 Days', '90+ Days'];
+    const header = [t('supplier'), t('total'), t('amount_paid'), t('balance_due'), t('current'), t('days_30'), t('days_60'), t('days_90')];
     const rows = supplierAging.map((row) => [
       row.supplier_name,
       row.total_purchased,
@@ -383,7 +397,7 @@ export default function Inventory() {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'supplier-aging.csv');
+    link.setAttribute('download', t('supplier_aging_export_filename'));
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -417,7 +431,7 @@ export default function Inventory() {
     if (!filterValue) return products;
     return products.filter((product) => {
       const statusMeta = getStockStatusMeta(product.stock_status);
-      const statusLabel = statusMeta ? t(statusMeta.labelKey, statusMeta.defaultLabel) : (product.stock_status || '');
+      const statusLabel = statusMeta ? t(statusMeta.labelKey) : (product.stock_status || '');
       return [product.name, product.sku, product.stock_status, statusLabel]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(filterValue));
@@ -430,12 +444,12 @@ export default function Inventory() {
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {isLoading && (
         <LoadingState
-          title="بنجهّز بيانات المخزون"
-          helperText="استنّى ثواني بسيطة لحد ما كل حاجة تكتمل."
+          title={t('inventory_loading_title')}
+          helperText={t('inventory_loading_helper_text')}
         />
       )}
 
-      <SectionPanel title={t('product_details', 'Product details')}>
+      <SectionPanel title={t('product_details')}>
         
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -448,8 +462,8 @@ export default function Inventory() {
               <MenuItem value="">{t('none')}</MenuItem>
               {categories.map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}
             </TextField>
-            <TextField label={t('brand', 'Brand')} value={productForm.brand} onChange={(e) => setProductForm((prev) => ({ ...prev, brand: e.target.value }))} fullWidth />
-            <TextField label={t('unit', 'Unit')} value={productForm.unit} onChange={(e) => setProductForm((prev) => ({ ...prev, unit: e.target.value }))} fullWidth />
+            <TextField label={t('brand')} value={productForm.brand} onChange={(e) => setProductForm((prev) => ({ ...prev, brand: e.target.value }))} fullWidth />
+            <TextField label={t('unit')} value={productForm.unit} onChange={(e) => setProductForm((prev) => ({ ...prev, unit: e.target.value }))} fullWidth />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField label={t('price')} value={productForm.price} onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))} fullWidth />
@@ -471,25 +485,25 @@ export default function Inventory() {
                 <MenuItem key={option.value} value={option.value}>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
-                    <span>{t(option.labelKey, option.defaultLabel)}</span>
+                    <span>{t(option.labelKey)}</span>
                   </Stack>
                 </MenuItem>
               ))}
             </TextField>
           </Stack>
-          <TextField label={t('slug', 'Slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
+          <TextField label={t('slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
           <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} fullWidth multiline minRows={2} />
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
             <Button variant="outlined" component="label">
-              {t('upload_image', 'Upload image')}
+              {t('upload_image')}
               <input hidden type="file" accept="image/*" onChange={(e) => setProductForm((prev) => ({ ...prev, image: e.target.files?.[0] || null }))} />
             </Button>
-            <Typography color="text.secondary">{productForm.image?.name || t('no_file_selected', 'No file selected')}</Typography>
+            <Typography color="text.secondary">{productForm.image?.name || t('no_file_selected')}</Typography>
           </Stack>
           <Stack direction="row" spacing={2}>
             <FormControlLabel
               control={<Switch checked={productForm.is_sellable_online} onChange={(e) => setProductForm((prev) => ({ ...prev, is_sellable_online: e.target.checked }))} />}
-              label={t('is_sellable_online', 'Sellable online')}
+              label={t('is_sellable_online')}
             />
             <FormControlLabel
               control={<Switch checked={productForm.is_active} onChange={(e) => setProductForm((prev) => ({ ...prev, is_active: e.target.checked }))} />}
@@ -520,7 +534,7 @@ export default function Inventory() {
               onChange={(e) => setPoFilters((prev) => ({ ...prev, warehouse_id: e.target.value }))}
               sx={{ minWidth: 150 }}
             >
-              <MenuItem value="">{t('all', 'All')}</MenuItem>
+              <MenuItem value="">{t('all')}</MenuItem>
               {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
             </TextField>
             <TextField
@@ -531,23 +545,24 @@ export default function Inventory() {
               onChange={(e) => setPoFilters((prev) => ({ ...prev, severity: e.target.value }))}
               sx={{ minWidth: 130 }}
             >
-              <MenuItem value="">{t('all', 'All')}</MenuItem>
-              <MenuItem value="low">low</MenuItem>
-              <MenuItem value="critical">critical</MenuItem>
+              <MenuItem value="">{t('all')}</MenuItem>
+              {PO_SEVERITY_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{t(option.labelKey)}</MenuItem>
+              ))}
             </TextField>
             <TextField
               size="small"
-              label={t('min_stockout_days', 'Min stockout days')}
+              label={t('min_stockout_days')}
               type="number"
               value={poFilters.min_stockout_days}
               onChange={(e) => setPoFilters((prev) => ({ ...prev, min_stockout_days: e.target.value }))}
               sx={{ width: 170 }}
             />
             <Button size="small" variant="contained" onClick={createPOFromSuggestions} disabled={isCreatingPO}>
-              {t('create_po_from_alerts', 'Create PO from alerts')}
+              {t('create_po_from_alerts')}
             </Button>
             <Button size="small" variant="text" onClick={clearPoFilters}>
-              {t('clear_filters', 'Clear filters')}
+              {t('clear_filters')}
             </Button>
           </Stack>
         </Stack>
@@ -561,9 +576,9 @@ export default function Inventory() {
                 <TableCell>{t('on_hand')}</TableCell>
                 <TableCell>{t('minimum')}</TableCell>
                 <TableCell>{t('reorder')}</TableCell>
-                <TableCell>{t('days_of_cover', 'Days of cover')}</TableCell>
-                <TableCell>{t('projected_stockout_date', 'Projected stockout date')}</TableCell>
-                <TableCell>{t('recommended_reorder_qty', 'Recommended reorder qty')}</TableCell>
+                <TableCell>{t('days_of_cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty')}</TableCell>
                 <TableCell>{t('severity')}</TableCell>
               </TableRow>
             </TableHead>
@@ -576,14 +591,14 @@ export default function Inventory() {
                   <TableCell>{formatNumber(row.on_hand)}</TableCell>
                   <TableCell>{row.minimum_quantity}</TableCell>
                   <TableCell>{row.suggested_reorder_quantity}</TableCell>
-                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : '-'}</TableCell>
-                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : '-'}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : t('not_available_symbol')}</TableCell>
                   <TableCell>{row.recommended_reorder_quantity || row.suggested_reorder_quantity}</TableCell>
                   <TableCell>
                     <Chip
                       size="small"
                       color={row.severity === 'critical' ? 'error' : 'warning'}
-                      label={row.severity}
+                      label={t(`inventory_po_severity_${row.severity}`)}
                       sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }}
                     />
                   </TableCell>
@@ -595,7 +610,10 @@ export default function Inventory() {
         {poPreview && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t('po_creation_result', 'PO creation result')}: {poPreview.created_count || 0} created, {poPreview.skipped_count || 0} skipped
+              {t('po_creation_result', {
+                created: poPreview.created_count || 0,
+                skipped: poPreview.skipped_count || 0,
+              })}
             </Typography>
             {(poPreview.created_purchase_orders || []).map((po) => (
               <Alert key={po.purchase_order_id} severity="success" sx={{ mb: 1 }}>
@@ -604,14 +622,14 @@ export default function Inventory() {
             ))}
             {(poPreview.skipped_groups || []).map((group) => (
               <Alert key={group.grouping_token} severity="info" sx={{ mb: 1 }}>
-                {t('po_skipped_existing', 'Skipped existing group')}: {group.existing_po_id}
+                {t('po_skipped_existing')}: {group.existing_po_id}
               </Alert>
             ))}
           </Box>
         )}
       </SectionPanel>
 
-      <SectionPanel title={t('stockout_risk_30d', 'Stockout risk (next 30 days)')}>
+      <SectionPanel title={t('stockout_risk_30d')}>
         
         <TableContainer>
           <Table size="small">
@@ -620,9 +638,9 @@ export default function Inventory() {
                 <TableCell>{t('warehouse')}</TableCell>
                 <TableCell>{t('product')}</TableCell>
                 <TableCell>{t('on_hand')}</TableCell>
-                <TableCell>{t('days_of_cover', 'Days of cover')}</TableCell>
-                <TableCell>{t('projected_stockout_date', 'Projected stockout date')}</TableCell>
-                <TableCell>{t('recommended_reorder_qty', 'Recommended reorder qty')}</TableCell>
+                <TableCell>{t('days_of_cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -631,8 +649,8 @@ export default function Inventory() {
                   <TableCell>{row.warehouse_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>
                   <TableCell>{formatNumber(row.on_hand)}</TableCell>
-                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : '-'}</TableCell>
-                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : '-'}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : t('not_available_symbol')}</TableCell>
                   <TableCell>{formatNumber(row.recommended_reorder_quantity)}</TableCell>
                 </TableRow>
               ))}
@@ -658,7 +676,7 @@ export default function Inventory() {
         ))}
         {!alerts.length && (
           <EmptyState
-            title="مفيش تنبيهات جديدة"
+            title={t('inventory_no_unread_alerts_title')}
             helperText={t('inventory_no_unread_alerts')}
           />
         )}
@@ -667,22 +685,22 @@ export default function Inventory() {
       <SectionPanel title={t('inventory_product_stock_status')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            {t('inventory_stock_status_helper', 'Use status colors and quick search to keep inventory easy to scan.')}
+            {t('inventory_stock_status_helper')}
           </Typography>
           <TextField
             size="small"
-            label={t('search', 'Search')}
+            label={t('search')}
             value={stockStatusFilter}
             onChange={(e) => setStockStatusFilter(e.target.value)}
             sx={{ minWidth: { xs: '100%', md: 280 } }}
-            placeholder={t('inventory_stock_status_search_placeholder', 'Search by product, SKU, or status')}
+            placeholder={t('inventory_stock_status_search_placeholder')}
           />
         </Stack>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>{t('image', 'Image')}</TableCell>
+                <TableCell>{t('image')}</TableCell>
                 <TableCell>{t('name')}</TableCell>
                 <TableCell>{t('sku')}</TableCell>
                 <TableCell>{t('price')}</TableCell>
@@ -694,7 +712,7 @@ export default function Inventory() {
               {!filteredProducts.length && (
                 <TableRow>
                   <TableCell colSpan={6}>
-                    <EmptyState title="مفيش منتجات متاحة" helperText="جرّب تغيّر البحث أو ضيف منتج جديد." />
+                    <EmptyState title={t('inventory_products_empty_title')} helperText={t('inventory_products_empty_helper_text')} />
                   </TableCell>
                 </TableRow>
               )}
@@ -724,7 +742,7 @@ export default function Inventory() {
                           return (
                             <Stack direction="row" spacing={1} alignItems="center">
                               <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: meta.color }} />
-                              <span>{t(meta.labelKey, meta.defaultLabel)}</span>
+                              <span>{t(meta.labelKey)}</span>
                             </Stack>
                           );
                         },
@@ -735,7 +753,7 @@ export default function Inventory() {
                         <MenuItem key={option.value} value={option.value}>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
-                            <span>{t(option.labelKey, option.defaultLabel)}</span>
+                            <span>{t(option.labelKey)}</span>
                           </Stack>
                         </MenuItem>
                       ))}
@@ -746,7 +764,7 @@ export default function Inventory() {
                       {statusMeta && (
                         <Chip
                           size="small"
-                          label={t(statusMeta.labelKey, statusMeta.defaultLabel)}
+                          label={t(statusMeta.labelKey)}
                           sx={{
                             '& .MuiChip-label': { px: 1 },
                             backgroundColor: 'transparent',
@@ -773,9 +791,9 @@ export default function Inventory() {
       </SectionPanel>
 
 
-      <SectionPanel title={t('supplier_ledger', 'Supplier ledger')}>
+      <SectionPanel title={t('supplier_ledger')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
-          <Typography variant="h6">{t('supplier_ledger', 'Supplier ledger')}</Typography>
+          <Typography variant="h6">{t('supplier_ledger')}</Typography>
           <Button size="small" variant="outlined" onClick={exportSupplierAging}>{t('export_csv')}</Button>
         </Stack>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
@@ -786,18 +804,18 @@ export default function Inventory() {
             onChange={(e) => setPaymentForm((prev) => ({ ...prev, supplier_id: e.target.value }))}
             fullWidth
           >
-            <MenuItem value="">{t('select_supplier', 'Select supplier')}</MenuItem>
+            <MenuItem value="">{t('select_supplier')}</MenuItem>
             {suppliers.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.name}</MenuItem>)}
           </TextField>
-          <TextField label={t('amount_paid', 'Amount paid')} value={paymentForm.amount} onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))} fullWidth />
-          <TextField select label={t('method', 'Method')} value={paymentForm.method} onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))} fullWidth>
-            <MenuItem value="cash">Cash</MenuItem>
-            <MenuItem value="bank_transfer">Bank transfer</MenuItem>
-            <MenuItem value="card">Card</MenuItem>
-            <MenuItem value="cheque">Cheque</MenuItem>
-            <MenuItem value="other">Other</MenuItem>
+          <TextField label={t('amount_paid')} value={paymentForm.amount} onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))} fullWidth />
+          <TextField select label={t('method')} value={paymentForm.method} onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))} fullWidth>
+            <MenuItem value="cash">{t('payment_method_cash')}</MenuItem>
+            <MenuItem value="bank_transfer">{t('payment_method_bank_transfer')}</MenuItem>
+            <MenuItem value="card">{t('payment_method_card')}</MenuItem>
+            <MenuItem value="cheque">{t('payment_method_cheque')}</MenuItem>
+            <MenuItem value="other">{t('payment_method_other')}</MenuItem>
           </TextField>
-          <TextField type="datetime-local" label={t('paid_at', 'Paid at')} value={paymentForm.paid_at} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paid_at: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+          <TextField type="datetime-local" label={t('paid_at')} value={paymentForm.paid_at} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paid_at: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
           <Button variant="contained" disabled={isSavingPayment || !paymentForm.supplier_id} onClick={submitSupplierPayment}>{t('save')}</Button>
         </Stack>
         <TableContainer>
@@ -805,13 +823,13 @@ export default function Inventory() {
             <TableHead>
               <TableRow>
                 <TableCell>{t('supplier')}</TableCell>
-                <TableCell>{t('total', 'Total')}</TableCell>
-                <TableCell>{t('amount_paid', 'Amount paid')}</TableCell>
-                <TableCell>{t('balance_due', 'Balance due')}</TableCell>
-                <TableCell>{t('current', 'Current')}</TableCell>
-                <TableCell>{t('days_30', '30 days')}</TableCell>
-                <TableCell>{t('days_60', '60 days')}</TableCell>
-                <TableCell>{t('days_90', '90+ days')}</TableCell>
+                <TableCell>{t('total')}</TableCell>
+                <TableCell>{t('amount_paid')}</TableCell>
+                <TableCell>{t('balance_due')}</TableCell>
+                <TableCell>{t('current')}</TableCell>
+                <TableCell>{t('days_30')}</TableCell>
+                <TableCell>{t('days_60')}</TableCell>
+                <TableCell>{t('days_90')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -884,7 +902,7 @@ export default function Inventory() {
               {!transfers.length && (
                 <TableRow>
                   <TableCell colSpan={6}>
-                    <EmptyState title="مفيش تحويلات مخزون لسه" helperText="لما تعمل تحويل جديد هتلاقيه هنا." />
+                    <EmptyState title={t('inventory_transfers_empty_title')} helperText={t('inventory_transfers_empty_helper_text')} />
                   </TableCell>
                 </TableRow>
               )}
@@ -893,7 +911,13 @@ export default function Inventory() {
                   <TableCell>{transfer.reference}</TableCell>
                   <TableCell>{warehouses.find((w) => w.id === transfer.source_warehouse)?.name || t('none')}</TableCell>
                   <TableCell>{warehouses.find((w) => w.id === transfer.destination_warehouse)?.name || t('none')}</TableCell>
-                  <TableCell><Chip label={transfer.status} size="small" sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }} /></TableCell>
+                  <TableCell>
+                    <Chip
+                      label={t(getTransferStatusMeta(transfer.status)?.labelKey || `inventory_transfer_status_${transfer.status}`)}
+                      size="small"
+                      sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }}
+                    />
+                  </TableCell>
                   <TableCell>{(transfer.lines || []).map((line) => `${line.product_name || line.product} (${line.quantity})`).join(', ')}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" justifyContent="flex-end" spacing={1}>
