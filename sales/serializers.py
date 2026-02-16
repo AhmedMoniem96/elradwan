@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
@@ -403,6 +404,162 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_returned_total(self, obj):
         return obj.returns.aggregate(total=Sum("total"))["total"] or 0
+
+
+class PosInvoiceLineInputSerializer(serializers.Serializer):
+    product_id = serializers.UUIDField()
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
+    discount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False, default=Decimal("0.00"))
+    tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
+
+
+class PosInvoiceInitialPaymentSerializer(serializers.Serializer):
+    method = serializers.ChoiceField(choices=Payment.Method.choices, required=False, default=Payment.Method.CASH)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    paid_at = serializers.DateTimeField(required=False, default=timezone.now)
+
+
+class PosInvoiceCreateSerializer(serializers.Serializer):
+    customer_id = serializers.UUIDField(required=False, allow_null=True)
+    total = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    lines = PosInvoiceLineInputSerializer(many=True)
+    initial_payment = PosInvoiceInitialPaymentSerializer(required=False, allow_null=True)
+    device_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        user = request.user
+        if not getattr(user, "branch_id", None):
+            raise serializers.ValidationError("Authenticated user must belong to a branch to create records.")
+
+        active_shifts = CashShift.objects.filter(cashier=user, branch_id=user.branch_id, closed_at__isnull=True).select_related("device")
+        device_id = attrs.get("device_id")
+        shift = None
+        if device_id:
+            shift = active_shifts.filter(device_id=device_id).first()
+            if shift is None:
+                raise serializers.ValidationError({"device_id": "No active shift found for cashier and device."})
+        else:
+            shift_count = active_shifts.count()
+            if shift_count == 1:
+                shift = active_shifts.first()
+            elif shift_count > 1:
+                raise serializers.ValidationError({"device_id": "Multiple active shifts found. Select device_id explicitly."})
+            else:
+                raise serializers.ValidationError("An active cash shift is required before creating POS invoices.")
+
+        customer = None
+        customer_id = attrs.get("customer_id")
+        if customer_id:
+            customer = Customer.objects.filter(id=customer_id, branch_id=user.branch_id).first()
+            if customer is None:
+                raise serializers.ValidationError({"customer_id": "Customer must belong to your branch."})
+
+        lines = attrs.get("lines") or []
+        if not lines:
+            raise serializers.ValidationError({"lines": "At least one line item is required."})
+
+        product_ids = [line["product_id"] for line in lines]
+        products = Product.objects.filter(branch_id=user.branch_id, id__in=product_ids)
+        products_by_id = {product.id: product for product in products}
+
+        line_calculations = []
+        subtotal = Decimal("0.00")
+        tax_total = Decimal("0.00")
+        for idx, line in enumerate(lines):
+            product = products_by_id.get(line["product_id"])
+            if product is None:
+                raise serializers.ValidationError({"lines": {idx: {"product_id": "Unknown product for your branch."}}})
+
+            quantity = _to_money(line["quantity"])
+            unit_price = _to_money(line["unit_price"])
+            discount = _to_money(line.get("discount") or Decimal("0.00"))
+            tax_rate = Decimal(str(line.get("tax_rate") or Decimal("0.0000")))
+
+            line_subtotal = _to_money((quantity * unit_price) - discount)
+            if line_subtotal < 0:
+                raise serializers.ValidationError({"lines": {idx: {"discount": "Discount cannot exceed line subtotal."}}})
+            line_tax = _to_money(line_subtotal * tax_rate)
+
+            subtotal += line_subtotal
+            tax_total += line_tax
+            line_calculations.append(
+                {
+                    "product": product,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "discount": discount,
+                    "tax_rate": tax_rate,
+                    "line_total": line_subtotal,
+                }
+            )
+
+        computed_total = _to_money(subtotal + tax_total)
+        requested_total = _to_money(attrs["total"])
+        if requested_total > computed_total:
+            raise serializers.ValidationError({"total": "Invoice total cannot exceed computed line total."})
+
+        initial_payment = attrs.get("initial_payment")
+        payment_amount = _to_money(initial_payment["amount"]) if initial_payment else Decimal("0.00")
+        if payment_amount > requested_total:
+            raise serializers.ValidationError({"initial_payment": "Initial payment cannot exceed invoice total."})
+
+        attrs["_shift"] = shift
+        attrs["_customer"] = customer
+        attrs["_line_calculations"] = line_calculations
+        attrs["_subtotal"] = _to_money(subtotal)
+        attrs["_tax_total"] = _to_money(tax_total)
+        attrs["_discount_total"] = _to_money(computed_total - requested_total)
+        attrs["_amount_paid"] = payment_amount
+        attrs["_balance_due"] = _to_money(requested_total - payment_amount)
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        request = self.context["request"]
+        user = request.user
+        shift = validated_data["_shift"]
+        initial_payment = validated_data.get("initial_payment")
+
+        created_at = timezone.now()
+        local_invoice_no = f"POS-{created_at.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+
+        invoice = Invoice.objects.create(
+            branch_id=user.branch_id,
+            device=shift.device,
+            user=user,
+            customer=validated_data["_customer"],
+            invoice_number=f"{shift.branch.code}-{local_invoice_no}",
+            local_invoice_no=local_invoice_no,
+            status=Invoice.Status.PAID if validated_data["_balance_due"] == 0 else Invoice.Status.PARTIALLY_PAID if validated_data["_amount_paid"] > 0 else Invoice.Status.OPEN,
+            subtotal=validated_data["_subtotal"],
+            discount_total=validated_data["_discount_total"],
+            tax_total=validated_data["_tax_total"],
+            total=_to_money(validated_data["total"]),
+            amount_paid=validated_data["_amount_paid"],
+            balance_due=validated_data["_balance_due"],
+            paid_at=initial_payment.get("paid_at") if initial_payment and validated_data["_balance_due"] == 0 else None,
+            event_id=uuid.uuid4(),
+            created_at=created_at,
+        )
+
+        for line in validated_data["_line_calculations"]:
+            InvoiceLine.objects.create(invoice=invoice, **line)
+
+        payment = None
+        if initial_payment:
+            payment = Payment.objects.create(
+                invoice=invoice,
+                method=initial_payment["method"],
+                amount=validated_data["_amount_paid"],
+                paid_at=initial_payment["paid_at"],
+                event_id=uuid.uuid4(),
+                device=shift.device,
+            )
+
+        validated_data["_created_payment"] = payment
+        return invoice
 
 
 def get_shift_report(shift):

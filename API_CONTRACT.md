@@ -327,7 +327,7 @@ Roles: `cashier`, `supervisor`, `admin` (superuser always allowed).
 | Endpoint / Action | Capability | Cashier | Supervisor | Admin |
 |---|---|---:|---:|---:|
 | `GET /api/v1/invoices/`, `GET /api/v1/invoices/dashboard-summary/` | `sales.dashboard.view` | ✅ | ✅ | ✅ |
-| `POST /api/v1/payments/`, `POST /api/v1/returns/`, shift open/current | `sales.pos.access` | ✅ | ✅ | ✅ |
+| `POST /api/v1/pos/invoices/`, `POST /api/v1/payments/`, `POST /api/v1/returns/`, shift open/current | `sales.pos.access` | ✅ | ✅ | ✅ |
 | `GET /api/v1/customers/` | `sales.customers.view` | ✅ | ✅ | ✅ |
 | `POST /api/v1/shifts/{id}/close/` (own shift) | `shift.close.self` | ✅ | ✅ | ✅ |
 | `POST /api/v1/shifts/{id}/close/` (override another cashier) | `shift.close.override` | ❌ | ✅ | ✅ |
