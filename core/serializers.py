@@ -17,6 +17,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ["username", "email", "password", "first_name", "last_name"]
 
+    def validate_email(self, value):
+        normalized_email = value.strip().lower()
+        if normalized_email and User.objects.filter(email__iexact=normalized_email).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return normalized_email
+
     def create(self, validated_data):
         user = User.objects.create_user(
             username=validated_data["username"],
@@ -53,8 +59,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=False)
-    uid = serializers.CharField(required=False)
+    uid = serializers.CharField(required=True)
     token = serializers.CharField()
     new_password = serializers.CharField(write_only=True, min_length=8)
 
@@ -63,11 +68,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     }
 
     def _get_user(self, attrs):
-        email = attrs.get("email")
         uid = attrs.get("uid")
-
-        if email:
-            return User.objects.filter(email__iexact=email).first()
 
         if uid:
             try:

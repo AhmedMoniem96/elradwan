@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
 from django.test import TestCase, override_settings
 from django.core import mail
 from rest_framework.test import APIClient
@@ -200,10 +201,11 @@ class PasswordResetTests(TestCase):
 
     def test_password_reset_confirm_updates_password_with_valid_token(self):
         token = default_token_generator.make_token(self.user)
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         response = self.client.post(
             "/api/v1/password-reset/confirm/",
             {
-                "email": self.user.email,
+                "uid": uid,
                 "token": token,
                 "new_password": "new-safe-pass-123",
             },
@@ -233,8 +235,7 @@ class PasswordResetTests(TestCase):
         token = default_token_generator.make_token(self.user)
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         self.assertIn(f"https://app.example.com/reset-password/{uid}/", message.body)
-        self.assertIn("email=reset%40example.com", message.body)
-        self.assertIn("token=", message.body)
+        self.assertNotIn("email=", message.body)
 
     def test_password_reset_confirm_updates_password_with_uid_token(self):
         token = default_token_generator.make_token(self.user)
@@ -267,10 +268,11 @@ class PasswordResetTests(TestCase):
         self.assertTrue(any("password_reset_email_send_failed" in entry for entry in logs.output))
 
     def test_password_reset_confirm_rejects_invalid_token(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         response = self.client.post(
             "/api/v1/password-reset/confirm/",
             {
-                "email": self.user.email,
+                "uid": uid,
                 "token": "invalid-token",
                 "new_password": "new-safe-pass-123",
             },
@@ -280,3 +282,43 @@ class PasswordResetTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("old-pass-123"))
+
+    def test_password_reset_confirm_requires_uid(self):
+        token = default_token_generator.make_token(self.user)
+        response = self.client.post(
+            "/api/v1/password-reset/confirm/",
+            {
+                "token": token,
+                "new_password": "new-safe-pass-123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+
+class UserRegistrationSerializerTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+        self.user_model.objects.create_user(
+            username="existing-user",
+            email="existing@example.com",
+            password="pass1234",
+        )
+
+    def test_registration_rejects_case_insensitive_duplicate_email(self):
+        response = self.client.post(
+            "/api/v1/register/",
+            {
+                "username": "new-user",
+                "email": "EXISTING@example.com",
+                "password": "pass12345",
+                "first_name": "New",
+                "last_name": "User",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"email": ["A user with this email already exists."]})

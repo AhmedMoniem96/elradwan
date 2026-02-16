@@ -2,6 +2,8 @@ import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Q
+from django.db.models.functions import Lower
 
 
 class Branch(models.Model):
@@ -21,8 +23,23 @@ class User(AbstractUser):
         ADMIN = "admin", "Admin"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(blank=True)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT, null=True, blank=True)
     role = models.CharField(max_length=32, choices=Role, default=Role.CASHIER)
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                Lower("email"),
+                condition=~Q(email=""),
+                name="core_user_email_ci_unique",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.email:
+            self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
 
 
 class Device(models.Model):
