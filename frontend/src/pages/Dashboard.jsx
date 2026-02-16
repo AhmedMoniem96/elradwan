@@ -934,7 +934,17 @@ export default function Dashboard() {
     {
       key: 'stockAlerts',
       title: t('dashboard_stock_alerts', 'Low / critical alerts'),
-      value: `${formatNumber(stockSummary.low_count || 0)} / ${formatNumber(stockSummary.critical_count || 0)}`,
+      value: (
+        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+          <Box component="span" dir="ltr" sx={{ unicodeBidi: 'plaintext', whiteSpace: 'nowrap' }}>
+            {formatNumber(stockSummary.low_count || 0)}
+          </Box>
+          <Box component="span" sx={{ color: 'text.secondary' }}>/</Box>
+          <Box component="span" dir="ltr" sx={{ unicodeBidi: 'plaintext', whiteSpace: 'nowrap' }}>
+            {formatNumber(stockSummary.critical_count || 0)}
+          </Box>
+        </Box>
+      ),
       deltaPct: null,
       trend: 'flat',
     },
