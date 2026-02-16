@@ -1,0 +1,81 @@
+name: Dependency Health
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  backend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Enforce pinned backend dependencies
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          bad = []
+          for idx, line in enumerate(Path('requirements.txt').read_text().splitlines(), start=1):
+              s = line.strip()
+              if not s or s.startswith('#'):
+                  continue
+              if '==' not in s:
+                  bad.append((idx, s))
+
+          if bad:
+              print('Found unpinned backend dependencies:')
+              for idx, dep in bad:
+                  print(f'  requirements.txt:{idx}: {dep}')
+              raise SystemExit(1)
+
+          print('All backend dependencies are exact-pinned.')
+          PY
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pip-audit
+
+      - name: Backend compatibility checks
+        run: |
+          python -m pip check
+          python manage.py check
+
+      - name: Python vulnerability audit
+        run: pip-audit -r requirements.txt
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Lockfile integrity (npm ci)
+        run: npm ci
+
+      - name: Verify lockfile unchanged after clean install
+        run: git diff --exit-code -- package-lock.json
+
+      - name: Frontend compatibility build
+        run: npm run build
+
+      - name: npm vulnerability audit
+        run: npm audit --audit-level=high
