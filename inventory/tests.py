@@ -70,6 +70,24 @@ class BranchScopedInventoryTests(TestCase):
         created = Product.objects.get(id=response.json()["id"])
         self.assertEqual(created.branch_id, self.branch_a.id)
 
+
+    def test_admin_create_product_duplicate_sku_returns_validation_error(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "sku": self.product_a.sku,
+                "name": "Duplicate SKU",
+                "price": "11.00",
+                "tax_rate": "0.0000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"sku": ["A product with this SKU already exists in your branch."]})
+
     def test_admin_create_warehouse_ignores_injected_branch(self):
         self.client.force_authenticate(user=self.admin_a)
 
