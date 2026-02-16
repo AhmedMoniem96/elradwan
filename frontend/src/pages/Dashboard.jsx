@@ -8,7 +8,6 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
-import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -21,7 +20,6 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
-import KpiCard from '../components/KpiCard';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import EmptyState from '../components/EmptyState';
@@ -890,9 +888,6 @@ export default function Dashboard() {
     [stockSummary.critical_count, stockSummary.low_count, stockSummary.unread_alert_count, t],
   );
 
-  const salesDelta = computeDeltaPct(salesTotals.current, salesTotals.previous);
-  const arDelta = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
-
   const adminBranchRanking = useMemo(
     () => [...adminBranchRows].sort((left, right) => right.sales - left.sales).slice(0, 8)
       .map((row) => ({ label: row.branch_name, value: row.sales, color: 'primary.main' })),
@@ -915,54 +910,6 @@ export default function Dashboard() {
     () => sortBranchRows(adminBranchRows, adminBranchSort.key, adminBranchSort.direction),
     [adminBranchRows, adminBranchSort.direction, adminBranchSort.key],
   );
-
-  const kpis = [
-    {
-      key: 'sales',
-      title: t('todays_sales', 'Sales'),
-      value: formatCurrency(salesTotals.current),
-      deltaPct: salesDelta,
-      trend: trendFromDelta(salesDelta),
-    },
-    {
-      key: 'openShifts',
-      title: t('active_register', 'Open shifts'),
-      value: formatNumber(shiftSummary.active_shift_count || 0),
-      deltaPct: null,
-      trend: 'flat',
-    },
-    {
-      key: 'stockAlerts',
-      title: t('dashboard_stock_alerts', 'Low / critical alerts'),
-      value: (
-        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-          <Box component="span" dir="ltr" sx={{ unicodeBidi: 'plaintext', whiteSpace: 'nowrap' }}>
-            {formatNumber(stockSummary.low_count || 0)}
-          </Box>
-          <Box component="span" sx={{ color: 'text.secondary' }}>/</Box>
-          <Box component="span" dir="ltr" sx={{ unicodeBidi: 'plaintext', whiteSpace: 'nowrap' }}>
-            {formatNumber(stockSummary.critical_count || 0)}
-          </Box>
-        </Box>
-      ),
-      deltaPct: null,
-      trend: 'flat',
-    },
-    {
-      key: 'accountsReceivable',
-      title: t('dashboard_accounts_receivable', 'Accounts receivable'),
-      value: formatCurrency(accountsReceivableTotals.current),
-      deltaPct: arDelta,
-      trend: trendFromDelta(arDelta),
-    },
-    {
-      key: 'shiftVariance',
-      title: t('dashboard_shift_variance', 'Cash variance'),
-      value: formatCurrency(shiftSummary.variance_total),
-      deltaPct: null,
-      trend: 'flat',
-    },
-  ];
 
   const roleQuickActions = {
     cashier: [
@@ -1035,13 +982,6 @@ export default function Dashboard() {
     navigate(query ? `${pathname}?${query}` : pathname);
   };
 
-  const kpiNavigation = {
-    sales: { pathname: '/reports', params: reportsQueryParams },
-    openShifts: { pathname: '/audit-logs', params: { start_date: activeRange.date_from, end_date: activeRange.date_to } },
-    stockAlerts: { pathname: '/inventory', params: { severity: 'critical' } },
-    accountsReceivable: { pathname: '/reports', params: reportsQueryParams },
-    shiftVariance: { pathname: '/audit-logs', params: { action: 'shift' } },
-  };
 
 
   const securityNotices = useMemo(
@@ -1161,19 +1101,7 @@ export default function Dashboard() {
     }
   }, [discardFailedEvent, reportWidgetFailure]);
 
-  const visibleKpis = useMemo(() => {
-    if (!canViewDashboard) return [];
 
-    if (userRole === 'cashier') {
-      return kpis.filter((item) => ['sales', 'openShifts', 'shiftVariance'].includes(item.key));
-    }
-
-    if (userRole === 'supervisor') {
-      return kpis.filter((item) => item.key !== 'accountsReceivable');
-    }
-
-    return kpis;
-  }, [canViewDashboard, kpis, userRole]);
 
   return (
     <PageShell>
@@ -1183,75 +1111,73 @@ export default function Dashboard() {
       />
     <Grid container spacing={3}>
       <Grid item xs={12}>
-        <Paper
-          sx={{
-            p: (theme) => theme.customSpacing?.panelPadding || 2.5,
-            borderRadius: (theme) => theme.shape.cardRadius || 2,
-            border: '1px solid',
-            borderColor: 'divider',
-            background: (theme) => `linear-gradient(120deg, ${theme.palette.primary.main}14 0%, ${theme.palette.secondary.main}14 100%)`,
-          }}
-        >
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} color="primary" variant="outlined" />
-              <Chip label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} variant="outlined" />
-              <Chip label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} variant="outlined" />
-            </Stack>
-          </Stack>
-        </Paper>
-      </Grid>
-      <Grid item xs={12}>
-        <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: 130 }}>
-              {t('dashboard_period', 'Period')}
-            </Typography>
-            <TextField
-              select
-              size="small"
-              value={periodPreset}
-              onChange={(event) => setPeriodPreset(event.target.value)}
-              sx={{ minWidth: 180 }}
-            >
-              <MenuItem value="today">{t('dashboard_period_today', 'Today')}</MenuItem>
-              <MenuItem value="7d">{t('dashboard_period_7d', 'Last 7 days')}</MenuItem>
-              <MenuItem value="30d">{t('dashboard_period_30d', 'Last 30 days')}</MenuItem>
-              <MenuItem value="custom">{t('dashboard_period_custom', 'Custom range')}</MenuItem>
-            </TextField>
-            {periodPreset === 'custom' && (
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+        <div className="card shadow-sm border-0">
+          <div className="card-body">
+            <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
+              <div>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
+                </Typography>
+              </div>
+              <div className="d-flex flex-wrap gap-2 align-items-start">
+                <span className="badge text-bg-primary">{t('dashboard_role', 'Role')}: {toTitle(userRole)}</span>
+                <span className="badge text-bg-secondary">{t('dashboard_timezone', 'Timezone')}: {timezone}</span>
+                <span className="badge text-bg-info">{t('dashboard_period', 'Period')}: {periodPreset.toUpperCase()}</span>
+              </div>
+            </div>
+            <div className="mt-3 row g-2 align-items-end">
+              <div className="col-12 col-md-4 col-lg-3">
                 <TextField
+                  select
+                  fullWidth
                   size="small"
-                  type="date"
-                  label={t('from', 'From')}
-                  InputLabelProps={{ shrink: true }}
-                  value={customRange.date_from}
-                  onChange={(event) => setCustomRange((prev) => ({ ...prev, date_from: event.target.value }))}
-                />
-                <TextField
-                  size="small"
-                  type="date"
-                  label={t('to', 'To')}
-                  InputLabelProps={{ shrink: true }}
-                  value={customRange.date_to}
-                  onChange={(event) => setCustomRange((prev) => ({ ...prev, date_to: event.target.value }))}
-                />
-              </Stack>
-            )}
-            <Typography variant="caption" color="text.secondary" sx={{ marginInlineStart: 'auto' }}>
-              {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
-            </Typography>
-          </Stack>
-        </Paper>
+                  label={t('dashboard_period', 'Period')}
+                  value={periodPreset}
+                  onChange={(event) => setPeriodPreset(event.target.value)}
+                >
+                  <MenuItem value="today">{t('dashboard_period_today', 'Today')}</MenuItem>
+                  <MenuItem value="7d">{t('dashboard_period_7d', 'Last 7 days')}</MenuItem>
+                  <MenuItem value="30d">{t('dashboard_period_30d', 'Last 30 days')}</MenuItem>
+                  <MenuItem value="custom">{t('dashboard_period_custom', 'Custom range')}</MenuItem>
+                </TextField>
+              </div>
+              {periodPreset === 'custom' && (
+                <>
+                  <div className="col-12 col-sm-6 col-lg-3">
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="date"
+                      label={t('from', 'From')}
+                      InputLabelProps={{ shrink: true }}
+                      value={customRange.date_from}
+                      onChange={(event) => setCustomRange((prev) => ({ ...prev, date_from: event.target.value }))}
+                    />
+                  </div>
+                  <div className="col-12 col-sm-6 col-lg-3">
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="date"
+                      label={t('to', 'To')}
+                      InputLabelProps={{ shrink: true }}
+                      value={customRange.date_to}
+                      onChange={(event) => setCustomRange((prev) => ({ ...prev, date_to: event.target.value }))}
+                    />
+                  </div>
+                </>
+              )}
+              <div className="col-12 col-lg">
+                <div className="small text-muted text-lg-end">
+                  {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </Grid>
 
       <Grid item xs={12}>
@@ -1274,26 +1200,6 @@ export default function Dashboard() {
           onDiscardFailedSync={handleDiscardFailedSync}
         />
       </Grid>
-
-      {visibleKpis.map((kpi) => (
-        <Grid key={kpi.key} item xs={12} sm={6} lg={3} xl={2}>
-          <ButtonBase
-            onClick={() => {
-              const target = kpiNavigation[kpi.key];
-              if (target) navigateWithParams(target.pathname, target.params);
-            }}
-            sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
-          >
-            <KpiCard
-              title={kpi.title}
-              value={kpi.value}
-              deltaPct={kpi.deltaPct}
-              trend={kpi.trend}
-              loading={kpiLoading}
-            />
-          </ButtonBase>
-        </Grid>
-      ))}
 
       {kpiFailed && (
         <Grid item xs={12}>
