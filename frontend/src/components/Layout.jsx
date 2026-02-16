@@ -109,11 +109,24 @@ export default function Layout() {
   const { outbox, failedEvents } = useSync();
   const [languageMenuAnchor, setLanguageMenuAnchor] = React.useState(null);
   const [settingsMenuAnchor, setSettingsMenuAnchor] = React.useState(null);
+  const [alertsMenuAnchor, setAlertsMenuAnchor] = React.useState(null);
   const [unreadAlerts, setUnreadAlerts] = React.useState(0);
+  const [alertItems, setAlertItems] = React.useState([]);
+
+  const refreshUnreadAlerts = React.useCallback(() => {
+    axios
+      .get('/api/v1/alerts/unread/')
+      .then((res) => {
+        const payload = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        setAlertItems(payload);
+        setUnreadAlerts(normalizeCountFromCollection(res.data));
+      })
+      .catch(() => {});
+  }, []);
 
   React.useEffect(() => {
-    axios.get('/api/v1/alerts/unread/').then((res) => setUnreadAlerts(normalizeCountFromCollection(res.data))).catch(() => {});
-  }, []);
+    refreshUnreadAlerts();
+  }, [refreshUnreadAlerts]);
 
   const toggleDrawer = () => {
     setOpen(!open);
@@ -133,6 +146,28 @@ export default function Layout() {
 
   const handleSettingsMenuClose = () => {
     setSettingsMenuAnchor(null);
+  };
+
+  const handleAlertsMenuOpen = (event) => {
+    setAlertsMenuAnchor(event.currentTarget);
+    refreshUnreadAlerts();
+  };
+
+  const handleAlertsMenuClose = () => {
+    setAlertsMenuAnchor(null);
+  };
+
+  const markAlertRead = (alertId) => {
+    axios.post('/api/v1/alerts/mark-read/', { alert_ids: [alertId] })
+      .then(() => refreshUnreadAlerts())
+      .catch(() => {});
+  };
+
+  const markAllAlertsRead = () => {
+    if (!alertItems.length) return;
+    axios.post('/api/v1/alerts/mark-read/', { alert_ids: alertItems.map((item) => item.id) })
+      .then(() => refreshUnreadAlerts())
+      .catch(() => {});
   };
 
   const changeLanguage = (lng) => {
@@ -258,11 +293,41 @@ export default function Layout() {
             </>
           )}
 
-          <IconButton color="inherit">
+          <IconButton color="inherit" onClick={handleAlertsMenuOpen} title={t('inventory_unread_alerts')}>
             <Badge badgeContent={unreadAlerts} color="secondary">
               <NotificationsIcon />
             </Badge>
           </IconButton>
+          <Menu
+            anchorEl={alertsMenuAnchor}
+            open={Boolean(alertsMenuAnchor)}
+            onClose={handleAlertsMenuClose}
+            sx={{ '& .MuiMenu-paper': { width: 360, maxWidth: '90vw' } }}
+          >
+            <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="subtitle2">{t('inventory_unread_alerts')}</Typography>
+              <MenuItem dense disabled={!alertItems.length} onClick={markAllAlertsRead}>
+                {t('inventory_mark_all_read')}
+              </MenuItem>
+            </Box>
+            <Divider />
+            {alertItems.length === 0 ? (
+              <MenuItem disabled>{t('inventory_no_unread_alerts')}</MenuItem>
+            ) : (
+              alertItems.slice(0, 8).map((alert) => (
+                <MenuItem key={alert.id} onClick={() => markAlertRead(alert.id)} sx={{ alignItems: 'flex-start', whiteSpace: 'normal' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {alert.title || alert.alert_type || t('alerts')}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {alert.message || alert.description || ''}
+                    </Typography>
+                  </Box>
+                </MenuItem>
+              ))
+            )}
+          </Menu>
 
           <IconButton color="inherit" onClick={handleLogout} title={t('logout')}>
             <LogoutIcon />
