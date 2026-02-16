@@ -5,19 +5,33 @@ from typing import Any
 from rest_framework import status
 from rest_framework.response import Response
 
+from common.exceptions import error_response
 from core.models import Device, User
 
 
 FORBIDDEN_DEVICE_CODE = "forbidden_device"
-VALIDATION_FAILED_CODE = "validation_failed"
+DEVICE_NOT_FOUND_CODE = "device_not_found"
+VALIDATION_FAILED_CODE = "validation_error"
 
 
-def validation_failed_response(details: dict[str, Any], *, status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> Response:
-    return Response({"code": VALIDATION_FAILED_CODE, "details": details}, status=status_code)
+def validation_failed_response(errors: dict[str, Any], *, status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> Response:
+    return error_response(
+        code=VALIDATION_FAILED_CODE,
+        message="Validation failed.",
+        errors=errors,
+        status_code=status_code,
+    )
 
 
-def forbidden_device_response(details: dict[str, Any], *, status_code: int = status.HTTP_403_FORBIDDEN) -> Response:
-    return Response({"code": FORBIDDEN_DEVICE_CODE, "details": details}, status=status_code)
+def forbidden_device_response(errors: dict[str, Any], *, status_code: int = status.HTTP_403_FORBIDDEN) -> Response:
+    code = FORBIDDEN_DEVICE_CODE if status_code == status.HTTP_403_FORBIDDEN else DEVICE_NOT_FOUND_CODE
+    message = "Device access is not allowed." if status_code == status.HTTP_403_FORBIDDEN else "Device was not found."
+    return error_response(
+        code=code,
+        message=message,
+        errors=errors,
+        status_code=status_code,
+    )
 
 
 def resolve_device_for_user(
@@ -49,7 +63,7 @@ def get_permitted_device(user: User, device_id) -> tuple[Device | None, Response
     if device is not None:
         return device, None
 
-    return None, forbidden_device_response({"device_id": error_message}, status_code=status_code)
+    return None, forbidden_device_response({"device_id": [error_message]}, status_code=status_code)
 
 
 def _has_admin_override(user: User) -> bool:

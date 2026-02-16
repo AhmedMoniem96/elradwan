@@ -8,6 +8,37 @@ All PWA writes **must** use `POST /api/v1/sync/push`. PWA clients must **not** P
 
 ---
 
+## Standard Error Envelope
+All API errors (sync and non-sync) use this response shape:
+
+```json
+{
+  "code": "validation_error",
+  "message": "Validation failed.",
+  "errors": {"field": ["This field is required."]},
+  "status": 422
+}
+```
+
+### Stable error `code` values
+- `validation_error` → request body/query validation failed (`400`/`422`)
+- `not_authenticated` → missing auth credentials (`401`)
+- `authentication_failed` → invalid auth credentials (`401`)
+- `permission_denied` → caller is authenticated but blocked (`403`)
+- `not_found` → resource not found (`404`)
+- `method_not_allowed` → HTTP method unsupported (`405`)
+- `throttled` → request rate-limited (`429`)
+- `parse_error` → malformed body payload (`400`)
+- `unsupported_media_type` → bad `Content-Type` (`415`)
+- `not_acceptable` → response content negotiation failed (`406`)
+- `forbidden_device` → sync device is outside caller branch (`403`)
+- `device_not_found` → sync device missing or inactive (`404`)
+- `internal_server_error` → unhandled server error (`500`)
+
+`message` is human-readable, `errors` contains field-level/structured details (or `null` when unavailable), and `status` mirrors the HTTP status code.
+
+---
+
 ## Sync Outbox (Monotonic Cursor)
 The server emits **SyncOutbox** rows on every domain change. The `id` is a **BIGINT cursor**.
 
@@ -62,11 +93,9 @@ The server emits **SyncOutbox** rows on every domain change. The `id` is a **BIG
 }
 ```
 
-**Error codes**
-- `401 unauthorized`
-- `403 forbidden_device`
-- `409 conflict` (idempotency or duplicate key)
-- `422 validation_failed`
+**Error responses**
+- Uses the standard error envelope (`code`, `message`, `errors`, `status`).
+- Common `code` values for this endpoint: `validation_error`, `forbidden_device`, `device_not_found`, `not_authenticated`.
 
 ---
 
