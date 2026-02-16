@@ -562,3 +562,19 @@ class ReportingTests(TestCase):
         response = self.client.get("/api/v1/reports/accounts-receivable/?timezone=Not/AZone")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["timezone"], "Invalid IANA timezone.")
+
+    def test_dashboard_metrics_report_aggregates_current_and_previous_ranges(self):
+        response = self.client.get(
+            "/api/v1/reports/dashboard-metrics/?date_from=2024-01-01&date_to=2024-01-07&timezone=UTC"
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("sales_totals", payload)
+        self.assertIn("accounts_receivable_totals", payload)
+        self.assertIn("Cache-Control", response)
+        self.assertEqual(response["Cache-Control"], "private, max-age=60")
+
+    def test_dashboard_metrics_requires_date_range(self):
+        response = self.client.get("/api/v1/reports/dashboard-metrics/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["date_range"], "Both date_from and date_to are required.")

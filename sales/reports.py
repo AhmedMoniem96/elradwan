@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -292,3 +292,61 @@ class AccountsReceivableReportView(BaseReportView):
         if request.query_params.get("format") == "csv":
             return self._csv_response("accounts_receivable.csv", rows)
         return Response({"timezone": tz_name, "results": rows})
+
+
+class DashboardMetricsReportView(BaseReportView):
+    def get(self, request):
+        branch_ids = self._branch_ids(request)
+        tz_name = self._tz_name(request, branch_ids)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
+
+        if not start or not end:
+            raise ValidationError({"date_range": "Both date_from and date_to are required."})
+
+        date_from = parse_date(request.query_params.get("date_from", ""))
+        date_to = parse_date(request.query_params.get("date_to", ""))
+        range_days = (date_to - date_from).days + 1
+
+        previous_date_to = date_from - timedelta(days=1)
+        previous_date_from = previous_date_to - timedelta(days=range_days - 1)
+        previous_start = datetime.combine(previous_date_from, time.min).replace(tzinfo=tz)
+        previous_end = datetime.combine(previous_date_to, time.max).replace(tzinfo=tz)
+
+        def aggregate_sales(range_start, range_end):
+            return Invoice.objects.exclude(status=Invoice.Status.VOID).filter(
+                branch_id__in=branch_ids,
+                created_at__gte=range_start,
+                created_at__lte=range_end,
+            ).aggregate(total=Coalesce(Sum("total"), Decimal("0.00")))["total"]
+
+        def aggregate_receivables(range_start, range_end):
+            return Invoice.objects.exclude(status=Invoice.Status.VOID).filter(
+                branch_id__in=branch_ids,
+                balance_due__gt=0,
+                created_at__gte=range_start,
+                created_at__lte=range_end,
+            ).aggregate(total=Coalesce(Sum("balance_due"), Decimal("0.00")))["total"]
+
+        def run():
+            return OrderedDict(
+                timezone=tz_name,
+                range=OrderedDict(date_from=date_from.isoformat(), date_to=date_to.isoformat()),
+                previous_range=OrderedDict(
+                    date_from=previous_date_from.isoformat(),
+                    date_to=previous_date_to.isoformat(),
+                ),
+                sales_totals=OrderedDict(
+                    current=aggregate_sales(start, end),
+                    previous=aggregate_sales(previous_start, previous_end),
+                ),
+                accounts_receivable_totals=OrderedDict(
+                    current=aggregate_receivables(start, end),
+                    previous=aggregate_receivables(previous_start, previous_end),
+                ),
+            )
+
+        payload = self._cached(request, "dashboard-metrics", run)
+        response = Response(payload)
+        response["Cache-Control"] = f"private, max-age={self.cache_timeout}"
+        return response
