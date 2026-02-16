@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -123,22 +123,29 @@ const getRangeByPreset = (period, customRange) => {
   return buildDateRange(7);
 };
 
-const getPreviousEquivalentRange = (range) => {
-  const currentStart = parseDateKey(range.date_from);
-  const currentEnd = parseDateKey(range.date_to, true);
-  const spanMs = currentEnd.getTime() - currentStart.getTime() + 1;
-
-  const previousEnd = new Date(currentStart.getTime() - 1);
-  const previousStart = new Date(previousEnd.getTime() - spanMs + 1);
-
-  return {
-    date_from: dateKey(previousStart),
-    date_to: dateKey(previousEnd),
-  };
-};
-
 const DASHBOARD_PANEL_MIN_HEIGHT = 290;
 const ALL_BRANCHES_VALUE = '__all__';
+
+
+const REPORT_CACHE_TTL_MS = 60 * 1000;
+const FILTER_DEBOUNCE_MS = 300;
+const NON_CRITICAL_DEFER_MS = 250;
+
+function useDebouncedValue(value, delayMs) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
 
 const sortBranchRows = (rows, key, direction) => {
   const multiplier = direction === 'asc' ? 1 : -1;
@@ -326,6 +333,7 @@ export default function Dashboard() {
   const [adminBranchSort, setAdminBranchSort] = useState({ key: 'sales', direction: 'desc' });
 
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+  const reportCacheRef = useRef(new Map());
 
   const reportWidgetFailure = useCallback((widgetName, error, metadata = {}) => {
     console.error(`[dashboard] ${widgetName} widget failed`, {
@@ -335,7 +343,46 @@ export default function Dashboard() {
     });
   }, []);
 
+  const userRole = user?.role || 'cashier';
+  const canViewDashboard = can('sales.dashboard.view');
+  const canAccessPos = can('sales.pos.access');
+  const canViewInventory = can('inventory.view');
+  const canCloseSelfShift = can('shift.close.self');
+  const canCloseOverride = can('shift.close.override');
+  const canApproveQueue = can('supplier.payment.approve');
+  const canViewAging = can('sales.customers.view');
+  const canViewBranchComparison = can('admin.records.manage') || can('user.manage');
+
   const activeRange = useMemo(() => getRangeByPreset(periodPreset, customRange), [periodPreset, customRange]);
+  const debouncedActiveRange = useDebouncedValue(activeRange, FILTER_DEBOUNCE_MS);
+  const debouncedTrendWindowDays = useDebouncedValue(trendWindowDays, FILTER_DEBOUNCE_MS);
+  const debouncedSelectedBranchId = useDebouncedValue(selectedBranchId, FILTER_DEBOUNCE_MS);
+
+  const cachedReportGet = useCallback((url, params = {}) => {
+    const search = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])).toString();
+    const requestKey = `${url}?${search}`;
+    const now = Date.now();
+    const cached = reportCacheRef.current.get(requestKey);
+
+    if (cached && cached.expiresAt > now) {
+      return cached.promise;
+    }
+
+    const promise = axios.get(url, {
+      params,
+      headers: { 'Cache-Control': `max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}` },
+    }).then((res) => res.data);
+
+    reportCacheRef.current.set(requestKey, { expiresAt: now + REPORT_CACHE_TTL_MS, promise });
+    promise.catch(() => {
+      const current = reportCacheRef.current.get(requestKey);
+      if (current?.promise === promise) {
+        reportCacheRef.current.delete(requestKey);
+      }
+    });
+
+    return promise;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -349,19 +396,12 @@ export default function Dashboard() {
     setKpiLoading(true);
     setKpiFailed(false);
 
-    const previousRange = getPreviousEquivalentRange(activeRange);
-    const currentParams = new URLSearchParams({ ...activeRange, timezone }).toString();
-    const previousParams = new URLSearchParams({ ...previousRange, timezone }).toString();
-
     Promise.allSettled([
       axios.get('/api/v1/invoices/dashboard-summary/'),
       axios.get('/api/v1/stock-intelligence/'),
-      axios.get(`/api/v1/reports/daily-sales/?${currentParams}`),
-      axios.get(`/api/v1/reports/daily-sales/?${previousParams}`),
-      axios.get(`/api/v1/reports/accounts-receivable/?${currentParams}`),
-      axios.get(`/api/v1/reports/accounts-receivable/?${previousParams}`),
+      cachedReportGet('/api/v1/reports/dashboard-metrics/', { ...debouncedActiveRange, timezone }),
     ])
-      .then(([shiftRes, stockRes, salesCurrentRes, salesPreviousRes, arCurrentRes, arPreviousRes]) => {
+      .then(([shiftRes, stockRes, metricsRes]) => {
         if (!mounted) return;
 
         const failedRequests = [];
@@ -370,44 +410,30 @@ export default function Dashboard() {
           setShiftSummary((prev) => ({ ...prev, ...(shiftRes.value.data || {}) }));
         } else {
           failedRequests.push('shiftSummary');
-          reportWidgetFailure('kpis.shiftSummary', shiftRes.reason, { activeRange });
+          reportWidgetFailure('kpis.shiftSummary', shiftRes.reason, { activeRange: debouncedActiveRange });
         }
 
         if (stockRes.status === 'fulfilled') {
           setStockSummary((prev) => ({ ...prev, ...(stockRes.value.data || {}) }));
         } else {
           failedRequests.push('stockSummary');
-          reportWidgetFailure('kpis.stockSummary', stockRes.reason, { activeRange });
+          reportWidgetFailure('kpis.stockSummary', stockRes.reason, { activeRange: debouncedActiveRange });
         }
 
-        if (salesCurrentRes.status === 'fulfilled' && salesPreviousRes.status === 'fulfilled') {
-          const currentSales = sumRows(salesCurrentRes.value.data?.results || [], 'gross_sales');
-          const previousSales = sumRows(salesPreviousRes.value.data?.results || [], 'gross_sales');
-          setSalesTotals({ current: currentSales, previous: previousSales });
+        if (metricsRes.status === 'fulfilled') {
+          setSalesTotals({
+            current: Number(metricsRes.value?.sales_totals?.current || 0),
+            previous: Number(metricsRes.value?.sales_totals?.previous || 0),
+          });
+          setAccountsReceivableTotals({
+            current: Number(metricsRes.value?.accounts_receivable_totals?.current || 0),
+            previous: Number(metricsRes.value?.accounts_receivable_totals?.previous || 0),
+          });
         } else {
-          failedRequests.push('salesTotals');
+          failedRequests.push('dashboardMetrics');
           setSalesTotals({ current: 0, previous: 0 });
-          if (salesCurrentRes.status === 'rejected') {
-            reportWidgetFailure('kpis.salesTotals.current', salesCurrentRes.reason, { activeRange });
-          }
-          if (salesPreviousRes.status === 'rejected') {
-            reportWidgetFailure('kpis.salesTotals.previous', salesPreviousRes.reason, { previousRange });
-          }
-        }
-
-        if (arCurrentRes.status === 'fulfilled' && arPreviousRes.status === 'fulfilled') {
-          const currentAr = sumRows(arCurrentRes.value.data?.results || [], 'balance_due');
-          const previousAr = sumRows(arPreviousRes.value.data?.results || [], 'balance_due');
-          setAccountsReceivableTotals({ current: currentAr, previous: previousAr });
-        } else {
-          failedRequests.push('accountsReceivableTotals');
           setAccountsReceivableTotals({ current: 0, previous: 0 });
-          if (arCurrentRes.status === 'rejected') {
-            reportWidgetFailure('kpis.accountsReceivable.current', arCurrentRes.reason, { activeRange });
-          }
-          if (arPreviousRes.status === 'rejected') {
-            reportWidgetFailure('kpis.accountsReceivable.previous', arPreviousRes.reason, { previousRange });
-          }
+          reportWidgetFailure('kpis.dashboardMetrics', metricsRes.reason, { activeRange: debouncedActiveRange });
         }
 
         setKpiFailed(failedRequests.length > 0);
@@ -422,9 +448,10 @@ export default function Dashboard() {
       mounted = false;
     };
   }, [
-    activeRange,
+    cachedReportGet,
     customRange.date_from,
     customRange.date_to,
+    debouncedActiveRange,
     kpiRefreshNonce,
     periodPreset,
     reportWidgetFailure,
@@ -437,31 +464,34 @@ export default function Dashboard() {
     setRecentActivityLoading(true);
     setRecentActivityFailed(false);
 
-    axios
-      .get('/api/v1/invoices/recent-activity/')
-      .then((res) => {
-        if (mounted) {
-          setRecentActivity(Array.isArray(res.data) ? res.data : []);
-          setRecentActivityFailed(false);
-        }
-      })
-      .catch((error) => {
-        if (mounted) {
-          setRecentActivity([]);
-          setRecentActivityFailed(true);
-          reportWidgetFailure('recentActivity', error, { activeRange });
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          setRecentActivityLoading(false);
-        }
-      });
+    const timer = window.setTimeout(() => {
+      axios
+        .get('/api/v1/invoices/recent-activity/')
+        .then((res) => {
+          if (mounted) {
+            setRecentActivity(Array.isArray(res.data) ? res.data : []);
+            setRecentActivityFailed(false);
+          }
+        })
+        .catch((error) => {
+          if (mounted) {
+            setRecentActivity([]);
+            setRecentActivityFailed(true);
+            reportWidgetFailure('recentActivity', error, { activeRange: debouncedActiveRange });
+          }
+        })
+        .finally(() => {
+          if (mounted) {
+            setRecentActivityLoading(false);
+          }
+        });
+    }, NON_CRITICAL_DEFER_MS);
 
     return () => {
       mounted = false;
+      window.clearTimeout(timer);
     };
-  }, [activeRange, recentActivityRefreshNonce, reportWidgetFailure]);
+  }, [debouncedActiveRange, recentActivityRefreshNonce, reportWidgetFailure]);
 
   useEffect(() => {
     let mounted = true;
@@ -469,21 +499,19 @@ export default function Dashboard() {
     setSalesSeriesLoading(true);
     setSalesSeriesFailed(false);
 
-    const { date_from, date_to } = buildDateRange(trendWindowDays);
-    const params = new URLSearchParams({ date_from, date_to, timezone }).toString();
+    const { date_from, date_to } = buildDateRange(debouncedTrendWindowDays);
 
-    axios
-      .get(`/api/v1/reports/daily-sales/?${params}`)
-      .then((res) => {
+    cachedReportGet('/api/v1/reports/daily-sales/', { date_from, date_to, timezone })
+      .then((data) => {
         if (mounted) {
-          setSalesSeries(normalizeDailySales(res.data?.results || [], date_from, date_to));
+          setSalesSeries(normalizeDailySales(data?.results || [], date_from, date_to));
         }
       })
       .catch((error) => {
         if (mounted) {
           setSalesSeries(normalizeDailySales([], date_from, date_to));
           setSalesSeriesFailed(true);
-          reportWidgetFailure('salesTrend', error, { trendWindowDays, timezone });
+          reportWidgetFailure('salesTrend', error, { trendWindowDays: debouncedTrendWindowDays, timezone });
         }
       })
       .finally(() => {
@@ -495,7 +523,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [reportWidgetFailure, salesSeriesRefreshNonce, timezone, trendWindowDays]);
+  }, [cachedReportGet, debouncedTrendWindowDays, reportWidgetFailure, salesSeriesRefreshNonce, timezone]);
 
   useEffect(() => {
     let mounted = true;
@@ -503,33 +531,34 @@ export default function Dashboard() {
     setPaymentSplitLoading(true);
     setPaymentSplitFailed(false);
 
-    const { date_from, date_to } = buildDateRange(trendWindowDays);
-    const params = new URLSearchParams({ date_from, date_to, timezone }).toString();
+    const { date_from, date_to } = buildDateRange(debouncedTrendWindowDays);
 
-    axios
-      .get(`/api/v1/reports/payment-method-split/?${params}`)
-      .then((res) => {
-        if (mounted) {
-          setPaymentSplitSeries(Array.isArray(res.data?.results) ? res.data.results : []);
-        }
-      })
-      .catch((error) => {
-        if (mounted) {
-          setPaymentSplitSeries([]);
-          setPaymentSplitFailed(true);
-          reportWidgetFailure('paymentSplit', error, { trendWindowDays, timezone });
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          setPaymentSplitLoading(false);
-        }
-      });
+    const timer = window.setTimeout(() => {
+      cachedReportGet('/api/v1/reports/payment-method-split/', { date_from, date_to, timezone })
+        .then((data) => {
+          if (mounted) {
+            setPaymentSplitSeries(Array.isArray(data?.results) ? data.results : []);
+          }
+        })
+        .catch((error) => {
+          if (mounted) {
+            setPaymentSplitSeries([]);
+            setPaymentSplitFailed(true);
+            reportWidgetFailure('paymentSplit', error, { trendWindowDays: debouncedTrendWindowDays, timezone });
+          }
+        })
+        .finally(() => {
+          if (mounted) {
+            setPaymentSplitLoading(false);
+          }
+        });
+    }, NON_CRITICAL_DEFER_MS);
 
     return () => {
       mounted = false;
+      window.clearTimeout(timer);
     };
-  }, [paymentSplitRefreshNonce, reportWidgetFailure, timezone, trendWindowDays]);
+  }, [cachedReportGet, debouncedTrendWindowDays, paymentSplitRefreshNonce, reportWidgetFailure, timezone]);
 
   useEffect(() => {
     let mounted = true;
@@ -576,9 +605,9 @@ export default function Dashboard() {
     setAdminBranchLoading(true);
     setAdminBranchFailed(false);
 
-    const branchTargets = selectedBranchId === ALL_BRANCHES_VALUE
+    const branchTargets = debouncedSelectedBranchId === ALL_BRANCHES_VALUE
       ? branches
-      : branches.filter((branch) => branch.id === selectedBranchId);
+      : branches.filter((branch) => branch.id === debouncedSelectedBranchId);
 
     if (branchTargets.length === 0) {
       setAdminBranchRows([]);
@@ -588,27 +617,26 @@ export default function Dashboard() {
       };
     }
 
-    const alertQuery = new URLSearchParams({ limit: '1000' }).toString();
-    const alertPromise = axios.get(`/api/v1/inventory-alerts/?${alertQuery}`);
+    const alertPromise = axios.get('/api/v1/inventory-alerts/', { params: { limit: 1000 } });
 
     Promise.allSettled(branchTargets.map(async (branch) => {
-      const branchQuery = new URLSearchParams({
-        date_from: activeRange.date_from,
-        date_to: activeRange.date_to,
+      const branchQuery = {
+        date_from: debouncedActiveRange.date_from,
+        date_to: debouncedActiveRange.date_to,
         timezone,
         branch_id: branch.id,
-      }).toString();
+      };
 
-      const [salesRes, marginRes] = await Promise.all([
-        axios.get(`/api/v1/reports/daily-sales/?${branchQuery}`),
-        axios.get(`/api/v1/reports/gross-margin/?${branchQuery}`),
+      const [salesData, marginData] = await Promise.all([
+        cachedReportGet('/api/v1/reports/daily-sales/', branchQuery),
+        cachedReportGet('/api/v1/reports/gross-margin/', branchQuery),
       ]);
 
       return {
         branch_id: branch.id,
         branch_name: branch.name,
-        sales: sumRows(salesRes.data?.results || [], 'gross_sales'),
-        margin_pct: Number(marginRes.data?.margin_pct || 0),
+        sales: sumRows(salesData?.results || [], 'gross_sales'),
+        margin_pct: Number(marginData?.margin_pct || 0),
       };
     }))
       .then(async (reportResults) => {
@@ -623,7 +651,7 @@ export default function Dashboard() {
         const stockoutByBranch = alertRows.reduce((acc, row) => {
           const branchId = String(row.branch || row.branch_id || '');
           if (!branchId) return acc;
-          if (selectedBranchId !== ALL_BRANCHES_VALUE && branchId !== selectedBranchId) return acc;
+          if (debouncedSelectedBranchId !== ALL_BRANCHES_VALUE && branchId !== debouncedSelectedBranchId) return acc;
           acc.set(branchId, (acc.get(branchId) || 0) + 1);
           return acc;
         }, new Map());
@@ -633,7 +661,7 @@ export default function Dashboard() {
         reportResults.forEach((result, index) => {
           if (result.status !== 'fulfilled') {
             hadFailures = true;
-            reportWidgetFailure('admin.branchMetrics', result.reason, { branchId: branchTargets[index].id, activeRange });
+            reportWidgetFailure('admin.branchMetrics', result.reason, { branchId: branchTargets[index].id, activeRange: debouncedActiveRange });
             return;
           }
 
@@ -645,7 +673,7 @@ export default function Dashboard() {
 
         if (alertResult?.error) {
           hadFailures = true;
-          reportWidgetFailure('admin.stockoutRisk', alertResult.error, { selectedBranchId });
+          reportWidgetFailure('admin.stockoutRisk', alertResult.error, { selectedBranchId: debouncedSelectedBranchId });
         }
 
         setAdminBranchRows(rows);
@@ -661,12 +689,13 @@ export default function Dashboard() {
       mounted = false;
     };
   }, [
-    activeRange.date_from,
-    activeRange.date_to,
+    cachedReportGet,
+    debouncedActiveRange.date_from,
+    debouncedActiveRange.date_to,
     branches,
     canViewBranchComparison,
     reportWidgetFailure,
-    selectedBranchId,
+    debouncedSelectedBranchId,
     timezone,
   ]);
 
@@ -696,15 +725,6 @@ export default function Dashboard() {
 
   const salesDelta = computeDeltaPct(salesTotals.current, salesTotals.previous);
   const arDelta = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
-  const userRole = user?.role || 'cashier';
-  const canViewDashboard = can('sales.dashboard.view');
-  const canAccessPos = can('sales.pos.access');
-  const canViewInventory = can('inventory.view');
-  const canCloseSelfShift = can('shift.close.self');
-  const canCloseOverride = can('shift.close.override');
-  const canApproveQueue = can('supplier.payment.approve');
-  const canViewAging = can('sales.customers.view');
-  const canViewBranchComparison = can('admin.records.manage') || can('user.manage');
 
   const adminBranchRanking = useMemo(
     () => [...adminBranchRows].sort((left, right) => right.sales - left.sales).slice(0, 8)

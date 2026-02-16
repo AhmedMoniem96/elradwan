@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from sales.reports import (
     AccountsReceivableReportView,
     DailySalesReportView,
+    DashboardMetricsReportView,
     GrossMarginReportView,
     PaymentMethodSplitReportView,
     TopCustomersReportView,
@@ -40,6 +41,7 @@ urlpatterns += [
     path("shifts/<uuid:shift_id>/close/", CashShiftCloseView.as_view(), name="shift-close"),
     path("shifts/<uuid:shift_id>/report/", CashShiftReportView.as_view(), name="shift-report"),
     path("reports/daily-sales/", DailySalesReportView.as_view(), name="report-daily-sales"),
+    path("reports/dashboard-metrics/", DashboardMetricsReportView.as_view(), name="report-dashboard-metrics"),
     path("reports/top-products/", TopProductsReportView.as_view(), name="report-top-products"),
     path("reports/top-customers/", TopCustomersReportView.as_view(), name="report-top-customers"),
     path("reports/payment-method-split/", PaymentMethodSplitReportView.as_view(), name="report-payment-method-split"),
