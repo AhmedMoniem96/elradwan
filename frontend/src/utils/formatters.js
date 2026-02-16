@@ -1,33 +1,45 @@
-const DISPLAY_LOCALE = 'ar-EG';
+import i18n from '../i18n';
 
-const currencyFormatter = new Intl.NumberFormat(DISPLAY_LOCALE, {
-  style: 'currency',
-  currency: 'EGP',
-});
+const FALLBACK_LOCALE = 'en-US';
 
-const numberFormatter = new Intl.NumberFormat(DISPLAY_LOCALE);
+const formattersCache = new Map();
 
-const dateFormatter = new Intl.DateTimeFormat(DISPLAY_LOCALE);
+const getDisplayLocale = () => i18n.resolvedLanguage || i18n.language || FALLBACK_LOCALE;
 
-const dateTimeFormatter = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+const getFormatters = () => {
+  const locale = getDisplayLocale();
 
-const latinDecimalFormatter = new Intl.NumberFormat(DISPLAY_LOCALE, {
-  numberingSystem: 'latn',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+  if (!formattersCache.has(locale)) {
+    formattersCache.set(locale, {
+      currencyFormatter: new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: 'EGP',
+      }),
+      numberFormatter: new Intl.NumberFormat(locale),
+      dateFormatter: new Intl.DateTimeFormat(locale),
+      dateTimeFormatter: new Intl.DateTimeFormat(locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+      latinDecimalFormatter: new Intl.NumberFormat(locale, {
+        numberingSystem: 'latn',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    });
+  }
+
+  return formattersCache.get(locale);
+};
 
 const asNumber = (value) => Number(value || 0);
 
-export const formatCurrency = (value) => currencyFormatter.format(asNumber(value));
+export const formatCurrency = (value) => getFormatters().currencyFormatter.format(asNumber(value));
 
-export const formatNumber = (value) => numberFormatter.format(asNumber(value));
+export const formatNumber = (value) => getFormatters().numberFormatter.format(asNumber(value));
 
 export const formatPercent = (value, maximumFractionDigits = 2) => (
-  new Intl.NumberFormat(DISPLAY_LOCALE, {
+  new Intl.NumberFormat(getDisplayLocale(), {
     style: 'percent',
     maximumFractionDigits,
   }).format(asNumber(value) / 100)
@@ -37,15 +49,15 @@ export const formatDate = (value) => {
   if (!value) return '-';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return dateFormatter.format(parsed);
+  return getFormatters().dateFormatter.format(parsed);
 };
 
 export const formatDateTime = (value) => {
   if (!value) return '-';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return dateTimeFormatter.format(parsed);
+  return getFormatters().dateTimeFormatter.format(parsed);
 };
 
 // Keep data-entry fields Latin when pre-filling editable numeric inputs.
-export const formatLatinDecimal = (value) => latinDecimalFormatter.format(asNumber(value));
+export const formatLatinDecimal = (value) => getFormatters().latinDecimalFormatter.format(asNumber(value));
