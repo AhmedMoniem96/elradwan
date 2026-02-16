@@ -96,16 +96,67 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
+
+
+def _db_config_from_url(database_url: str) -> dict[str, str]:
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise ImproperlyConfigured("DATABASE_URL must use postgres:// or postgresql:// scheme.")
+    if not parsed.path or parsed.path == "/":
+        raise ImproperlyConfigured("DATABASE_URL must include a database name in the path.")
+
+    return {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "pos",
-        "USER": "pos",
-        "PASSWORD": "pos123",
-        "HOST": "localhost",
-        "PORT": "5432",
+        "NAME": parsed.path.lstrip("/"),
+        "USER": parsed.username or "",
+        "PASSWORD": parsed.password or "",
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or ""),
     }
-}
+
+
+def _db_config_from_parts() -> dict[str, str]:
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", ""),
+        "USER": os.getenv("DB_USER", ""),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", ""),
+        "PORT": os.getenv("DB_PORT", ""),
+    }
+
+
+def _validate_non_dev_db_config(db_config: dict[str, str]) -> None:
+    required_fields = ("NAME", "USER", "PASSWORD", "HOST", "PORT")
+    missing_fields = [field for field in required_fields if not db_config.get(field)]
+    if missing_fields:
+        env_var_names = ", ".join(f"DB_{field}" for field in missing_fields)
+        raise ImproperlyConfigured(
+            "Database configuration is incomplete for staging/prod. "
+            f"Set DATABASE_URL or all DB_* vars. Missing: {env_var_names}."
+        )
+
+
+database_url = os.getenv("DATABASE_URL", "").strip()
+if database_url:
+    default_db = _db_config_from_url(database_url)
+else:
+    default_db = _db_config_from_parts()
+
+if DJANGO_ENV == "dev":
+    if not all(default_db[field] for field in ("NAME", "USER", "PASSWORD", "HOST", "PORT")):
+        default_db = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "pos",
+            "USER": "pos",
+            "PASSWORD": "pos123",
+            "HOST": "localhost",
+            "PORT": "5432",
+        }
+else:
+    _validate_non_dev_db_config(default_db)
+
+DATABASES = {"default": default_db}
 
 AUTH_USER_MODEL = "core.User"
 
