@@ -18,6 +18,18 @@ const persistSelectedBranchId = (branchId) => {
 
 const getDeviceBranchId = (device) => device?.branch_id ?? device?.branch?.id ?? device?.branch ?? null;
 
+const normalizeCollectionResponse = (payload) => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  return [];
+};
+
 const resolveSelectionById = (collection, preferredId) => {
   if (!Array.isArray(collection) || collection.length === 0) {
     return null;
@@ -85,8 +97,8 @@ export const AuthProvider = ({ children }) => {
           axios.get('/api/v1/devices/'),
         ]);
 
-        const branches = branchResp.data || [];
-        const devices = deviceResp.data || [];
+        const branches = normalizeCollectionResponse(branchResp.data);
+        const devices = normalizeCollectionResponse(deviceResp.data);
         setAvailableBranches(branches);
         setAvailableDevices(devices);
 
