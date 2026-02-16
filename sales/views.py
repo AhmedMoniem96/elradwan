@@ -133,8 +133,9 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         }
         return Response(ShiftSummarySerializer(summary).data)
 
-    @action(detail=False, methods=["get"], url_path="recent-activity")
+    @action(detail=False, methods=["get"], url_path="recent-activity", pagination_class=None)
     def recent_activity(self, request):
+        """Recent activity is fixed-size (latest 10), so pagination is disabled."""
         invoice_rows = list(
             self.get_queryset()
             .select_related("customer")

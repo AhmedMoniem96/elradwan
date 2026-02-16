@@ -33,7 +33,9 @@ class BranchScopedCoreTests(TestCase):
         response = self.client.get("/api/v1/devices/")
 
         self.assertEqual(response.status_code, 200)
-        ids = {item["id"] for item in response.json()}
+        payload = response.json()
+        self.assertEqual(sorted(payload.keys()), ["count", "next", "previous", "results"])
+        ids = {item["id"] for item in payload["results"]}
         self.assertIn(str(self.device_a.id), ids)
         self.assertNotIn(str(self.device_b.id), ids)
 
@@ -123,7 +125,9 @@ class BranchAccessRoleTests(TestCase):
         response = self.client.get("/api/v1/branches/")
 
         self.assertEqual(response.status_code, 200)
-        ids = {item["id"] for item in response.json()}
+        payload = response.json()
+        self.assertEqual(sorted(payload.keys()), ["count", "next", "previous", "results"])
+        ids = {item["id"] for item in payload["results"]}
         self.assertIn(str(self.branch_a.id), ids)
         self.assertIn(str(self.branch_b.id), ids)
 
@@ -133,7 +137,9 @@ class BranchAccessRoleTests(TestCase):
         response = self.client.get("/api/v1/branches/")
 
         self.assertEqual(response.status_code, 200)
-        ids = {item["id"] for item in response.json()}
+        payload = response.json()
+        self.assertEqual(sorted(payload.keys()), ["count", "next", "previous", "results"])
+        ids = {item["id"] for item in payload["results"]}
         self.assertIn(str(self.branch_a.id), ids)
         self.assertNotIn(str(self.branch_b.id), ids)
 

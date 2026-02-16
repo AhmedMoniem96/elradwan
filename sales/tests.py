@@ -58,7 +58,9 @@ class BranchScopedSalesTests(TestCase):
         response = self.client.get("/api/v1/customers/")
 
         self.assertEqual(response.status_code, 200)
-        ids = {item["id"] for item in response.json()}
+        payload = response.json()
+        self.assertEqual(sorted(payload.keys()), ["count", "next", "previous", "results"])
+        ids = {item["id"] for item in payload["results"]}
         self.assertIn(str(self.customer_a.id), ids)
         self.assertNotIn(str(self.customer_b.id), ids)
 
@@ -116,6 +118,7 @@ class BranchScopedSalesTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
+        self.assertIsInstance(payload, list)
         self.assertTrue(payload)
 
         for item in payload:
