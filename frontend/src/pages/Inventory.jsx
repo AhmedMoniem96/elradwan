@@ -32,6 +32,16 @@ import { normalizeCollectionResponse } from '../utils/api';
 
 const emptyLine = { product: '', quantity: '1.00' };
 
+const STOCK_STATUS_OPTIONS = [
+  { value: 'in_stock', labelKey: 'inventory_status_in_stock', defaultLabel: 'In stock', color: 'success.main' },
+  { value: 'low_stock', labelKey: 'inventory_status_low_stock', defaultLabel: 'Low stock', color: 'warning.main' },
+  { value: 'out_of_stock', labelKey: 'inventory_status_out_of_stock', defaultLabel: 'Out of stock', color: 'error.main' },
+  { value: 'backorder', labelKey: 'inventory_status_backorder', defaultLabel: 'Backorder', color: 'info.main' },
+  { value: 'discontinued', labelKey: 'inventory_status_discontinued', defaultLabel: 'Discontinued', color: 'text.disabled' },
+];
+
+const getStockStatusMeta = (status) => STOCK_STATUS_OPTIONS.find((option) => option.value === status);
+
 
 const parsePoFiltersFromQuery = (params) => ({
   branch_id: params.get('branch_id') || '',
@@ -86,6 +96,7 @@ export default function Inventory() {
   const [productForm, setProductForm] = useState(initialProductForm);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [stockStatusFilter, setStockStatusFilter] = useState('');
   const [transferForm, setTransferForm] = useState({
     source_warehouse_id: '',
     destination_warehouse_id: '',
@@ -401,6 +412,18 @@ export default function Inventory() {
     [filteredStockIntelRows],
   );
 
+  const filteredProducts = useMemo(() => {
+    const filterValue = stockStatusFilter.trim().toLowerCase();
+    if (!filterValue) return products;
+    return products.filter((product) => {
+      const statusMeta = getStockStatusMeta(product.stock_status);
+      const statusLabel = statusMeta ? t(statusMeta.labelKey, statusMeta.defaultLabel) : (product.stock_status || '');
+      return [product.name, product.sku, product.stock_status, statusLabel]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(filterValue));
+    });
+  }, [products, stockStatusFilter, t]);
+
   return (
     <PageShell>
       <PageHeader title={t('inventory')} />
@@ -436,8 +459,25 @@ export default function Inventory() {
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField label={t('minimum_quantity')} value={productForm.minimum_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, minimum_quantity: e.target.value }))} fullWidth />
             <TextField label={t('reorder_quantity')} value={productForm.reorder_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, reorder_quantity: e.target.value }))} fullWidth />
-            <TextField label={t('slug', 'Slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
+            <TextField
+              select
+              label={t('stock_status')}
+              value={productForm.stock_status}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, stock_status: e.target.value }))}
+              fullWidth
+            >
+              <MenuItem value="">{t('none')}</MenuItem>
+              {STOCK_STATUS_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
+                    <span>{t(option.labelKey, option.defaultLabel)}</span>
+                  </Stack>
+                </MenuItem>
+              ))}
+            </TextField>
           </Stack>
+          <TextField label={t('slug', 'Slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
           <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} fullWidth multiline minRows={2} />
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
             <Button variant="outlined" component="label">
@@ -625,7 +665,19 @@ export default function Inventory() {
       </SectionPanel>
 
       <SectionPanel title={t('inventory_product_stock_status')}>
-        
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {t('inventory_stock_status_helper', 'Use status colors and quick search to keep inventory easy to scan.')}
+          </Typography>
+          <TextField
+            size="small"
+            label={t('search', 'Search')}
+            value={stockStatusFilter}
+            onChange={(e) => setStockStatusFilter(e.target.value)}
+            sx={{ minWidth: { xs: '100%', md: 280 } }}
+            placeholder={t('inventory_stock_status_search_placeholder', 'Search by product, SKU, or status')}
+          />
+        </Stack>
         <TableContainer>
           <Table>
             <TableHead>
@@ -639,14 +691,16 @@ export default function Inventory() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {!products.length && (
+              {!filteredProducts.length && (
                 <TableRow>
                   <TableCell colSpan={6}>
-                    <EmptyState title="مفيش منتجات متاحة" helperText="ضيف منتج جديد عشان يظهر هنا." />
+                    <EmptyState title="مفيش منتجات متاحة" helperText="جرّب تغيّر البحث أو ضيف منتج جديد." />
                   </TableCell>
                 </TableRow>
               )}
-              {products.map((product) => (
+              {filteredProducts.map((product) => {
+                const statusMeta = getStockStatusMeta(draftStatus[product.id] || product.stock_status);
+                return (
                 <TableRow key={product.id}>
                   <TableCell>
                     <Avatar variant="rounded" src={product.image_url || ''} alt={product.name} sx={{ width: 40, height: 40 }} />
@@ -657,14 +711,51 @@ export default function Inventory() {
                   <TableCell width="35%">
                     <TextField
                       fullWidth
+                      select
                       size="small"
                       value={draftStatus[product.id] || ''}
                       onChange={(e) => setDraftStatus((prev) => ({ ...prev, [product.id]: e.target.value }))}
-                      placeholder={t('inventory_stock_status_placeholder')}
-                    />
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (value) => {
+                          if (!value) return t('inventory_stock_status_placeholder');
+                          const meta = getStockStatusMeta(value);
+                          if (!meta) return value;
+                          return (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: meta.color }} />
+                              <span>{t(meta.labelKey, meta.defaultLabel)}</span>
+                            </Stack>
+                          );
+                        },
+                      }}
+                    >
+                      <MenuItem value="">{t('none')}</MenuItem>
+                      {STOCK_STATUS_OPTIONS.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
+                            <span>{t(option.labelKey, option.defaultLabel)}</span>
+                          </Stack>
+                        </MenuItem>
+                      ))}
+                    </TextField>
                   </TableCell>
                   <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                    <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center">
+                      {statusMeta && (
+                        <Chip
+                          size="small"
+                          label={t(statusMeta.labelKey, statusMeta.defaultLabel)}
+                          sx={{
+                            '& .MuiChip-label': { px: 1 },
+                            backgroundColor: 'transparent',
+                            border: '1px solid',
+                            borderColor: statusMeta.color,
+                            color: statusMeta.color,
+                          }}
+                        />
+                      )}
                       <Button variant="outlined" size="small" onClick={() => startEditProduct(product)}>
                         {t('edit')}
                       </Button>
@@ -674,7 +765,8 @@ export default function Inventory() {
                     </Stack>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>
