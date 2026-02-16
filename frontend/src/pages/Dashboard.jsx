@@ -9,6 +9,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Divider from '@mui/material/Divider';
+import Chip from '@mui/material/Chip';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
