@@ -140,6 +140,20 @@ export const ThemeContextProvider = ({ children }) => {
               },
             },
           },
+          MuiPaper: {
+            defaultProps: {
+              variant: 'outlined',
+              elevation: 0,
+              square: true,
+            },
+            styleOverrides: {
+              root: {
+                borderColor: isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)',
+                backgroundImage: 'none',
+                boxShadow: 'none',
+              },
+            },
+          },
           MuiTextField: {
             defaultProps: {
               size: 'small',
