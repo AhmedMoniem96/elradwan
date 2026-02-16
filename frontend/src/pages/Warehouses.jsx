@@ -27,6 +27,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { normalizeCollectionResponse } from '../utils/api';
 
 const initialForm = {
   name: '',
@@ -82,7 +83,7 @@ export default function Warehouses() {
     setError('');
     try {
       const response = await axios.get('/api/v1/warehouses/');
-      setWarehouses(response.data || []);
+      setWarehouses(normalizeCollectionResponse(response.data));
     } catch (err) {
       setError(err.response?.data?.detail || t('warehouses_load_error'));
     } finally {

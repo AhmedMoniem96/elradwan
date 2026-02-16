@@ -27,6 +27,7 @@ import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { normalizeCollectionResponse } from '../utils/api';
 
 export default function Customers() {
   const { t } = useTranslation();
@@ -50,7 +51,7 @@ export default function Customers() {
     setIsLoading(true);
     try {
       const response = await axios.get('/api/v1/customers/');
-      setCustomers(response.data);
+      setCustomers(normalizeCollectionResponse(response.data));
       setError('');
     } catch (error) {
       console.error('Error fetching customers:', error);

@@ -603,7 +603,7 @@ export default function Dashboard() {
     }
 
     axios
-      .get('/api/v1/inventory-alerts/', { params: { limit: 100 } })
+      .get('/api/v1/alerts/', { params: { limit: 100 } })
       .then((res) => {
         if (!mounted) return;
         const payload = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.results) ? res.data.results : []);
@@ -784,7 +784,7 @@ export default function Dashboard() {
       };
     }
 
-    const alertPromise = axios.get('/api/v1/inventory-alerts/', { params: { limit: 1000 } });
+    const alertPromise = axios.get('/api/v1/alerts/', { params: { limit: 1000 } });
 
     Promise.allSettled(branchTargets.map(async (branch) => {
       const branchQuery = {
