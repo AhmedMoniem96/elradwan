@@ -173,34 +173,6 @@ const sortBranchRows = (rows, key, direction) => {
   });
 };
 
-function MiniBarChart({ title, data, labelColor = 'text.secondary' }) {
-  const max = Math.max(...data.map((item) => item.value), 1);
-
-  return (
-    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
-      <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 220, mt: 1.5 }}>
-        {data.map((item) => (
-          <Box key={item.label} sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="body2" sx={{ color: labelColor, fontWeight: 600 }}>{formatCurrency(item.value)}</Typography>
-            <Box
-              sx={{
-                height: `${Math.max((item.value / max) * 100, item.value > 0 ? 6 : 2)}px`,
-                maxHeight: 165,
-                minHeight: 2,
-                borderRadius: 1,
-                bgcolor: item.color,
-                mt: 1,
-              }}
-            />
-            <Typography variant="body2" sx={{ mt: 1.25, display: 'block', color: labelColor }}>{item.label}</Typography>
-          </Box>
-        ))}
-      </Stack>
-    </Panel>
-  );
-}
-
 function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, labelColor = 'text.secondary' }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
@@ -272,43 +244,6 @@ function TrendChart({
     </Panel>
   );
 }
-
-function QuickActions({ title, actions }) {
-  return (
-    <Panel compact sx={{ minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
-        {actions.map((action) => (
-          <Button
-            key={action.label}
-            variant={action.emphasis ? 'contained' : 'outlined'}
-            size="small"
-            disabled={action.disabled}
-            onClick={action.onClick}
-            sx={{ fontWeight: 700 }}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </Stack>
-    </Panel>
-  );
-}
-
-function SectionCard({ title, subtitle, children }) {
-  return (
-    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-      <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
-      {subtitle && (
-        <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
-      )}
-      <Box sx={{ mt: 1.5 }}>
-        {children}
-      </Box>
-    </Panel>
-  );
-}
-
 
 const alertSeverityRank = { critical: 0, high: 1, normal: 2 };
 
@@ -875,10 +810,6 @@ export default function Dashboard() {
     [salesSeries],
   );
 
-  const totalSalesInWindow = useMemo(
-    () => salesSeries.reduce((sum, item) => sum + Number(item.gross_sales || 0), 0),
-    [salesSeries],
-  );
 
   const stockAlertsData = useMemo(
     () => [
@@ -968,6 +899,51 @@ export default function Dashboard() {
       },
     ],
   };
+
+  const dashboardQuickActions = roleQuickActions[userRole] || roleQuickActions.cashier;
+
+  const salesDeltaPct = computeDeltaPct(salesTotals.current, salesTotals.previous);
+  const receivablesDeltaPct = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
+
+  const dashboardKpiCards = [
+    {
+      id: 'gross-sales',
+      value: formatCurrency(salesTotals.current),
+      caption: t('dashboard_sales_amount_trend', 'Gross sales'),
+      helper: Number.isFinite(salesDeltaPct)
+        ? `${trendFromDelta(salesDeltaPct) === 'down' ? '↓' : trendFromDelta(salesDeltaPct) === 'up' ? '↑' : '→'} ${formatNumber(Math.abs(salesDeltaPct))}%`
+        : '—',
+    },
+    {
+      id: 'accounts-receivable',
+      value: formatCurrency(accountsReceivableTotals.current),
+      caption: t('dashboard_accounts_receivable', 'Accounts receivable'),
+      helper: Number.isFinite(receivablesDeltaPct)
+        ? `${trendFromDelta(receivablesDeltaPct) === 'down' ? '↓' : trendFromDelta(receivablesDeltaPct) === 'up' ? '↑' : '→'} ${formatNumber(Math.abs(receivablesDeltaPct))}%`
+        : '—',
+    },
+    {
+      id: 'active-shifts',
+      value: formatNumber(shiftSummary.active_shift_count || 0),
+      caption: t('dashboard_current_shift_status', 'Current shift status'),
+      helper: t('dashboard_active_shifts', 'Active shifts'),
+    },
+    {
+      id: 'critical-stock',
+      value: formatNumber(stockSummary.critical_count || 0),
+      caption: t('dashboard_critical_stock', 'Critical stock'),
+      helper: paymentSplitLoading
+        ? t('dashboard_loading_payment_split_title', 'Loading payment split')
+        : paymentSplitFailed
+          ? t('dashboard_payment_split_error_title', 'Payment split is unavailable')
+          : `${t('dashboard_payment_methods', 'Payment methods')}: ${formatNumber(paymentSplitSeries.length)}`,
+    },
+  ];
+
+  const hasSalesChartData = !salesSeriesLoading && !salesSeriesFailed && salesTrendData.length > 0;
+  const hasInvoicesChartData = !salesSeriesLoading && !salesSeriesFailed && invoicesTrendData.length > 0;
+  const showChartsRow = hasSalesChartData || hasInvoicesChartData;
+
 
 
   const reportsQueryParams = useMemo(() => ({
@@ -1178,15 +1154,48 @@ export default function Dashboard() {
                 </Typography>
               </Grid>
             </Grid>
+
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+              {dashboardQuickActions.map((action) => (
+                <Button
+                  key={action.label}
+                  variant={action.emphasis ? 'contained' : 'outlined'}
+                  size="small"
+                  disabled={action.disabled}
+                  onClick={action.onClick}
+                  sx={{ fontWeight: 700 }}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </Stack>
           </Stack>
         </Panel>
       </Grid>
 
+      {kpiFailed && (
+        <Grid item xs={12}>
+          <ErrorState
+            title={t('dashboard_kpis_error_title', 'Some KPI cards are unavailable')}
+            helperText={t('dashboard_kpis_error_helper', 'Parts of the summary did not load. You can retry without leaving the page.')}
+            actionLabel={t('retry', 'Retry')}
+            onAction={() => setKpiRefreshNonce((prev) => prev + 1)}
+          />
+        </Grid>
+      )}
+
       <Grid item xs={12}>
-        <QuickActions
-          title={t('dashboard_quick_actions', 'Quick actions')}
-          actions={roleQuickActions[userRole] || roleQuickActions.cashier}
-        />
+        <Grid container spacing={2}>
+          {dashboardKpiCards.map((card) => (
+            <Grid key={card.id} item xs={12} sm={6} lg={3}>
+              <Panel compact sx={{ height: '100%' }}>
+                <Typography variant="h5" sx={{ fontWeight: 700 }}>{card.value}</Typography>
+                <Typography variant="body2" color="text.secondary">{card.caption}</Typography>
+                <Typography variant="caption" color="text.secondary">{card.helper}</Typography>
+              </Panel>
+            </Grid>
+          ))}
+        </Grid>
       </Grid>
 
       <Grid item xs={12}>
@@ -1203,121 +1212,32 @@ export default function Dashboard() {
         />
       </Grid>
 
-      {kpiFailed && (
+      {showChartsRow && (
         <Grid item xs={12}>
-          <ErrorState
-            title={t('dashboard_kpis_error_title', 'Some KPI cards are unavailable')}
-            helperText={t('dashboard_kpis_error_helper', 'Parts of the summary did not load. You can retry without leaving the page.')}
-            actionLabel={t('retry', 'Retry')}
-            onAction={() => setKpiRefreshNonce((prev) => prev + 1)}
-          />
-        </Grid>
-      )}
-
-      {(userRole === 'cashier' || userRole === 'supervisor' || userRole === 'admin') && canViewDashboard && (
-        <Grid item xs={12} md={6}>
-          <Stack spacing={2}>
-            <SectionCard
-              title={
-                userRole === 'cashier'
-                  ? t('dashboard_current_shift_status', 'Current shift status')
-                  : userRole === 'supervisor'
-                    ? t('dashboard_shift_exceptions', 'Shift exceptions')
-                    : t('dashboard_financial_kpis', 'Financial KPIs')
-              }
-              subtitle={t('dashboard_total_for_window', 'Total for selected window')}
-            >
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
-                  {formatCurrency(totalSalesInWindow)}
-                </Typography>
-                <TextField
-                  select
-                  size="small"
-                  label={t('dashboard_window', 'Window')}
-                  value={trendWindowDays}
-                  onChange={(event) => setTrendWindowDays(Number(event.target.value))}
-                  sx={{ minWidth: 120 }}
+          <Grid container spacing={2}>
+            {hasSalesChartData && (
+              <Grid item xs={12} md={6}>
+                <ButtonBase
+                  onClick={() => navigateWithParams('/reports', reportsQueryParams)}
+                  sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
                 >
-                  <MenuItem value={7}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 7 })}</MenuItem>
-                  <MenuItem value={30}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 30 })}</MenuItem>
-                </TextField>
-              </Stack>
-            </SectionCard>
-            <ButtonBase
-              onClick={() => navigateWithParams('/reports', reportsQueryParams)}
-              sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
-            >
-              {salesSeriesLoading ? (
-                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                  <LoadingState
-                    title={t('dashboard_loading_sales_trend_title', 'Loading sales trend')}
-                    helperText={t('dashboard_loading_sales_trend_helper', 'We are preparing the chart for your selected window.')}
+                  <TrendChart
+                    title={t('dashboard_sales_amount_trend', 'Gross sales')}
+                    points={salesTrendData}
+                    yFormatter={formatCurrency}
+                    peakLabel={t('dashboard_peak_value', 'Peak')}
+                    color="primary.main"
+                    labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                   />
-                </Panel>
-              ) : salesSeriesFailed ? (
-                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                  <ErrorState
-                    title={t('dashboard_sales_trend_error_title', 'Sales trend is unavailable')}
-                    helperText={t('dashboard_sales_trend_error_helper', 'Could not load gross sales trend right now. Please retry.')}
-                    actionLabel={t('retry', 'Retry')}
-                    onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
-                  />
-                </Panel>
-              ) : salesTrendData.length === 0 ? (
-                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                  <EmptyState
-                    title={t('dashboard_sales_trend_empty_title', 'No sales trend data yet')}
-                    helperText={t('dashboard_sales_trend_empty_helper', 'Try a different period or wait for new activity to appear.')}
-                  />
-                </Panel>
-              ) : (
-                <TrendChart
-                  title={t('dashboard_sales_amount_trend', 'Gross sales')}
-                  points={salesTrendData}
-                  yFormatter={formatCurrency}
-                  peakLabel={t('dashboard_peak_value', 'Peak')}
-                  color="primary.main"
-                  labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
-                />
-              )}
-            </ButtonBase>
-          </Stack>
-        </Grid>
-      )}
-
-      {canViewDashboard && (
-        <Grid item xs={12} md={6}>
-          <Stack spacing={2}>
-            {(userRole !== 'cashier' || canViewInventory) && (
-              <ButtonBase
-                onClick={() => navigateWithParams('/reports', reportsQueryParams)}
-                sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
-              >
-                {salesSeriesLoading ? (
-                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                    <LoadingState
-                      title={t('dashboard_loading_invoice_trend_title', 'Loading invoice trend')}
-                      helperText={t('dashboard_loading_invoice_trend_helper', 'Please wait while invoice counts are calculated.')}
-                    />
-                  </Panel>
-                ) : salesSeriesFailed ? (
-                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                    <ErrorState
-                      title={t('dashboard_invoice_trend_error_title', 'Invoice trend is unavailable')}
-                      helperText={t('dashboard_invoice_trend_error_helper', 'We could not load invoice trend data. Retry to continue.')}
-                      actionLabel={t('retry', 'Retry')}
-                      onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
-                    />
-                  </Panel>
-                ) : invoicesTrendData.length === 0 ? (
-                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                    <EmptyState
-                      title={t('dashboard_invoice_trend_empty_title', 'No invoice trend data')}
-                      helperText={t('dashboard_invoice_trend_empty_helper', 'Invoice counts will show here once transactions are recorded.')}
-                    />
-                  </Panel>
-                ) : (
+                </ButtonBase>
+              </Grid>
+            )}
+            {hasInvoicesChartData && (
+              <Grid item xs={12} md={6}>
+                <ButtonBase
+                  onClick={() => navigateWithParams('/reports', reportsQueryParams)}
+                  sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+                >
                   <TrendChart
                     title={t('dashboard_invoice_count_trend', 'Invoice count')}
                     points={invoicesTrendData}
@@ -1325,91 +1245,10 @@ export default function Dashboard() {
                     peakLabel={t('dashboard_peak_value', 'Peak')}
                     color="secondary.main"
                   />
-                )}
-              </ButtonBase>
+                </ButtonBase>
+              </Grid>
             )}
-            {canViewInventory && (
-              <ButtonBase
-                onClick={() => navigateWithParams('/inventory', { severity: 'critical' })}
-                sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
-              >
-                {kpiLoading ? (
-                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                    <LoadingState
-                      title={t('dashboard_loading_stock_title', 'Loading stock alerts')}
-                      helperText={t('dashboard_loading_stock_helper', 'Fetching latest low and critical stock signals.')}
-                    />
-                  </Panel>
-                ) : stockAlertsData.every((item) => Number(item.value || 0) === 0) ? (
-                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                    <EmptyState
-                      title={t('dashboard_stock_empty_title', 'No stock alerts right now')}
-                      helperText={t('dashboard_stock_empty_helper', 'Great news—no low or critical stock alerts were found.')}
-                    />
-                  </Panel>
-                ) : (
-                  <MiniHorizontalChart
-                    title={
-                      userRole === 'supervisor'
-                        ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
-                        : t('dashboard_stock_distribution', 'Stock alert distribution')
-                    }
-                    data={stockAlertsData}
-                  />
-                )}
-              </ButtonBase>
-            )}
-          </Stack>
-        </Grid>
-      )}
-
-      {canViewDashboard && (userRole !== 'cashier' || canAccessPos) && (
-        <Grid item xs={12}>
-          <ButtonBase
-            onClick={() => navigateWithParams('/reports', reportsQueryParams)}
-            sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
-          >
-            {paymentSplitLoading ? (
-              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                <LoadingState
-                  title={t('dashboard_loading_payment_split_title', 'Loading payment split')}
-                  helperText={t('dashboard_loading_payment_split_helper', 'Getting payment method totals for this period.')}
-                />
-              </Panel>
-            ) : paymentSplitFailed ? (
-              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                <ErrorState
-                  title={t('dashboard_payment_split_error_title', 'Payment split is unavailable')}
-                  helperText={t('dashboard_payment_split_error_helper', 'Could not load payment method breakdown. Please retry.')}
-                  actionLabel={t('retry', 'Retry')}
-                  onAction={() => setPaymentSplitRefreshNonce((prev) => prev + 1)}
-                />
-              </Panel>
-            ) : paymentSplitSeries.length === 0 ? (
-              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
-                <EmptyState
-                  title={t('dashboard_payment_split_empty_title', 'No payment split data')}
-                  helperText={t('dashboard_payment_split_empty_helper', 'Payment method totals will appear once payments are posted.')}
-                />
-              </Panel>
-            ) : (
-              <MiniBarChart
-                labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
-                title={
-                  userRole === 'admin'
-                    ? t('dashboard_branch_comparison', 'Branch comparison')
-                    : userRole === 'supervisor'
-                      ? t('dashboard_approval_queue', 'Approval queue')
-                      : t('dashboard_pos_shortcuts', 'POS shortcuts')
-                }
-                data={(paymentSplitSeries || []).map((entry) => ({
-                  label: toTitle(entry.method || t('unknown', 'Unknown')),
-                  value: Number(entry.amount || 0),
-                  color: 'info.main',
-                }))}
-              />
-            )}
-          </ButtonBase>
+          </Grid>
         </Grid>
       )}
 
