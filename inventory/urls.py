@@ -44,7 +44,7 @@ router.register(r"admin/supplier-contacts", AdminSupplierContactViewSet, basenam
 router.register(r"admin/purchase-orders", AdminPurchaseOrderViewSet, basename="admin-purchase-order")
 router.register(r"admin/stock-transfers", AdminStockTransferViewSet, basename="admin-stock-transfer")
 
-urlpatterns = router.urls + [
+urlpatterns = [
     path("reports/supplier-balances/", SupplierBalancesReportView.as_view(), name="supplier-balances"),
     path("reports/supplier-aging/", SupplierAgingReportView.as_view(), name="supplier-aging"),
     path("suppliers/<uuid:supplier_id>/payments/", SupplierPaymentCreateView.as_view(), name="supplier-payment-create"),
@@ -55,4 +55,4 @@ urlpatterns = router.urls + [
     path("alerts/mark-read/", AlertMarkReadView.as_view(), name="alerts-mark-read"),
     path("reorder-suggestions/export/", ReorderSuggestionExportView.as_view(), name="reorder-suggestions-export"),
     path("reorder-suggestions/create-po/", ReorderSuggestionCreatePOView.as_view(), name="reorder-suggestions-create-po"),
-]
+] + router.urls
