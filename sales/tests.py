@@ -232,6 +232,87 @@ class ReturnFlowTests(TestCase):
         self.assertEqual(stock_move.reason, StockMove.Reason.RETURN)
         self.assertEqual(stock_move.quantity, Decimal("1.00"))
 
+
+    def test_return_preview_includes_available_quantities_and_payment_split(self):
+        existing_return = Return.objects.create(
+            invoice=self.invoice,
+            branch=self.branch,
+            device=self.device,
+            user=self.user,
+            subtotal=Decimal("60.00"),
+            tax_total=Decimal("6.00"),
+            total=Decimal("66.00"),
+            event_id=uuid.uuid4(),
+        )
+        self.invoice_line.return_lines.create(
+            return_txn=existing_return,
+            invoice_line=self.invoice_line,
+            quantity=Decimal("0.50"),
+            refunded_subtotal=Decimal("30.00"),
+            refunded_tax=Decimal("3.00"),
+            refunded_total=Decimal("33.00"),
+        )
+        Payment.objects.create(
+            invoice=self.invoice,
+            method=Payment.Method.CASH,
+            amount=Decimal("100.00"),
+            paid_at=timezone.now(),
+            event_id=uuid.uuid4(),
+            device=self.device,
+        )
+        Payment.objects.create(
+            invoice=self.invoice,
+            method=Payment.Method.CARD,
+            amount=Decimal("32.00"),
+            paid_at=timezone.now(),
+            event_id=uuid.uuid4(),
+            device=self.device,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/returns/preview/", {"invoice": str(self.invoice.id)})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["invoice"], str(self.invoice.id))
+        self.assertEqual(len(payload["lines"]), 1)
+        self.assertEqual(Decimal(payload["lines"][0]["available_quantity"]), Decimal("1.50"))
+        self.assertEqual(Decimal(payload["max_return_total"]), Decimal("99.00"))
+        self.assertEqual(len(payload["payment_methods"]), 2)
+
+    def test_return_quantity_cannot_exceed_remaining_after_previous_returns(self):
+        self.client.force_authenticate(user=self.user)
+        initial = self.client.post(
+            "/api/v1/returns/",
+            {
+                "invoice": str(self.invoice.id),
+                "device": str(self.device.id),
+                "event_id": str(uuid.uuid4()),
+                "reason": "First",
+                "lines": [{"invoice_line": str(self.invoice_line.id), "quantity": "1.00"}],
+                "refunds": [{"method": "cash", "amount": "66.00"}],
+            },
+            format="json",
+        )
+        self.assertEqual(initial.status_code, 201)
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            "/api/v1/returns/",
+            {
+                "invoice": str(self.invoice.id),
+                "device": str(self.device.id),
+                "event_id": str(uuid.uuid4()),
+                "reason": "Too much",
+                "lines": [{"invoice_line": str(self.invoice_line.id), "quantity": "1.50"}],
+                "refunds": [{"method": "cash", "amount": "99.00"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("quantity", response.json())
+
     def test_invoice_detail_includes_return_totals(self):
         Return.objects.create(
             invoice=self.invoice,

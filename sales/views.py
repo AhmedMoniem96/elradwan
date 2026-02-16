@@ -15,7 +15,7 @@ from common.permissions import RoleCapabilityPermission, user_has_capability
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
 from sync.permissions import resolve_device_for_user
-from sales.models import CashShift, Customer, Invoice, Payment, Return
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Return
 from sales.serializers import (
     CashShiftCloseSerializer,
     CashShiftOpenSerializer,
@@ -259,6 +259,73 @@ class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     }
     outbox_entity = "return"
     audit_entity = "return"
+
+    @action(detail=False, methods=["get"], url_path="preview")
+    def preview(self, request):
+        invoice_id = request.query_params.get("invoice")
+        if not invoice_id:
+            raise ValidationError({"invoice": "Invoice id is required."})
+
+        invoice = scoped_queryset_for_user(
+            Invoice.objects.select_related("branch", "device"), request.user
+        ).filter(id=invoice_id).first()
+        if invoice is None:
+            raise NotFound("Invoice was not found.")
+
+        invoice_lines = list(
+            InvoiceLine.objects.filter(invoice=invoice)
+            .select_related("product")
+            .prefetch_related("return_lines")
+            .order_by("id")
+        )
+
+        preview_lines = []
+        max_return_total = Decimal("0")
+        for line in invoice_lines:
+            sold_qty = Decimal(str(line.quantity))
+            returned_qty = line.return_lines.aggregate(total=Sum("quantity"))["total"] or Decimal("0")
+            available_qty = max(sold_qty - returned_qty, Decimal("0"))
+            if sold_qty <= 0:
+                continue
+
+            unit_subtotal = Decimal(str(line.line_total)) / sold_qty
+            unit_tax = unit_subtotal * Decimal(str(line.tax_rate))
+            unit_total = unit_subtotal + unit_tax
+            max_line_total = unit_total * available_qty
+            max_return_total += max_line_total
+
+            preview_lines.append(
+                {
+                    "invoice_line": str(line.id),
+                    "product": str(line.product_id),
+                    "product_name": line.product.name,
+                    "sold_quantity": sold_qty,
+                    "returned_quantity": returned_qty,
+                    "available_quantity": available_qty,
+                    "unit_refund_subtotal": unit_subtotal,
+                    "unit_refund_tax": unit_tax,
+                    "unit_refund_total": unit_total,
+                    "max_refundable_total": max_line_total,
+                }
+            )
+
+        grouped_payments = {}
+        for payment in invoice.payments.all():
+            grouped_payments[payment.method] = grouped_payments.get(payment.method, Decimal("0")) + payment.amount
+
+        payment_methods = [
+            {"method": method, "paid_amount": amount}
+            for method, amount in sorted(grouped_payments.items(), key=lambda entry: entry[0])
+        ]
+
+        return Response(
+            {
+                "invoice": str(invoice.id),
+                "lines": preview_lines,
+                "max_return_total": max_return_total,
+                "payment_methods": payment_methods,
+            }
+        )
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related("invoice", "branch", "device", "user")
