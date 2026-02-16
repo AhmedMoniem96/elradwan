@@ -179,29 +179,37 @@ function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, label
   return (
     <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
-      <Stack spacing={2} sx={{ mt: 2.25 }}>
+      <Panel compact sx={{ mt: 1.5 }}>
+        <Stack spacing={1.5}>
         {data.map((item) => (
           <Box key={item.label}>
             <Stack direction="row" justifyContent="space-between">
               <Typography variant="body1" sx={{ fontWeight: 500 }}>{item.label}</Typography>
               <Typography variant="body1" sx={{ color: labelColor, fontWeight: 600 }}>{valueFormatter(item.value)}</Typography>
             </Stack>
-            <Box sx={{ mt: 0.75, width: '100%', height: 14, bgcolor: 'action.hover', borderRadius: 2 }}>
+            <Box sx={{ mt: 0.75, width: '100%', height: 1, bgcolor: 'divider' }}>
               <Box
                 sx={{
                   width: `${Math.max((item.value / max) * 100, item.value > 0 ? 5 : 0)}%`,
-                  height: '100%',
+                  height: 3,
                   bgcolor: item.color,
-                  borderRadius: 1,
+                  transform: 'translateY(-1px)',
                 }}
               />
             </Box>
           </Box>
         ))}
-      </Stack>
+        </Stack>
+      </Panel>
     </Panel>
   );
 }
+
+const minimalMuiXLineSx = {
+  '& .MuiMarkElement-root': { display: 'none' },
+  '& .MuiAreaElement-root': { display: 'none' },
+  '& .MuiLineElement-root': { strokeWidth: 2 },
+};
 
 function TrendChart({
   title,
@@ -216,7 +224,7 @@ function TrendChart({
   const min = Math.min(...values, 0);
   const range = max - min || 1;
   const width = 100;
-  const height = 56;
+  const height = 42;
 
   const polyline = points
     .map((point, idx) => {
@@ -232,11 +240,11 @@ function TrendChart({
       <Typography variant="body2" sx={{ color: labelColor }}>
         {peakLabel}: {yFormatter(max)}
       </Typography>
-      <Box sx={{ mt: 1.5, mb: 2, height: 240, bgcolor: 'action.hover', borderRadius: 2.5, p: 1.75, color }}>
+      <Panel compact sx={{ mt: 1.25, mb: 1.5, height: 128, color, ...minimalMuiXLineSx }}>
         <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" width="100%" height="100%">
-          <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="2" />
+          <polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="1.75" />
         </svg>
-      </Box>
+      </Panel>
       <Stack direction="row" justifyContent="space-between" spacing={1}>
         <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[0]?.label)}</Typography>
         <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[points.length - 1]?.label)}</Typography>
