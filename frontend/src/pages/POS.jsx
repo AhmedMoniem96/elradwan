@@ -12,6 +12,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormHelperText,
   List,
   ListItem,
   ListItemAvatar,
@@ -44,6 +45,14 @@ const HELD_CARTS_STORAGE_KEY = 'pos_held_carts_v1';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
+
+const toAmount = (value) => Number(Number(value || 0).toFixed(2));
+
+const clampNumber = (value, min, max) => {
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return min;
+  return Math.min(Math.max(parsed, min), max);
+};
 const scoreProductMatch = (product, queryTokens) => {
   const name = normalize(product.name);
   const sku = normalize(product.sku);
@@ -407,7 +416,18 @@ function PaymentSummaryPanel(props) {
 }
 
 function ReceiptHistoryDialog(props) {
-  const { t, receiptsOpen, setReceiptsOpen, receiptQuickFilter, setReceiptQuickFilter, receiptsError, receiptsLoading, filteredReceipts, setActiveReceipt } = props;
+  const {
+    t,
+    receiptsOpen,
+    setReceiptsOpen,
+    receiptQuickFilter,
+    setReceiptQuickFilter,
+    receiptsError,
+    receiptsLoading,
+    filteredReceipts,
+    setActiveReceipt,
+    onCreateReturnDraft,
+  } = props;
 
   return (
     <Dialog open={receiptsOpen} onClose={() => setReceiptsOpen(false)} fullWidth maxWidth="lg">
@@ -438,7 +458,15 @@ function ReceiptHistoryDialog(props) {
                   <Typography fontWeight={600}>{t('pos_receipt_number')}: {receipt.invoice_number || receipt.local_invoice_no || t('none')}</Typography>
                   <Typography variant="body2">{t('pos_receipt_datetime')}: {formatDateTime(receipt.created_at)}</Typography>
                   <Typography variant="body2">{t('pos_receipt_totals')}: {formatCurrency(receipt.total)}</Typography>
-                  <Button size="small" onClick={() => setActiveReceipt(receipt)}>{t('pos_open_receipt_details')}</Button>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                    <Button size="small" onClick={() => setActiveReceipt(receipt)}>{t('pos_open_receipt_details')}</Button>
+                    <Button size="small" variant="contained" color="warning" onClick={() => onCreateReturnDraft(receipt)}>
+                      {t('pos_return_items_action', { defaultValue: 'Return items' })}
+                    </Button>
+                    <Button size="small" variant="outlined" disabled>
+                      {t('pos_exchange_items_action', { defaultValue: 'Exchange' })}
+                    </Button>
+                  </Stack>
                 </Stack>
               </CardContent>
             </Card>
@@ -542,6 +570,14 @@ export default function POS() {
   const [receiptsError, setReceiptsError] = useState('');
   const [receiptQuickFilter, setReceiptQuickFilter] = useState('');
   const [activeReceipt, setActiveReceipt] = useState(null);
+  const [returnDraftOpen, setReturnDraftOpen] = useState(false);
+  const [returnDraftLoading, setReturnDraftLoading] = useState(false);
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
+  const [returnDraftError, setReturnDraftError] = useState('');
+  const [returnDraftReceipt, setReturnDraftReceipt] = useState(null);
+  const [returnDraftLines, setReturnDraftLines] = useState([]);
+  const [returnDraftPayments, setReturnDraftPayments] = useState([]);
+  const [returnReason, setReturnReason] = useState('');
   const [heldCartNote, setHeldCartNote] = useState('');
   const [heldCartsOpen, setHeldCartsOpen] = useState(false);
   const [heldCarts, setHeldCarts] = useState([]);
@@ -794,6 +830,54 @@ export default function POS() {
     });
   }, [heldCartSearch, heldCarts]);
 
+  const computedReturnLines = useMemo(
+    () =>
+      returnDraftLines
+        .filter((line) => Number(line.quantity) > 0)
+        .map((line) => {
+          const quantity = Number(line.quantity || 0);
+          const refundSubtotal = toAmount(quantity * Number(line.unit_refund_subtotal || 0));
+          const refundTax = toAmount(quantity * Number(line.unit_refund_tax || 0));
+          const refundTotal = toAmount(quantity * Number(line.unit_refund_total || 0));
+          return {
+            ...line,
+            quantity,
+            refundSubtotal,
+            refundTax,
+            refundTotal,
+          };
+        }),
+    [returnDraftLines],
+  );
+
+  const returnTotal = useMemo(
+    () => toAmount(computedReturnLines.reduce((sum, line) => sum + line.refundTotal, 0)),
+    [computedReturnLines],
+  );
+
+  const returnRefundPreview = useMemo(() => {
+    if (returnTotal <= 0) return [];
+    const sortedMethods = [...returnDraftPayments].sort((a, b) => String(a.method || '').localeCompare(String(b.method || '')));
+    let remainingAmount = returnTotal;
+
+    return sortedMethods
+      .map((entry) => {
+        const suggestedAmount = toAmount(Math.min(remainingAmount, Number(entry.paid_amount || 0)));
+        remainingAmount = toAmount(remainingAmount - suggestedAmount);
+        return {
+          method: entry.method,
+          paidAmount: Number(entry.paid_amount || 0),
+          suggestedAmount,
+        };
+      })
+      .filter((entry) => entry.suggestedAmount > 0);
+  }, [returnDraftPayments, returnTotal]);
+
+  const returnRefundTotal = useMemo(
+    () => toAmount(returnRefundPreview.reduce((sum, entry) => sum + Number(entry.suggestedAmount || 0), 0)),
+    [returnRefundPreview],
+  );
+
   const addToCart = (product) => {
     setCart((prev) => {
       let nextCart;
@@ -976,6 +1060,103 @@ export default function POS() {
     setReceiptsOpen(true);
     setActiveReceipt(null);
     loadReceipts();
+  };
+
+  const handleOpenReturnDraft = async (receipt) => {
+    setReturnDraftOpen(true);
+    setReturnDraftLoading(true);
+    setReturnDraftError('');
+    setReturnReason('');
+    setReturnDraftReceipt(receipt);
+    try {
+      const response = await axios.get('/api/v1/returns/preview/', { params: { invoice: receipt.id } });
+      const draft = response.data || {};
+      const lines = (draft.lines || []).map((line) => ({
+        ...line,
+        quantity: Number(line.available_quantity || 0),
+      }));
+      setReturnDraftLines(lines);
+      setReturnDraftPayments(draft.payment_methods || []);
+    } catch (err) {
+      console.error('Failed to prepare return draft', err);
+      setReturnDraftError(t('pos_return_prepare_error', { defaultValue: 'Unable to prepare return draft.' }));
+    } finally {
+      setReturnDraftLoading(false);
+    }
+  };
+
+  const handleCloseReturnDraft = (force = false) => {
+    if (returnSubmitting && !force) {
+      return;
+    }
+    setReturnDraftOpen(false);
+    setReturnDraftError('');
+    setReturnDraftReceipt(null);
+    setReturnDraftLines([]);
+    setReturnDraftPayments([]);
+    setReturnReason('');
+  };
+
+  const handleReturnLineQuantityChange = (invoiceLineId, value) => {
+    setReturnDraftLines((prev) =>
+      prev.map((line) => {
+        if (line.invoice_line !== invoiceLineId) {
+          return line;
+        }
+        return {
+          ...line,
+          quantity: clampNumber(value, 0, Number(line.available_quantity || 0)),
+        };
+      }),
+    );
+  };
+
+  const handleConfirmReturn = async () => {
+    if (!returnDraftReceipt || returnSubmitting || computedReturnLines.length === 0) {
+      return;
+    }
+
+    const refundPayload = returnRefundPreview.map((entry) => ({
+      method: entry.method,
+      amount: toAmount(entry.suggestedAmount),
+    }));
+
+    if (refundPayload.length === 0 || returnRefundTotal !== returnTotal) {
+      setReturnDraftError(t('pos_return_no_refund_methods', { defaultValue: 'Unable to fully allocate refund to payment methods.' }));
+      return;
+    }
+
+    setReturnSubmitting(true);
+    setReturnDraftError('');
+    try {
+      await axios.post('/api/v1/returns/', {
+        invoice: returnDraftReceipt.id,
+        device: returnDraftReceipt.device,
+        event_id: crypto.randomUUID(),
+        reason: returnReason.trim() || null,
+        lines: computedReturnLines.map((line) => ({
+          invoice_line: line.invoice_line,
+          quantity: toAmount(line.quantity),
+        })),
+        refunds: refundPayload,
+      });
+
+      setActionFeedback({
+        severity: 'success',
+        message: t('pos_return_success', { defaultValue: 'Return processed successfully.' }),
+      });
+      handleCloseReturnDraft(true);
+      loadReceipts();
+    } catch (err) {
+      console.error('Failed to submit return', err);
+      setReturnDraftError(
+        err?.response?.data?.detail
+        || err?.response?.data?.refunds?.[0]
+        || t('pos_return_submit_error', { defaultValue: 'Unable to process return.' }),
+      );
+    } finally {
+      setReturnSubmitting(false);
+    }
   };
 
   const handleHoldCurrentCart = () => {
@@ -1175,6 +1356,7 @@ export default function POS() {
         receiptsLoading={receiptsLoading}
         filteredReceipts={filteredReceipts}
         setActiveReceipt={setActiveReceipt}
+        onCreateReturnDraft={handleOpenReturnDraft}
       />
 
       <HeldCartsDialog
@@ -1187,6 +1369,95 @@ export default function POS() {
         onResumeHeldCart={handleResumeHeldCart}
         onDeleteHeldCart={handleDeleteHeldCart}
       />
+
+      <Dialog open={returnDraftOpen} onClose={handleCloseReturnDraft} fullWidth maxWidth="md">
+        <DialogTitle>{t('pos_return_items_action', { defaultValue: 'Return items' })}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ py: 1 }}>
+            {returnDraftError && <Alert severity="error">{returnDraftError}</Alert>}
+            {returnDraftLoading ? (
+              <LoadingState icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helperText={t('pos_return_items_action', { defaultValue: 'Preparing return draft...' })} />
+            ) : (
+              <>
+                <Typography variant="body2">
+                  {t('pos_receipt_number')}: {returnDraftReceipt?.invoice_number || returnDraftReceipt?.local_invoice_no || t('none')}
+                </Typography>
+                <TextField
+                  size="small"
+                  label={t('reason', { defaultValue: 'Reason' })}
+                  placeholder={t('pos_return_reason_placeholder', { defaultValue: 'Optional reason for return' })}
+                  value={returnReason}
+                  onChange={(event) => setReturnReason(event.target.value)}
+                  fullWidth
+                />
+                <Divider />
+                <Typography fontWeight={600}>{t('pos_receipt_line_items')}</Typography>
+                {returnDraftLines.map((line) => (
+                  <Card key={line.invoice_line} variant="outlined">
+                    <CardContent sx={{ p: 1.25 }}>
+                      <Stack spacing={1}>
+                        <Typography variant="body2" fontWeight={600}>{line.product_name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t('pos_return_available_qty', { defaultValue: 'Sold: {{sold}} • Previously returned: {{returned}} • Available: {{available}}', sold: formatNumber(line.sold_quantity), returned: formatNumber(line.returned_quantity), available: formatNumber(line.available_quantity) })}
+                        </Typography>
+                        <TextField
+                          size="small"
+                          type="number"
+                          label={t('quantity')}
+                          value={line.quantity}
+                          inputProps={{ min: 0, max: Number(line.available_quantity || 0), step: '0.01' }}
+                          onChange={(event) => handleReturnLineQuantityChange(line.invoice_line, event.target.value)}
+                        />
+                        <FormHelperText>
+                          {t('pos_return_line_refund_hint', { defaultValue: 'Per unit refund: {{amount}}', amount: formatCurrency(line.unit_refund_total || 0) })}
+                        </FormHelperText>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                ))}
+                <Divider />
+                <Typography fontWeight={700}>{t('pos_return_total_preview', { defaultValue: 'Return total preview' })}: {formatCurrency(returnTotal)}</Typography>
+                {returnRefundTotal !== returnTotal && returnTotal > 0 && (
+                  <Alert severity="warning">
+                    {t('pos_return_refund_limit_warning', { defaultValue: 'Refund exceeds paid amount split. Reduce quantities to continue.' })}
+                  </Alert>
+                )}
+                <Typography fontWeight={600}>{t('pos_receipt_payment_methods')}</Typography>
+                {returnRefundPreview.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">{t('none')}</Typography>
+                ) : (
+                  <List dense>
+                    {returnRefundPreview.map((refund) => (
+                      <ListItem key={refund.method} divider>
+                        <ListItemText
+                          primary={`${t(`payment_method_${refund.method}`, { defaultValue: refund.method })} → ${formatCurrency(refund.suggestedAmount)}`}
+                          secondary={t('pos_return_payment_refund_hint', { defaultValue: 'Paid via method: {{amount}}', amount: formatCurrency(refund.paidAmount) })}
+                          sx={{ textAlign: isRTL ? 'right' : 'left' }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <Button variant="outlined" onClick={handleCloseReturnDraft} disabled={returnSubmitting}>
+                    {t('cancel')}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    disabled={returnSubmitting || computedReturnLines.length === 0 || returnTotal <= 0 || returnRefundTotal !== returnTotal}
+                    onClick={handleConfirmReturn}
+                  >
+                    {returnSubmitting
+                      ? t('saving', { defaultValue: 'Saving...' })
+                      : t('pos_return_confirm_partial', { defaultValue: 'Confirm return (supports partial)' })}
+                  </Button>
+                </Stack>
+              </>
+            )}
+          </Stack>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(activeReceipt)} onClose={() => setActiveReceipt(null)} fullWidth maxWidth="md">
         <DialogTitle>{t('pos_receipt_details')}</DialogTitle>
