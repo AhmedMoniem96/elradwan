@@ -37,7 +37,7 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
 import axios from 'axios';
@@ -93,6 +93,7 @@ const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' 
 export default function Layout() {
   const [open, setOpen] = React.useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, i18n } = useTranslation();
   const { toggleColorMode, mode } = useThemeContext();
   const {
@@ -148,7 +149,14 @@ export default function Layout() {
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
-      <AppBar position="absolute" open={open}>
+      <AppBar
+        position="absolute"
+        open={open}
+        sx={{
+          backdropFilter: 'blur(10px)',
+          background: (theme) => `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+        }}
+      >
         <Toolbar
           sx={{
             pr: 3,
@@ -260,7 +268,16 @@ export default function Layout() {
           </IconButton>
         </Toolbar>
       </AppBar>
-      <Drawer variant="permanent" open={open}>
+      <Drawer
+        variant="permanent"
+        open={open}
+        sx={{
+          '& .MuiDrawer-paper': {
+            borderRight: (theme) => `1px solid ${theme.palette.divider}`,
+            backgroundImage: (theme) => `linear-gradient(180deg, ${theme.palette.background.paper} 0%, ${theme.palette.action.hover} 100%)`,
+          },
+        }}
+      >
         <Toolbar
           sx={{
             display: 'flex',
@@ -275,14 +292,14 @@ export default function Layout() {
         </Toolbar>
         <Divider />
         <List component="nav">
-          <ListItemButton onClick={() => navigate('/')}>
+          <ListItemButton selected={location.pathname === '/'} onClick={() => navigate('/')}>
             <ListItemIcon>
               <DashboardIcon />
             </ListItemIcon>
             <ListItemText primary={t('dashboard')} />
           </ListItemButton>
           {can('sales.pos.access') && (
-            <ListItemButton onClick={() => navigate('/pos')}>
+            <ListItemButton selected={location.pathname.startsWith('/pos')} onClick={() => navigate('/pos')}>
               <ListItemIcon>
                 <ShoppingCartIcon />
               </ListItemIcon>
@@ -290,7 +307,7 @@ export default function Layout() {
             </ListItemButton>
           )}
           {can('sales.customers.view') && (
-            <ListItemButton onClick={() => navigate('/customers')}>
+            <ListItemButton selected={location.pathname.startsWith('/customers')} onClick={() => navigate('/customers')}>
               <ListItemIcon>
                 <PeopleIcon />
               </ListItemIcon>
@@ -299,13 +316,13 @@ export default function Layout() {
           )}
           {can('inventory.view') && (
             <>
-              <ListItemButton onClick={() => navigate('/inventory')}>
+              <ListItemButton selected={location.pathname.startsWith('/inventory')} onClick={() => navigate('/inventory')}>
                 <ListItemIcon>
                   <BarChartIcon />
                 </ListItemIcon>
                 <ListItemText primary={t('inventory')} />
               </ListItemButton>
-              <ListItemButton onClick={() => navigate('/suppliers')}>
+              <ListItemButton selected={location.pathname.startsWith('/suppliers')} onClick={() => navigate('/suppliers')}>
                 <ListItemIcon>
                   <LocalShippingIcon />
                 </ListItemIcon>
@@ -314,7 +331,7 @@ export default function Layout() {
             </>
           )}
           {can('sales.dashboard.view') && (
-            <ListItemButton onClick={() => navigate('/reports')}>
+            <ListItemButton selected={location.pathname.startsWith('/reports')} onClick={() => navigate('/reports')}>
               <ListItemIcon>
                 <AssessmentIcon />
               </ListItemIcon>
@@ -323,19 +340,19 @@ export default function Layout() {
           )}
           {can('admin.records.manage') && (
             <>
-              <ListItemButton onClick={() => navigate('/branches')}>
+              <ListItemButton selected={location.pathname.startsWith('/branches')} onClick={() => navigate('/branches')}>
                 <ListItemIcon>
                   <AccountTreeIcon />
                 </ListItemIcon>
                 <ListItemText primary={t('branches')} />
               </ListItemButton>
-              <ListItemButton onClick={() => navigate('/warehouses')}>
+              <ListItemButton selected={location.pathname.startsWith('/warehouses')} onClick={() => navigate('/warehouses')}>
                 <ListItemIcon>
                   <WarehouseIcon />
                 </ListItemIcon>
                 <ListItemText primary={t('warehouses')} />
               </ListItemButton>
-              <ListItemButton onClick={() => navigate('/audit-logs')}>
+              <ListItemButton selected={location.pathname.startsWith('/audit-logs')} onClick={() => navigate('/audit-logs')}>
                 <ListItemIcon>
                   <ManageSearchIcon />
                 </ListItemIcon>
@@ -344,7 +361,8 @@ export default function Layout() {
             </>
           )}
           {can('sync.view') && (
-            <ListItemButton onClick={() => navigate('/sync')}>              <ListItemIcon>
+            <ListItemButton selected={location.pathname.startsWith('/sync')} onClick={() => navigate('/sync')}>
+              <ListItemIcon>
                 <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
                   <LayersIcon />
                 </Badge>

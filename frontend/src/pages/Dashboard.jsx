@@ -280,7 +280,14 @@ function QuickActions({ title, actions }) {
       <Typography variant="subtitle1" gutterBottom>{title}</Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
         {actions.map((action) => (
-          <Button key={action.label} variant="outlined" size="small" disabled={action.disabled}>
+          <Button
+            key={action.label}
+            variant={action.emphasis ? 'contained' : 'outlined'}
+            size="small"
+            disabled={action.disabled}
+            onClick={action.onClick}
+            sx={{ fontWeight: 700 }}
+          >
             {action.label}
           </Button>
         ))}
@@ -949,19 +956,58 @@ export default function Dashboard() {
 
   const roleQuickActions = {
     cashier: [
-      { label: t('dashboard_open_shift', 'Open Shift'), disabled: !canViewDashboard },
-      { label: t('dashboard_close_shift', 'Close Shift'), disabled: !canCloseSelfShift },
-      { label: t('dashboard_open_pos', 'Open POS'), disabled: !canAccessPos },
+      {
+        label: t('dashboard_open_shift', 'Open Shift'),
+        disabled: !canAccessPos,
+        onClick: () => navigate('/pos'),
+        emphasis: true,
+      },
+      {
+        label: t('dashboard_close_shift', 'Close Shift'),
+        disabled: !canCloseSelfShift,
+        onClick: () => navigate('/pos'),
+      },
+      {
+        label: t('dashboard_open_pos', 'Open POS'),
+        disabled: !canAccessPos,
+        onClick: () => navigate('/pos'),
+      },
     ],
     supervisor: [
-      { label: t('dashboard_close_shift', 'Close Shift'), disabled: !canCloseOverride },
-      { label: t('dashboard_view_alerts', 'View Alerts'), disabled: !canViewInventory },
-      { label: t('dashboard_approval_queue', 'Approval Queue'), disabled: !canApproveQueue },
+      {
+        label: t('dashboard_close_shift', 'Close Shift'),
+        disabled: !canCloseOverride,
+        onClick: () => navigate('/pos'),
+        emphasis: true,
+      },
+      {
+        label: t('dashboard_view_alerts', 'View Alerts'),
+        disabled: !canViewInventory,
+        onClick: () => navigate('/inventory'),
+      },
+      {
+        label: t('dashboard_approval_queue', 'Approval Queue'),
+        disabled: !canApproveQueue,
+        onClick: () => navigate('/suppliers'),
+      },
     ],
     admin: [
-      { label: t('dashboard_view_alerts', 'View Alerts'), disabled: !canViewInventory },
-      { label: t('dashboard_create_po', 'Create PO'), disabled: !canApproveQueue },
-      { label: t('dashboard_branch_compare', 'Branch Comparison'), disabled: !canViewBranchComparison },
+      {
+        label: t('dashboard_view_alerts', 'View Alerts'),
+        disabled: !canViewInventory,
+        onClick: () => navigate('/inventory'),
+      },
+      {
+        label: t('dashboard_create_po', 'Create PO'),
+        disabled: !canApproveQueue,
+        onClick: () => navigate('/suppliers'),
+        emphasis: true,
+      },
+      {
+        label: t('dashboard_branch_compare', 'Branch Comparison'),
+        disabled: !canViewBranchComparison,
+        onClick: () => navigate('/reports'),
+      },
     ],
   };
 
@@ -1126,6 +1172,33 @@ export default function Dashboard() {
         subtitle={t('dashboard_subtitle', 'Unified spacing, typography, and density tokens applied.')}
       />
     <Grid container spacing={3}>
+      <Grid item xs={12}>
+        <Paper
+          sx={{
+            p: (theme) => theme.customSpacing?.panelPadding || 2.5,
+            borderRadius: (theme) => theme.shape.cardRadius || 2,
+            border: '1px solid',
+            borderColor: 'divider',
+            background: (theme) => `linear-gradient(120deg, ${theme.palette.primary.main}14 0%, ${theme.palette.secondary.main}14 100%)`,
+          }}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} color="primary" variant="outlined" />
+              <Chip label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} variant="outlined" />
+              <Chip label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} variant="outlined" />
+            </Stack>
+          </Stack>
+        </Paper>
+      </Grid>
       <Grid item xs={12}>
         <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
