@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Grid from '@mui/material/Grid';
-import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -24,6 +23,7 @@ import { useTheme } from '@mui/material/styles';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import EmptyState from '../components/EmptyState';
+import Panel from '../components/ui/Panel';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
 import { PageHeader, PageShell } from '../components/PageLayout';
@@ -177,7 +177,7 @@ function MiniBarChart({ title, data, labelColor = 'text.secondary' }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
       <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 220, mt: 1.5 }}>
         {data.map((item) => (
@@ -197,7 +197,7 @@ function MiniBarChart({ title, data, labelColor = 'text.secondary' }) {
           </Box>
         ))}
       </Stack>
-    </Paper>
+    </Panel>
   );
 }
 
@@ -205,7 +205,7 @@ function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, label
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
       <Stack spacing={2} sx={{ mt: 2.25 }}>
         {data.map((item) => (
@@ -227,7 +227,7 @@ function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, label
           </Box>
         ))}
       </Stack>
-    </Paper>
+    </Panel>
   );
 }
 
@@ -255,7 +255,7 @@ function TrendChart({
     .join(' ');
 
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
       <Typography variant="body2" sx={{ color: labelColor }}>
         {peakLabel}: {yFormatter(max)}
@@ -269,13 +269,13 @@ function TrendChart({
         <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[0]?.label)}</Typography>
         <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[points.length - 1]?.label)}</Typography>
       </Stack>
-    </Paper>
+    </Panel>
   );
 }
 
 function QuickActions({ title, actions }) {
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+    <Panel compact sx={{ minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 700 }}>{title}</Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
         {actions.map((action) => (
@@ -291,13 +291,13 @@ function QuickActions({ title, actions }) {
           </Button>
         ))}
       </Stack>
-    </Paper>
+    </Panel>
   );
 }
 
 function SectionCard({ title, subtitle, children }) {
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2.5, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT, borderRadius: 3 }}>
+    <Panel compact sx={{ height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
       {subtitle && (
         <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
@@ -305,7 +305,7 @@ function SectionCard({ title, subtitle, children }) {
       <Box sx={{ mt: 1.5 }}>
         {children}
       </Box>
-    </Paper>
+    </Panel>
   );
 }
 
@@ -324,7 +324,7 @@ function AlertsCenter({
   onDiscardFailedSync,
 }) {
   return (
-    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
+    <Panel>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
         <Box>
           <Typography variant="h6">{t('dashboard_alerts_center', 'Alerts Center')}</Typography>
@@ -405,7 +405,7 @@ function AlertsCenter({
           })}
         </Stack>
       )}
-    </Paper>
+    </Panel>
   );
 }
 
@@ -1112,25 +1112,26 @@ export default function Dashboard() {
       />
     <Grid container spacing={3}>
       <Grid item xs={12}>
-        <div className="card shadow-sm border-0">
-          <div className="card-body">
-            <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
-              <div>
+        <Panel compact>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2}>
+              <Box>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
                   {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
                 </Typography>
-              </div>
-              <div className="d-flex flex-wrap gap-2 align-items-start">
-                <span className="badge text-bg-primary">{t('dashboard_role', 'Role')}: {toTitle(userRole)}</span>
-                <span className="badge text-bg-secondary">{t('dashboard_timezone', 'Timezone')}: {timezone}</span>
-                <span className="badge text-bg-info">{t('dashboard_period', 'Period')}: {periodPreset.toUpperCase()}</span>
-              </div>
-            </div>
-            <div className="mt-3 row g-2 align-items-end">
-              <div className="col-12 col-md-4 col-lg-3">
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="flex-start">
+                <Chip size="small" color="primary" label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} />
+                <Chip size="small" label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} />
+                <Chip size="small" color="info" label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} />
+              </Stack>
+            </Stack>
+
+            <Grid container spacing={2} alignItems="flex-end">
+              <Grid item xs={12} md={4} lg={3}>
                 <TextField
                   select
                   fullWidth
@@ -1144,10 +1145,10 @@ export default function Dashboard() {
                   <MenuItem value="30d">{t('dashboard_period_30d', 'Last 30 days')}</MenuItem>
                   <MenuItem value="custom">{t('dashboard_period_custom', 'Custom range')}</MenuItem>
                 </TextField>
-              </div>
+              </Grid>
               {periodPreset === 'custom' && (
                 <>
-                  <div className="col-12 col-sm-6 col-lg-3">
+                  <Grid item xs={12} sm={6} lg={3}>
                     <TextField
                       fullWidth
                       size="small"
@@ -1157,8 +1158,8 @@ export default function Dashboard() {
                       value={customRange.date_from}
                       onChange={(event) => setCustomRange((prev) => ({ ...prev, date_from: event.target.value }))}
                     />
-                  </div>
-                  <div className="col-12 col-sm-6 col-lg-3">
+                  </Grid>
+                  <Grid item xs={12} sm={6} lg={3}>
                     <TextField
                       fullWidth
                       size="small"
@@ -1168,17 +1169,17 @@ export default function Dashboard() {
                       value={customRange.date_to}
                       onChange={(event) => setCustomRange((prev) => ({ ...prev, date_to: event.target.value }))}
                     />
-                  </div>
+                  </Grid>
                 </>
               )}
-              <div className="col-12 col-lg">
-                <div className="small text-muted text-lg-end">
+              <Grid item xs={12} lg>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: { xs: 'left', lg: 'right' } }}>
                   {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+                </Typography>
+              </Grid>
+            </Grid>
+          </Stack>
+        </Panel>
       </Grid>
 
       <Grid item xs={12}>
@@ -1248,28 +1249,28 @@ export default function Dashboard() {
               sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
             >
               {salesSeriesLoading ? (
-                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <LoadingState
                     title={t('dashboard_loading_sales_trend_title', 'Loading sales trend')}
                     helperText={t('dashboard_loading_sales_trend_helper', 'We are preparing the chart for your selected window.')}
                   />
-                </Paper>
+                </Panel>
               ) : salesSeriesFailed ? (
-                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <ErrorState
                     title={t('dashboard_sales_trend_error_title', 'Sales trend is unavailable')}
                     helperText={t('dashboard_sales_trend_error_helper', 'Could not load gross sales trend right now. Please retry.')}
                     actionLabel={t('retry', 'Retry')}
                     onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
                   />
-                </Paper>
+                </Panel>
               ) : salesTrendData.length === 0 ? (
-                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <EmptyState
                     title={t('dashboard_sales_trend_empty_title', 'No sales trend data yet')}
                     helperText={t('dashboard_sales_trend_empty_helper', 'Try a different period or wait for new activity to appear.')}
                   />
-                </Paper>
+                </Panel>
               ) : (
                 <TrendChart
                   title={t('dashboard_sales_amount_trend', 'Gross sales')}
@@ -1294,28 +1295,28 @@ export default function Dashboard() {
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
                 {salesSeriesLoading ? (
-                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <LoadingState
                       title={t('dashboard_loading_invoice_trend_title', 'Loading invoice trend')}
                       helperText={t('dashboard_loading_invoice_trend_helper', 'Please wait while invoice counts are calculated.')}
                     />
-                  </Paper>
+                  </Panel>
                 ) : salesSeriesFailed ? (
-                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <ErrorState
                       title={t('dashboard_invoice_trend_error_title', 'Invoice trend is unavailable')}
                       helperText={t('dashboard_invoice_trend_error_helper', 'We could not load invoice trend data. Retry to continue.')}
                       actionLabel={t('retry', 'Retry')}
                       onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
                     />
-                  </Paper>
+                  </Panel>
                 ) : invoicesTrendData.length === 0 ? (
-                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <EmptyState
                       title={t('dashboard_invoice_trend_empty_title', 'No invoice trend data')}
                       helperText={t('dashboard_invoice_trend_empty_helper', 'Invoice counts will show here once transactions are recorded.')}
                     />
-                  </Paper>
+                  </Panel>
                 ) : (
                   <TrendChart
                     title={t('dashboard_invoice_count_trend', 'Invoice count')}
@@ -1333,19 +1334,19 @@ export default function Dashboard() {
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
                 {kpiLoading ? (
-                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <LoadingState
                       title={t('dashboard_loading_stock_title', 'Loading stock alerts')}
                       helperText={t('dashboard_loading_stock_helper', 'Fetching latest low and critical stock signals.')}
                     />
-                  </Paper>
+                  </Panel>
                 ) : stockAlertsData.every((item) => Number(item.value || 0) === 0) ? (
-                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <EmptyState
                       title={t('dashboard_stock_empty_title', 'No stock alerts right now')}
                       helperText={t('dashboard_stock_empty_helper', 'Great news—no low or critical stock alerts were found.')}
                     />
-                  </Paper>
+                  </Panel>
                 ) : (
                   <MiniHorizontalChart
                     title={
@@ -1369,28 +1370,28 @@ export default function Dashboard() {
             sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
           >
             {paymentSplitLoading ? (
-              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <LoadingState
                   title={t('dashboard_loading_payment_split_title', 'Loading payment split')}
                   helperText={t('dashboard_loading_payment_split_helper', 'Getting payment method totals for this period.')}
                 />
-              </Paper>
+              </Panel>
             ) : paymentSplitFailed ? (
-              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <ErrorState
                   title={t('dashboard_payment_split_error_title', 'Payment split is unavailable')}
                   helperText={t('dashboard_payment_split_error_helper', 'Could not load payment method breakdown. Please retry.')}
                   actionLabel={t('retry', 'Retry')}
                   onAction={() => setPaymentSplitRefreshNonce((prev) => prev + 1)}
                 />
-              </Paper>
+              </Panel>
             ) : paymentSplitSeries.length === 0 ? (
-              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <EmptyState
                   title={t('dashboard_payment_split_empty_title', 'No payment split data')}
                   helperText={t('dashboard_payment_split_empty_helper', 'Payment method totals will appear once payments are posted.')}
                 />
-              </Paper>
+              </Panel>
             ) : (
               <MiniBarChart
                 labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
@@ -1415,7 +1416,7 @@ export default function Dashboard() {
 
       {canViewBranchComparison && userRole === 'admin' && (
         <Grid item xs={12}>
-          <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
+          <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
                 <Typography variant="h6">{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
@@ -1473,7 +1474,7 @@ export default function Dashboard() {
                     </Grid>
                   </Grid>
 
-                  <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+                  <TableContainer sx={{ overflowX: 'auto', border: '1px solid', borderColor: 'divider' }}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
@@ -1548,13 +1549,13 @@ export default function Dashboard() {
                 </Typography>
               )}
             </Stack>
-          </Paper>
+          </Panel>
         </Grid>
       )}
 
       {(canViewDashboard || canViewAging) && (
       <Grid item xs={12}>
-        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+        <Panel sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
             <Typography variant="h6">
               {userRole === 'admin'
@@ -1612,7 +1613,7 @@ export default function Dashboard() {
               ))}
             </Stack>
           )}
-        </Paper>
+        </Panel>
       </Grid>
       )}
     </Grid>
