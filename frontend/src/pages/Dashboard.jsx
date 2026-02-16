@@ -8,6 +8,13 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -129,6 +136,21 @@ const getPreviousEquivalentRange = (range) => {
 };
 
 const DASHBOARD_PANEL_MIN_HEIGHT = 290;
+const ALL_BRANCHES_VALUE = '__all__';
+
+const sortBranchRows = (rows, key, direction) => {
+  const multiplier = direction === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const left = a?.[key];
+    const right = b?.[key];
+
+    if (typeof left === 'number' || typeof right === 'number') {
+      return (Number(left || 0) - Number(right || 0)) * multiplier;
+    }
+
+    return String(left || '').localeCompare(String(right || '')) * multiplier;
+  });
+};
 
 function MiniBarChart({ title, data }) {
   const max = Math.max(...data.map((item) => item.value), 1);
@@ -158,7 +180,7 @@ function MiniBarChart({ title, data }) {
   );
 }
 
-function MiniHorizontalChart({ title, data }) {
+function MiniHorizontalChart({ title, data, valueFormatter = formatNumber }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
@@ -169,7 +191,7 @@ function MiniHorizontalChart({ title, data }) {
           <Box key={item.label}>
             <Stack direction="row" justifyContent="space-between">
               <Typography variant="body2">{item.label}</Typography>
-              <Typography variant="body2" color="text.secondary">{formatNumber(item.value)}</Typography>
+              <Typography variant="body2" color="text.secondary">{valueFormatter(item.value)}</Typography>
             </Stack>
             <Box sx={{ mt: 0.5, width: '100%', height: 10, bgcolor: 'action.hover', borderRadius: 1 }}>
               <Box
@@ -292,6 +314,12 @@ export default function Dashboard() {
 
   const [salesTotals, setSalesTotals] = useState({ current: 0, previous: 0 });
   const [accountsReceivableTotals, setAccountsReceivableTotals] = useState({ current: 0, previous: 0 });
+  const [branches, setBranches] = useState([]);
+  const [adminBranchRows, setAdminBranchRows] = useState([]);
+  const [adminBranchLoading, setAdminBranchLoading] = useState(false);
+  const [adminBranchFailed, setAdminBranchFailed] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState(ALL_BRANCHES_VALUE);
+  const [adminBranchSort, setAdminBranchSort] = useState({ key: 'sales', direction: 'desc' });
 
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
 
@@ -499,6 +527,145 @@ export default function Dashboard() {
     };
   }, [paymentSplitRefreshNonce, reportWidgetFailure, timezone, trendWindowDays]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    if (!canViewBranchComparison) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    axios
+      .get('/api/v1/branches/')
+      .then((res) => {
+        if (!mounted) return;
+        const list = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.results) ? res.data.results : []);
+        setBranches(list.map((branch) => ({
+          id: String(branch.id),
+          name: branch.name || branch.code || `${t('branches', 'Branches')} #${branch.id}`,
+        })));
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        setBranches([]);
+        reportWidgetFailure('admin.branches', error);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [canViewBranchComparison, reportWidgetFailure, t]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!canViewBranchComparison || branches.length === 0) {
+      setAdminBranchRows([]);
+      setAdminBranchLoading(false);
+      setAdminBranchFailed(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setAdminBranchLoading(true);
+    setAdminBranchFailed(false);
+
+    const branchTargets = selectedBranchId === ALL_BRANCHES_VALUE
+      ? branches
+      : branches.filter((branch) => branch.id === selectedBranchId);
+
+    if (branchTargets.length === 0) {
+      setAdminBranchRows([]);
+      setAdminBranchLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const alertQuery = new URLSearchParams({ limit: '1000' }).toString();
+    const alertPromise = axios.get(`/api/v1/inventory-alerts/?${alertQuery}`);
+
+    Promise.allSettled(branchTargets.map(async (branch) => {
+      const branchQuery = new URLSearchParams({
+        date_from: activeRange.date_from,
+        date_to: activeRange.date_to,
+        timezone,
+        branch_id: branch.id,
+      }).toString();
+
+      const [salesRes, marginRes] = await Promise.all([
+        axios.get(`/api/v1/reports/daily-sales/?${branchQuery}`),
+        axios.get(`/api/v1/reports/gross-margin/?${branchQuery}`),
+      ]);
+
+      return {
+        branch_id: branch.id,
+        branch_name: branch.name,
+        sales: sumRows(salesRes.data?.results || [], 'gross_sales'),
+        margin_pct: Number(marginRes.data?.margin_pct || 0),
+      };
+    }))
+      .then(async (reportResults) => {
+        const alertResult = await alertPromise.catch((error) => ({ error }));
+        if (!mounted) return;
+
+        const alertsPayload = alertResult?.data;
+        const alertRows = Array.isArray(alertsPayload)
+          ? alertsPayload
+          : (Array.isArray(alertsPayload?.results) ? alertsPayload.results : []);
+
+        const stockoutByBranch = alertRows.reduce((acc, row) => {
+          const branchId = String(row.branch || row.branch_id || '');
+          if (!branchId) return acc;
+          if (selectedBranchId !== ALL_BRANCHES_VALUE && branchId !== selectedBranchId) return acc;
+          acc.set(branchId, (acc.get(branchId) || 0) + 1);
+          return acc;
+        }, new Map());
+
+        const rows = [];
+        let hadFailures = false;
+        reportResults.forEach((result, index) => {
+          if (result.status !== 'fulfilled') {
+            hadFailures = true;
+            reportWidgetFailure('admin.branchMetrics', result.reason, { branchId: branchTargets[index].id, activeRange });
+            return;
+          }
+
+          rows.push({
+            ...result.value,
+            stockout_risk_count: Number(stockoutByBranch.get(result.value.branch_id) || 0),
+          });
+        });
+
+        if (alertResult?.error) {
+          hadFailures = true;
+          reportWidgetFailure('admin.stockoutRisk', alertResult.error, { selectedBranchId });
+        }
+
+        setAdminBranchRows(rows);
+        setAdminBranchFailed(hadFailures);
+      })
+      .finally(() => {
+        if (mounted) {
+          setAdminBranchLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    activeRange.date_from,
+    activeRange.date_to,
+    branches,
+    canViewBranchComparison,
+    reportWidgetFailure,
+    selectedBranchId,
+    timezone,
+  ]);
+
   const salesTrendData = useMemo(
     () => salesSeries.map((item) => ({ label: item.day, value: item.gross_sales })),
     [salesSeries],
@@ -534,6 +701,29 @@ export default function Dashboard() {
   const canApproveQueue = can('supplier.payment.approve');
   const canViewAging = can('sales.customers.view');
   const canViewBranchComparison = can('admin.records.manage') || can('user.manage');
+
+  const adminBranchRanking = useMemo(
+    () => [...adminBranchRows].sort((left, right) => right.sales - left.sales).slice(0, 8)
+      .map((row) => ({ label: row.branch_name, value: row.sales, color: 'primary.main' })),
+    [adminBranchRows],
+  );
+
+  const adminBranchMargin = useMemo(
+    () => [...adminBranchRows].sort((left, right) => right.margin_pct - left.margin_pct).slice(0, 8)
+      .map((row) => ({ label: row.branch_name, value: row.margin_pct, color: 'success.main' })),
+    [adminBranchRows],
+  );
+
+  const adminBranchStockout = useMemo(
+    () => [...adminBranchRows].sort((left, right) => right.stockout_risk_count - left.stockout_risk_count).slice(0, 8)
+      .map((row) => ({ label: row.branch_name, value: row.stockout_risk_count, color: 'warning.main' })),
+    [adminBranchRows],
+  );
+
+  const sortedAdminBranchRows = useMemo(
+    () => sortBranchRows(adminBranchRows, adminBranchSort.key, adminBranchSort.direction),
+    [adminBranchRows, adminBranchSort.direction, adminBranchSort.key],
+  );
 
   const kpis = [
     {
@@ -906,6 +1096,143 @@ export default function Dashboard() {
               />
             )}
           </ButtonBase>
+        </Grid>
+      )}
+
+
+      {canViewBranchComparison && userRole === 'admin' && (
+        <Grid item xs={12}>
+          <Paper sx={{ p: 2 }}>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
+                <Typography variant="h6">{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
+                <TextField
+                  select
+                  size="small"
+                  label={t('branches', 'Branches')}
+                  value={selectedBranchId}
+                  onChange={(event) => setSelectedBranchId(event.target.value)}
+                  sx={{ minWidth: 220, marginInlineStart: { md: 'auto' } }}
+                >
+                  <MenuItem value={ALL_BRANCHES_VALUE}>{t('dashboard_all_branches', 'All branches')}</MenuItem>
+                  {branches.map((branch) => (
+                    <MenuItem key={branch.id} value={branch.id}>{branch.name} ({branch.id})</MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+
+              {adminBranchLoading ? (
+                <LoadingState
+                  title={t('dashboard_loading_branch_analytics_title', 'Loading branch analytics')}
+                  helperText={t('dashboard_loading_branch_analytics_helper', 'Fetching branch sales, margin, and stockout risk signals.')}
+                />
+              ) : adminBranchRows.length === 0 ? (
+                <EmptyState
+                  title={t('dashboard_branch_analytics_empty_title', 'No branch analytics data')}
+                  helperText={t('dashboard_branch_analytics_empty_helper', 'Try another period or branch selection to view branch metrics.')}
+                />
+              ) : (
+                <>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={4}>
+                      <MiniHorizontalChart
+                        title={t('dashboard_branch_sales_ranking', 'Branch sales ranking')}
+                        data={adminBranchRanking}
+                        valueFormatter={formatCurrency}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <MiniHorizontalChart
+                        title={t('dashboard_branch_margin_comparison', 'Branch margin comparison')}
+                        data={adminBranchMargin}
+                        valueFormatter={(value) => `${formatNumber(value)}%`}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <MiniHorizontalChart
+                        title={t('dashboard_branch_stockout_risk_counts', 'Branch stockout-risk counts')}
+                        data={adminBranchStockout}
+                        valueFormatter={formatNumber}
+                      />
+                    </Grid>
+                  </Grid>
+
+                  <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>
+                            <TableSortLabel
+                              active={adminBranchSort.key === 'branch_name'}
+                              direction={adminBranchSort.key === 'branch_name' ? adminBranchSort.direction : 'asc'}
+                              onClick={() => setAdminBranchSort((prev) => ({
+                                key: 'branch_name',
+                                direction: prev.key === 'branch_name' && prev.direction === 'asc' ? 'desc' : 'asc',
+                              }))}
+                            >
+                              {t('branches', 'Branches')}
+                            </TableSortLabel>
+                          </TableCell>
+                          <TableCell align="right">
+                            <TableSortLabel
+                              active={adminBranchSort.key === 'sales'}
+                              direction={adminBranchSort.key === 'sales' ? adminBranchSort.direction : 'desc'}
+                              onClick={() => setAdminBranchSort((prev) => ({
+                                key: 'sales',
+                                direction: prev.key === 'sales' && prev.direction === 'desc' ? 'asc' : 'desc',
+                              }))}
+                            >
+                              {t('dashboard_branch_sales', 'Sales')}
+                            </TableSortLabel>
+                          </TableCell>
+                          <TableCell align="right">
+                            <TableSortLabel
+                              active={adminBranchSort.key === 'margin_pct'}
+                              direction={adminBranchSort.key === 'margin_pct' ? adminBranchSort.direction : 'desc'}
+                              onClick={() => setAdminBranchSort((prev) => ({
+                                key: 'margin_pct',
+                                direction: prev.key === 'margin_pct' && prev.direction === 'desc' ? 'asc' : 'desc',
+                              }))}
+                            >
+                              {t('dashboard_margin', 'Margin %')}
+                            </TableSortLabel>
+                          </TableCell>
+                          <TableCell align="right">
+                            <TableSortLabel
+                              active={adminBranchSort.key === 'stockout_risk_count'}
+                              direction={adminBranchSort.key === 'stockout_risk_count' ? adminBranchSort.direction : 'desc'}
+                              onClick={() => setAdminBranchSort((prev) => ({
+                                key: 'stockout_risk_count',
+                                direction: prev.key === 'stockout_risk_count' && prev.direction === 'desc' ? 'asc' : 'desc',
+                              }))}
+                            >
+                              {t('dashboard_stockout_risk', 'Stockout risk')}
+                            </TableSortLabel>
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {sortedAdminBranchRows.map((row) => (
+                          <TableRow key={row.branch_id}>
+                            <TableCell>{row.branch_name} ({row.branch_id})</TableCell>
+                            <TableCell align="right">{formatCurrency(row.sales)}</TableCell>
+                            <TableCell align="right">{formatNumber(row.margin_pct)}%</TableCell>
+                            <TableCell align="right">{formatNumber(row.stockout_risk_count)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
+
+              {adminBranchFailed && (
+                <Typography variant="caption" color="error.main">
+                  {t('dashboard_branch_analytics_partial', 'Some branch metrics could not be loaded fully. Data may be partial.')}
+                </Typography>
+              )}
+            </Stack>
+          </Paper>
         </Grid>
       )}
 
