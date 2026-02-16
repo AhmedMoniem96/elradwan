@@ -6,9 +6,11 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
+import Button from '@mui/material/Button';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import KpiCard from '../components/KpiCard';
+import { useAuth } from '../AuthContext';
 import {
   formatCurrency,
   formatDate,
@@ -220,8 +222,38 @@ function TrendChart({
   );
 }
 
+function QuickActions({ title, actions }) {
+  return (
+    <Paper sx={{ p: 2 }}>
+      <Typography variant="subtitle1" gutterBottom>{title}</Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
+        {actions.map((action) => (
+          <Button key={action.label} variant="outlined" size="small" disabled={action.disabled}>
+            {action.label}
+          </Button>
+        ))}
+      </Stack>
+    </Paper>
+  );
+}
+
+function SectionCard({ title, subtitle, children }) {
+  return (
+    <Paper sx={{ p: 2, height: '100%' }}>
+      <Typography variant="h6">{title}</Typography>
+      {subtitle && (
+        <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
+      )}
+      <Box sx={{ mt: 1.5 }}>
+        {children}
+      </Box>
+    </Paper>
+  );
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
+  const { user, can } = useAuth();
   const [periodPreset, setPeriodPreset] = useState('today');
   const [customRange, setCustomRange] = useState({ date_from: '', date_to: '' });
 
@@ -383,39 +415,85 @@ export default function Dashboard() {
 
   const salesDelta = computeDeltaPct(salesTotals.current, salesTotals.previous);
   const arDelta = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
+  const userRole = user?.role || 'cashier';
+  const canViewDashboard = can('sales.dashboard.view');
+  const canAccessPos = can('sales.pos.access');
+  const canViewInventory = can('inventory.view');
+  const canCloseSelfShift = can('shift.close.self');
+  const canCloseOverride = can('shift.close.override');
+  const canApproveQueue = can('supplier.payment.approve');
+  const canViewAging = can('sales.customers.view');
+  const canViewBranchComparison = can('admin.records.manage') || can('user.manage');
 
   const kpis = [
     {
+      key: 'sales',
       title: t('todays_sales', 'Sales'),
       value: formatCurrency(salesTotals.current),
       deltaPct: salesDelta,
       trend: trendFromDelta(salesDelta),
     },
     {
+      key: 'openShifts',
       title: t('active_register', 'Open shifts'),
       value: formatNumber(shiftSummary.active_shift_count || 0),
       deltaPct: null,
       trend: 'flat',
     },
     {
+      key: 'stockAlerts',
       title: t('dashboard_stock_alerts', 'Low / critical alerts'),
       value: `${formatNumber(stockSummary.low_count || 0)} / ${formatNumber(stockSummary.critical_count || 0)}`,
       deltaPct: null,
       trend: 'flat',
     },
     {
+      key: 'accountsReceivable',
       title: t('dashboard_accounts_receivable', 'Accounts receivable'),
       value: formatCurrency(accountsReceivableTotals.current),
       deltaPct: arDelta,
       trend: trendFromDelta(arDelta),
     },
     {
+      key: 'shiftVariance',
       title: t('dashboard_shift_variance', 'Cash variance'),
       value: formatCurrency(shiftSummary.variance_total),
       deltaPct: null,
       trend: 'flat',
     },
   ];
+
+  const roleQuickActions = {
+    cashier: [
+      { label: t('dashboard_open_shift', 'Open Shift'), disabled: !canViewDashboard },
+      { label: t('dashboard_close_shift', 'Close Shift'), disabled: !canCloseSelfShift },
+      { label: t('dashboard_open_pos', 'Open POS'), disabled: !canAccessPos },
+    ],
+    supervisor: [
+      { label: t('dashboard_close_shift', 'Close Shift'), disabled: !canCloseOverride },
+      { label: t('dashboard_view_alerts', 'View Alerts'), disabled: !canViewInventory },
+      { label: t('dashboard_approval_queue', 'Approval Queue'), disabled: !canApproveQueue },
+    ],
+    admin: [
+      { label: t('dashboard_view_alerts', 'View Alerts'), disabled: !canViewInventory },
+      { label: t('dashboard_create_po', 'Create PO'), disabled: !canApproveQueue },
+      { label: t('dashboard_branch_compare', 'Branch Comparison'), disabled: !canViewBranchComparison },
+    ],
+  };
+
+  const visibleKpis = useMemo(() => {
+    if (!canViewDashboard) return [];
+
+    if (userRole === 'cashier') {
+      return kpis.filter((item) => ['sales', 'openShifts', 'shiftVariance'].includes(item.key));
+    }
+
+    if (userRole === 'supervisor') {
+      return kpis.filter((item) => item.key !== 'accountsReceivable');
+    }
+
+    return kpis;
+  }, [canViewDashboard, kpis, userRole]);
 
   return (
     <Grid container spacing={3}>
@@ -464,8 +542,15 @@ export default function Dashboard() {
         </Paper>
       </Grid>
 
-      {kpis.map((kpi) => (
-        <Grid key={kpi.title} item xs={12} sm={6} lg={3} xl={2}>
+      <Grid item xs={12}>
+        <QuickActions
+          title={t('dashboard_quick_actions', 'Quick actions')}
+          actions={roleQuickActions[userRole] || roleQuickActions.cashier}
+        />
+      </Grid>
+
+      {visibleKpis.map((kpi) => (
+        <Grid key={kpi.key} item xs={12} sm={6} lg={3} xl={2}>
           <KpiCard
             title={kpi.title}
             value={kpi.value}
@@ -476,66 +561,102 @@ export default function Dashboard() {
         </Grid>
       ))}
 
-      <Grid item xs={12} md={6}>
-        <Stack spacing={2}>
-          <Paper sx={{ p: 2 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
-              <Box>
-                <Typography variant="h6">{t('dashboard_sales_trend', 'Sales trend')}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {t('dashboard_total_for_window', 'Total for selected window')}: {formatCurrency(totalSalesInWindow)}
+      {(userRole === 'cashier' || userRole === 'supervisor' || userRole === 'admin') && canViewDashboard && (
+        <Grid item xs={12} md={6}>
+          <Stack spacing={2}>
+            <SectionCard
+              title={
+                userRole === 'cashier'
+                  ? t('dashboard_current_shift_status', 'Current shift status')
+                  : userRole === 'supervisor'
+                    ? t('dashboard_shift_exceptions', 'Shift exceptions')
+                    : t('dashboard_financial_kpis', 'Financial KPIs')
+              }
+              subtitle={t('dashboard_total_for_window', 'Total for selected window')}
+            >
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  {formatCurrency(totalSalesInWindow)}
                 </Typography>
-              </Box>
-              <TextField
-                select
-                size="small"
-                label={t('dashboard_window', 'Window')}
-                value={trendWindowDays}
-                onChange={(event) => setTrendWindowDays(Number(event.target.value))}
-                sx={{ minWidth: 120 }}
-              >
-                <MenuItem value={7}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 7 })}</MenuItem>
-                <MenuItem value={30}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 30 })}</MenuItem>
-              </TextField>
-            </Stack>
-          </Paper>
-          <TrendChart
-            title={t('dashboard_sales_amount_trend', 'Gross sales')}
-            points={salesTrendData}
-            yFormatter={formatCurrency}
-            peakLabel={t('dashboard_peak_value', 'Peak')}
-            color="primary.main"
+                <TextField
+                  select
+                  size="small"
+                  label={t('dashboard_window', 'Window')}
+                  value={trendWindowDays}
+                  onChange={(event) => setTrendWindowDays(Number(event.target.value))}
+                  sx={{ minWidth: 120 }}
+                >
+                  <MenuItem value={7}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 7 })}</MenuItem>
+                  <MenuItem value={30}>{t('dashboard_last_days', { defaultValue: 'Last {{count}} days', count: 30 })}</MenuItem>
+                </TextField>
+              </Stack>
+            </SectionCard>
+            <TrendChart
+              title={t('dashboard_sales_amount_trend', 'Gross sales')}
+              points={salesTrendData}
+              yFormatter={formatCurrency}
+              peakLabel={t('dashboard_peak_value', 'Peak')}
+              color="primary.main"
+            />
+          </Stack>
+        </Grid>
+      )}
+
+      {canViewDashboard && (
+        <Grid item xs={12} md={6}>
+          <Stack spacing={2}>
+            {(userRole !== 'cashier' || canViewInventory) && (
+              <TrendChart
+                title={t('dashboard_invoice_count_trend', 'Invoice count')}
+                points={invoicesTrendData}
+                yFormatter={formatNumber}
+                peakLabel={t('dashboard_peak_value', 'Peak')}
+                color="secondary.main"
+              />
+            )}
+            {canViewInventory && (
+              <MiniHorizontalChart
+                title={
+                  userRole === 'supervisor'
+                    ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
+                    : t('dashboard_stock_distribution', 'Stock alert distribution')
+                }
+                data={stockAlertsData}
+              />
+            )}
+          </Stack>
+        </Grid>
+      )}
+
+      {canViewDashboard && (userRole !== 'cashier' || canAccessPos) && (
+        <Grid item xs={12}>
+          <MiniBarChart
+            title={
+              userRole === 'admin'
+                ? t('dashboard_branch_comparison', 'Branch comparison')
+                : userRole === 'supervisor'
+                  ? t('dashboard_approval_queue', 'Approval queue')
+                  : t('dashboard_pos_shortcuts', 'POS shortcuts')
+            }
+            data={(paymentSplitSeries || []).map((entry) => ({
+              label: toTitle(entry.method || t('unknown', 'Unknown')),
+              value: Number(entry.amount || 0),
+              color: 'info.main',
+            }))}
           />
-        </Stack>
-      </Grid>
+        </Grid>
+      )}
 
-      <Grid item xs={12} md={6}>
-        <Stack spacing={2}>
-          <TrendChart
-            title={t('dashboard_invoice_count_trend', 'Invoice count')}
-            points={invoicesTrendData}
-            yFormatter={formatNumber}
-            peakLabel={t('dashboard_peak_value', 'Peak')}
-            color="secondary.main"
-          />
-          <MiniHorizontalChart title={t('dashboard_stock_distribution', 'Stock alert distribution')} data={stockAlertsData} />
-        </Stack>
-      </Grid>
-
-      <Grid item xs={12}>
-        <MiniBarChart
-          title={t('dashboard_payment_split_window', 'Payment split (selected window)')}
-          data={(paymentSplitSeries || []).map((entry) => ({
-            label: toTitle(entry.method || t('unknown', 'Unknown')),
-            value: Number(entry.amount || 0),
-            color: 'info.main',
-          }))}
-        />
-      </Grid>
-
+      {(canViewDashboard || canViewAging) && (
       <Grid item xs={12}>
         <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-          <Typography variant="h6" gutterBottom>{t('recent_transactions')}</Typography>
+          <Typography variant="h6" gutterBottom>
+            {userRole === 'admin'
+              ? t('dashboard_aging_reports', 'Aging reports')
+              : userRole === 'supervisor'
+                ? t('dashboard_shift_exceptions', 'Shift exceptions')
+                : t('dashboard_today_transactions', 'Today\'s transactions')}
+          </Typography>
           {recentActivityLoading ? (
             <Typography color="text.secondary">{t('loading', 'Loading...')}</Typography>
           ) : recentActivity.length === 0 ? (
@@ -571,6 +692,7 @@ export default function Dashboard() {
           )}
         </Paper>
       </Grid>
+      )}
     </Grid>
   );
 }
