@@ -18,11 +18,13 @@ import TableSortLabel from '@mui/material/TableSortLabel';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import KpiCard from '../components/KpiCard';
 import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import EmptyState from '../components/EmptyState';
 import { useAuth } from '../AuthContext';
+import { PageHeader, PageShell } from '../components/PageLayout';
 import {
   formatCurrency,
   formatDate,
@@ -152,16 +154,16 @@ const sortBranchRows = (rows, key, direction) => {
   });
 };
 
-function MiniBarChart({ title, data }) {
+function MiniBarChart({ title, data, labelColor = 'text.secondary' }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 170, mt: 1 }}>
         {data.map((item) => (
           <Box key={item.label} sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="caption" color="text.secondary">{formatCurrency(item.value)}</Typography>
+            <Typography variant="caption" sx={{ color: labelColor }}>{formatCurrency(item.value)}</Typography>
             <Box
               sx={{
                 height: `${Math.max((item.value / max) * 100, item.value > 0 ? 6 : 2)}px`,
@@ -172,7 +174,7 @@ function MiniBarChart({ title, data }) {
                 mt: 0.5,
               }}
             />
-            <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>{item.label}</Typography>
+            <Typography variant="caption" sx={{ mt: 1, display: 'block', color: labelColor }}>{item.label}</Typography>
           </Box>
         ))}
       </Stack>
@@ -180,18 +182,18 @@ function MiniBarChart({ title, data }) {
   );
 }
 
-function MiniHorizontalChart({ title, data, valueFormatter = formatNumber }) {
+function MiniHorizontalChart({ title, data, valueFormatter = formatNumber, labelColor = 'text.secondary' }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Stack spacing={1.5} sx={{ mt: 2 }}>
         {data.map((item) => (
           <Box key={item.label}>
             <Stack direction="row" justifyContent="space-between">
               <Typography variant="body2">{item.label}</Typography>
-              <Typography variant="body2" color="text.secondary">{valueFormatter(item.value)}</Typography>
+              <Typography variant="body2" sx={{ color: labelColor }}>{valueFormatter(item.value)}</Typography>
             </Stack>
             <Box sx={{ mt: 0.5, width: '100%', height: 10, bgcolor: 'action.hover', borderRadius: 1 }}>
               <Box
@@ -216,6 +218,7 @@ function TrendChart({
   color = 'primary.main',
   yFormatter = (value) => value,
   peakLabel = 'Peak',
+  labelColor = 'text.secondary',
 }) {
   const values = points.map((point) => point.value);
   const max = Math.max(...values, 0);
@@ -233,9 +236,9 @@ function TrendChart({
     .join(' ');
 
   return (
-    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" sx={{ color: labelColor }}>
         {peakLabel}: {yFormatter(max)}
       </Typography>
       <Box sx={{ mt: 1.5, mb: 1.5, height: 180, bgcolor: 'action.hover', borderRadius: 2, p: 1.5, color }}>
@@ -244,8 +247,8 @@ function TrendChart({
         </svg>
       </Box>
       <Stack direction="row" justifyContent="space-between" spacing={1}>
-        <Typography variant="caption" color="text.secondary">{formatTrendLabel(points[0]?.label)}</Typography>
-        <Typography variant="caption" color="text.secondary">{formatTrendLabel(points[points.length - 1]?.label)}</Typography>
+        <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[0]?.label)}</Typography>
+        <Typography variant="caption" sx={{ color: labelColor }}>{formatTrendLabel(points[points.length - 1]?.label)}</Typography>
       </Stack>
     </Paper>
   );
@@ -253,7 +256,7 @@ function TrendChart({
 
 function QuickActions({ title, actions }) {
   return (
-    <Paper sx={{ p: 2, minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="subtitle1" gutterBottom>{title}</Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
         {actions.map((action) => (
@@ -268,7 +271,7 @@ function QuickActions({ title, actions }) {
 
 function SectionCard({ title, subtitle, children }) {
   return (
-    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6">{title}</Typography>
       {subtitle && (
         <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
@@ -282,6 +285,7 @@ function SectionCard({ title, subtitle, children }) {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const theme = useTheme();
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const [periodPreset, setPeriodPreset] = useState('today');
@@ -818,9 +822,14 @@ export default function Dashboard() {
   }, [canViewDashboard, kpis, userRole]);
 
   return (
+    <PageShell>
+      <PageHeader
+        title={t('dashboard', 'Dashboard')}
+        subtitle={t('dashboard_subtitle', 'Unified spacing, typography, and density tokens applied.')}
+      />
     <Grid container spacing={3}>
       <Grid item xs={12}>
-        <Paper sx={{ p: 2 }}>
+        <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: 130 }}>
               {t('dashboard_period', 'Period')}
@@ -937,14 +946,14 @@ export default function Dashboard() {
               sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
             >
               {salesSeriesLoading ? (
-                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <LoadingState
                     title={t('dashboard_loading_sales_trend_title', 'Loading sales trend')}
                     helperText={t('dashboard_loading_sales_trend_helper', 'We are preparing the chart for your selected window.')}
                   />
                 </Paper>
               ) : salesSeriesFailed ? (
-                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <ErrorState
                     title={t('dashboard_sales_trend_error_title', 'Sales trend is unavailable')}
                     helperText={t('dashboard_sales_trend_error_helper', 'Could not load gross sales trend right now. Please retry.')}
@@ -953,7 +962,7 @@ export default function Dashboard() {
                   />
                 </Paper>
               ) : salesTrendData.length === 0 ? (
-                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                   <EmptyState
                     title={t('dashboard_sales_trend_empty_title', 'No sales trend data yet')}
                     helperText={t('dashboard_sales_trend_empty_helper', 'Try a different period or wait for new activity to appear.')}
@@ -966,6 +975,7 @@ export default function Dashboard() {
                   yFormatter={formatCurrency}
                   peakLabel={t('dashboard_peak_value', 'Peak')}
                   color="primary.main"
+                  labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                 />
               )}
             </ButtonBase>
@@ -982,14 +992,14 @@ export default function Dashboard() {
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
                 {salesSeriesLoading ? (
-                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <LoadingState
                       title={t('dashboard_loading_invoice_trend_title', 'Loading invoice trend')}
                       helperText={t('dashboard_loading_invoice_trend_helper', 'Please wait while invoice counts are calculated.')}
                     />
                   </Paper>
                 ) : salesSeriesFailed ? (
-                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <ErrorState
                       title={t('dashboard_invoice_trend_error_title', 'Invoice trend is unavailable')}
                       helperText={t('dashboard_invoice_trend_error_helper', 'We could not load invoice trend data. Retry to continue.')}
@@ -998,7 +1008,7 @@ export default function Dashboard() {
                     />
                   </Paper>
                 ) : invoicesTrendData.length === 0 ? (
-                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <EmptyState
                       title={t('dashboard_invoice_trend_empty_title', 'No invoice trend data')}
                       helperText={t('dashboard_invoice_trend_empty_helper', 'Invoice counts will show here once transactions are recorded.')}
@@ -1021,14 +1031,14 @@ export default function Dashboard() {
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
                 {kpiLoading ? (
-                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <LoadingState
                       title={t('dashboard_loading_stock_title', 'Loading stock alerts')}
                       helperText={t('dashboard_loading_stock_helper', 'Fetching latest low and critical stock signals.')}
                     />
                   </Paper>
                 ) : stockAlertsData.every((item) => Number(item.value || 0) === 0) ? (
-                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                     <EmptyState
                       title={t('dashboard_stock_empty_title', 'No stock alerts right now')}
                       helperText={t('dashboard_stock_empty_helper', 'Great news—no low or critical stock alerts were found.')}
@@ -1057,14 +1067,14 @@ export default function Dashboard() {
             sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
           >
             {paymentSplitLoading ? (
-              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <LoadingState
                   title={t('dashboard_loading_payment_split_title', 'Loading payment split')}
                   helperText={t('dashboard_loading_payment_split_helper', 'Getting payment method totals for this period.')}
                 />
               </Paper>
             ) : paymentSplitFailed ? (
-              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <ErrorState
                   title={t('dashboard_payment_split_error_title', 'Payment split is unavailable')}
                   helperText={t('dashboard_payment_split_error_helper', 'Could not load payment method breakdown. Please retry.')}
@@ -1073,7 +1083,7 @@ export default function Dashboard() {
                 />
               </Paper>
             ) : paymentSplitSeries.length === 0 ? (
-              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+              <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
                 <EmptyState
                   title={t('dashboard_payment_split_empty_title', 'No payment split data')}
                   helperText={t('dashboard_payment_split_empty_helper', 'Payment method totals will appear once payments are posted.')}
@@ -1081,6 +1091,7 @@ export default function Dashboard() {
               </Paper>
             ) : (
               <MiniBarChart
+                labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                 title={
                   userRole === 'admin'
                     ? t('dashboard_branch_comparison', 'Branch comparison')
@@ -1102,7 +1113,7 @@ export default function Dashboard() {
 
       {canViewBranchComparison && userRole === 'admin' && (
         <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
                 <Typography variant="h6">{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
@@ -1139,6 +1150,7 @@ export default function Dashboard() {
                         title={t('dashboard_branch_sales_ranking', 'Branch sales ranking')}
                         data={adminBranchRanking}
                         valueFormatter={formatCurrency}
+                        labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                       />
                     </Grid>
                     <Grid item xs={12} md={4}>
@@ -1146,6 +1158,7 @@ export default function Dashboard() {
                         title={t('dashboard_branch_margin_comparison', 'Branch margin comparison')}
                         data={adminBranchMargin}
                         valueFormatter={(value) => `${formatNumber(value)}%`}
+                        labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                       />
                     </Grid>
                     <Grid item xs={12} md={4}>
@@ -1153,6 +1166,7 @@ export default function Dashboard() {
                         title={t('dashboard_branch_stockout_risk_counts', 'Branch stockout-risk counts')}
                         data={adminBranchStockout}
                         valueFormatter={formatNumber}
+                        labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                       />
                     </Grid>
                   </Grid>
@@ -1300,5 +1314,6 @@ export default function Dashboard() {
       </Grid>
       )}
     </Grid>
+    </PageShell>
   );
 }

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useMemo, useContext, useEffect } from 'react';
-import { createTheme, ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
+import { alpha, createTheme, ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import { CacheProvider } from '@emotion/react';
 import createCache from '@emotion/cache';
 import rtlPlugin from 'stylis-plugin-rtl';
@@ -37,15 +37,34 @@ export const ThemeContextProvider = ({ children }) => {
   const theme = useMemo(
     () => {
       const isDark = mode === 'dark';
+      const tokens = {
+        spacing: {
+          pageX: { xs: 2, md: 3 },
+          pageY: { xs: 2, md: 3 },
+          sectionGap: 2,
+          panelPadding: 2.5,
+          panelPaddingDense: 2,
+        },
+        radius: {
+          panel: 16,
+          control: 10,
+          chip: 999,
+        },
+        elevation: {
+          panel: isDark
+            ? '0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.3)'
+            : '0 1px 2px rgba(24, 39, 75, 0.08), 0 8px 20px rgba(24, 39, 75, 0.08)',
+        },
+      };
 
       return createTheme({
         direction,
         spacing: 8,
         shape: {
-          borderRadius: 12,
-          cardRadius: 16,
-          inputRadius: 10,
-          chipRadius: 999,
+          borderRadius: tokens.radius.control,
+          cardRadius: tokens.radius.panel,
+          inputRadius: tokens.radius.control,
+          chipRadius: tokens.radius.chip,
         },
         palette: {
           mode,
@@ -94,16 +113,19 @@ export const ThemeContextProvider = ({ children }) => {
           },
         },
         customSpacing: {
-          pageX: { xs: 1.5, md: 3 },
-          pageY: { xs: 1.5, md: 2.5 },
-          sectionGap: 2,
-          cardPadding: 2,
+          ...tokens.spacing,
+          cardPadding: tokens.spacing.panelPadding,
         },
         customElevation: {
-          cardShadow: isDark
-            ? '0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.3)'
-            : '0 1px 2px rgba(24, 39, 75, 0.08), 0 8px 20px rgba(24, 39, 75, 0.08)',
+          cardShadow: tokens.elevation.panel,
           panelBorder: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
+        },
+        customTokens: {
+          ...tokens,
+          contrast: {
+            chartLabel: isDark ? '#E8EEFF' : '#2A3550',
+            statusChipBorder: isDark ? alpha('#D5E2FF', 0.44) : alpha('#2A4B84', 0.22),
+          },
         },
         components: {
           MuiButton: {
@@ -127,7 +149,7 @@ export const ThemeContextProvider = ({ children }) => {
           MuiOutlinedInput: {
             styleOverrides: {
               root: {
-                borderRadius: 10,
+                borderRadius: tokens.radius.control,
               },
             },
           },
@@ -136,11 +158,9 @@ export const ThemeContextProvider = ({ children }) => {
               {
                 props: { variant: 'panel' },
                 style: {
-                  borderRadius: 16,
+                  borderRadius: tokens.radius.panel,
                   border: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
-                  boxShadow: isDark
-                    ? '0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.3)'
-                    : '0 1px 2px rgba(24, 39, 75, 0.08), 0 8px 20px rgba(24, 39, 75, 0.08)',
+                  boxShadow: tokens.elevation.panel,
                 },
               },
             ],
@@ -148,8 +168,9 @@ export const ThemeContextProvider = ({ children }) => {
           MuiChip: {
             styleOverrides: {
               root: {
-                borderRadius: 999,
+                borderRadius: tokens.radius.chip,
                 fontWeight: 500,
+                border: `1px solid ${isDark ? alpha('#D5E2FF', 0.44) : alpha('#2A4B84', 0.22)}`,
               },
             },
           },
@@ -168,6 +189,26 @@ export const ThemeContextProvider = ({ children }) => {
                 '&.Mui-selected': {
                   backgroundColor: isDark ? 'rgba(126, 169, 255, 0.2)' : 'rgba(30, 91, 184, 0.14)',
                 },
+              },
+            },
+          },
+          MuiTable: {
+            defaultProps: {
+              size: 'small',
+            },
+          },
+          MuiTableCell: {
+            styleOverrides: {
+              root: {
+                paddingTop: 10,
+                paddingBottom: 10,
+              },
+              head: {
+                fontWeight: 600,
+                fontSize: '0.78rem',
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                color: isDark ? '#BFCBE5' : '#4A5B7D',
               },
             },
           },

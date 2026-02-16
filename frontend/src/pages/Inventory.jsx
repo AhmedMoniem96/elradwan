@@ -22,6 +22,7 @@ import {
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { useSync } from '../sync/SyncContext';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
@@ -62,6 +63,7 @@ const initialProductForm = {
 
 export default function Inventory() {
   const { t } = useTranslation();
+  const theme = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
   const { enqueueEvent, pushNow, pullNow } = useSync();
   const [products, setProducts] = useState([]);
@@ -464,10 +466,9 @@ export default function Inventory() {
 
       <SectionPanel title={t('inventory_low_critical_stock')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
-          <Typography variant="h6">{t('inventory_low_critical_stock')}</Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip color="error" label={`${t('inventory_critical_label')}: ${filteredCriticalCount}`} />
-            <Chip color="warning" label={`${t('inventory_low_label')}: ${filteredLowCount}`} />
+            <Chip color="error" label={`${t('inventory_critical_label')}: ${filteredCriticalCount}`} sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder }} />
+            <Chip color="warning" label={`${t('inventory_low_label')}: ${filteredLowCount}`} sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder }} />
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">{t('export_csv')}</Button>
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">{t('export_pdf')}</Button>
             <TextField
@@ -538,7 +539,12 @@ export default function Inventory() {
                   <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : '-'}</TableCell>
                   <TableCell>{row.recommended_reorder_quantity || row.suggested_reorder_quantity}</TableCell>
                   <TableCell>
-                    <Chip size="small" color={row.severity === 'critical' ? 'error' : 'warning'} label={row.severity} />
+                    <Chip
+                      size="small"
+                      color={row.severity === 'critical' ? 'error' : 'warning'}
+                      label={row.severity}
+                      sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -794,7 +800,7 @@ export default function Inventory() {
                   <TableCell>{transfer.reference}</TableCell>
                   <TableCell>{warehouses.find((w) => w.id === transfer.source_warehouse)?.name || t('none')}</TableCell>
                   <TableCell>{warehouses.find((w) => w.id === transfer.destination_warehouse)?.name || t('none')}</TableCell>
-                  <TableCell><Chip label={transfer.status} size="small" /></TableCell>
+                  <TableCell><Chip label={transfer.status} size="small" sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }} /></TableCell>
                   <TableCell>{(transfer.lines || []).map((line) => `${line.product_name || line.product} (${line.quantity})`).join(', ')}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" justifyContent="flex-end" spacing={1}>
