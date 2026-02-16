@@ -26,6 +26,7 @@ import ToggleOnIcon from '@mui/icons-material/ToggleOn';
 import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { normalizeCollectionResponse } from '../utils/api';
 
 const initialForm = {
   code: '',
@@ -54,7 +55,7 @@ export default function Branches() {
     setError('');
     try {
       const response = await axios.get('/api/v1/branches/');
-      setBranches(response.data || []);
+      setBranches(normalizeCollectionResponse(response.data));
     } catch (err) {
       const apiMessage = err.response?.data?.detail;
       setError(apiMessage || t('branches_load_error'));

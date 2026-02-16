@@ -28,6 +28,7 @@ import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
+import { normalizeCollectionResponse } from '../utils/api';
 
 const emptyLine = { product: '', quantity: '1.00' };
 
@@ -108,17 +109,17 @@ export default function Inventory() {
         axios.get('/api/v1/suppliers/'),
         axios.get('/api/v1/reports/supplier-aging/'),
       ]);
-      setProducts(productsRes.data);
-      setCategories(categoriesRes.data || []);
-      setWarehouses(warehousesRes.data);
-      setTransfers(transferRes.data);
+      setProducts(normalizeCollectionResponse(productsRes.data));
+      setCategories(normalizeCollectionResponse(categoriesRes.data));
+      setWarehouses(normalizeCollectionResponse(warehousesRes.data));
+      setTransfers(normalizeCollectionResponse(transferRes.data));
       setStockIntel(stockRes.data || { rows: [] });
-      setStockoutRisk(stockoutRiskRes.data || []);
-      setAlerts(unreadAlertsRes.data || []);
-      setSuppliers(suppliersRes.data || []);
-      setSupplierAging(agingRes.data || []);
+      setStockoutRisk(normalizeCollectionResponse(stockoutRiskRes.data));
+      setAlerts(normalizeCollectionResponse(unreadAlertsRes.data));
+      setSuppliers(normalizeCollectionResponse(suppliersRes.data));
+      setSupplierAging(normalizeCollectionResponse(agingRes.data));
       setDraftStatus(
-        productsRes.data.reduce((acc, p) => {
+        normalizeCollectionResponse(productsRes.data).reduce((acc, p) => {
           acc[p.id] = p.stock_status || '';
           return acc;
         }, {}),

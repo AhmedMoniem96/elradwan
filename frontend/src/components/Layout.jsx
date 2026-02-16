@@ -40,6 +40,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
+import { normalizeCountFromCollection } from '../utils/api';
 import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
@@ -111,7 +112,7 @@ export default function Layout() {
   const [unreadAlerts, setUnreadAlerts] = React.useState(0);
 
   React.useEffect(() => {
-    axios.get('/api/v1/alerts/unread/').then((res) => setUnreadAlerts((res.data || []).length)).catch(() => {});
+    axios.get('/api/v1/alerts/unread/').then((res) => setUnreadAlerts(normalizeCountFromCollection(res.data))).catch(() => {});
   }, []);
 
   const toggleDrawer = () => {

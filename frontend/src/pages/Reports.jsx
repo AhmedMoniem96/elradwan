@@ -22,6 +22,7 @@ import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
 import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
+import { normalizeCollectionResponse } from '../utils/api';
 
 const TableCard = ({ title, columns, rows }) => (
   <SectionPanel title={title} contentSx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, '&:last-child': { pb: (theme) => theme.customSpacing?.panelPaddingDense || 2 } }}>
@@ -84,13 +85,13 @@ export default function Reports() {
         axios.get(`/api/v1/reports/accounts-receivable/?${queryParams}`),
       ]);
 
-      setBranches(branchesRes.data || []);
-      setDailySales(dailySalesRes.data.results || []);
-      setTopProducts(topProductsRes.data.results || []);
-      setTopCustomers(topCustomersRes.data.results || []);
-      setPaymentSplit(paymentSplitRes.data.results || []);
+      setBranches(normalizeCollectionResponse(branchesRes.data));
+      setDailySales(normalizeCollectionResponse(dailySalesRes.data));
+      setTopProducts(normalizeCollectionResponse(topProductsRes.data));
+      setTopCustomers(normalizeCollectionResponse(topCustomersRes.data));
+      setPaymentSplit(normalizeCollectionResponse(paymentSplitRes.data));
       setGrossMargin(grossMarginRes.data || {});
-      setArReport(arReportRes.data.results || []);
+      setArReport(normalizeCollectionResponse(arReportRes.data));
       setError('');
     } catch {
       setError('في مشكلة في تحميل التقارير. جرّب تعمل تحديث.');
