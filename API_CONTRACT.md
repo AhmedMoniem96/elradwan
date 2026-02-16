@@ -85,7 +85,8 @@ The server emits **SyncOutbox** rows on every domain change. The `id` is a **BIG
   "rejected": [
     {
       "event_id": "uuid",
-      "reason": "validation_failed|forbidden|conflict",
+      "reason": "Validation failed.|Forbidden.|Conflict detected.|Domain rule violation.",
+      "code": "validation_failed|forbidden|conflict|domain_rule_violation",
       "details": {"field": "error"}
     }
   ],
@@ -96,6 +97,19 @@ The server emits **SyncOutbox** rows on every domain change. The `id` is a **BIG
 **Error responses**
 - Uses the standard error envelope (`code`, `message`, `errors`, `status`).
 - Common `code` values for this endpoint: `validation_error`, `forbidden_device`, `device_not_found`, `not_authenticated`.
+- Device/branch authorization semantics are stable: missing/inactive device returns `404` (`device_not_found`), authenticated cross-branch device access returns `403` (`forbidden_device`), and request validation issues return `422` (`validation_error`).
+
+**Per-event rejection contract (`rejected[]`)**
+- `event_id`: client event UUID.
+- `code`: stable machine code (`validation_failed`, `forbidden`, `conflict`, `domain_rule_violation`).
+- `reason`: human-readable summary aligned with `code`.
+- `details`: structured object with field/domain-specific diagnostics.
+
+**Per-event rejection codes**
+- `validation_failed` → event payload failed schema/domain input validation (for example missing/invalid fields).
+- `forbidden` → event payload violates branch/device authorization scope.
+- `conflict` → idempotency or integrity conflict while applying event.
+- `domain_rule_violation` → business-rule failure not covered by the above categories.
 
 ---
 

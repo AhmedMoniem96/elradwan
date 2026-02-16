@@ -12,9 +12,28 @@ from sync.permissions import (
 from sync.serializers import SyncConflictActionSerializer, SyncPullSerializer, SyncPushSerializer
 from sync.services import (
     REJECT_CODE_CONFLICT,
+    REJECT_CODE_DOMAIN_RULE_VIOLATION,
+    REJECT_CODE_FORBIDDEN,
     REJECT_CODE_VALIDATION_FAILED,
     process_sync_event,
 )
+
+
+REJECTION_REASON_MESSAGES = {
+    REJECT_CODE_VALIDATION_FAILED: "Validation failed.",
+    REJECT_CODE_FORBIDDEN: "Forbidden.",
+    REJECT_CODE_CONFLICT: "Conflict detected.",
+    REJECT_CODE_DOMAIN_RULE_VIOLATION: "Domain rule violation.",
+}
+
+
+def build_rejection(event_id, code, details=None):
+    return {
+        "event_id": str(event_id),
+        "reason": REJECTION_REASON_MESSAGES.get(code, "Request rejected."),
+        "code": code,
+        "details": details or {},
+    }
 
 
 class SyncPushView(APIView):
@@ -38,12 +57,11 @@ class SyncPushView(APIView):
             payload_branch_id = str(event["payload"].get("branch_id", ""))
             if payload_branch_id != str(device.branch_id):
                 rejected.append(
-                    {
-                        "event_id": str(event["event_id"]),
-                        "reason": REJECT_CODE_VALIDATION_FAILED,
-                        "code": REJECT_CODE_VALIDATION_FAILED,
-                        "details": {"branch_id": "Payload branch_id does not match device branch."},
-                    }
+                    build_rejection(
+                        event["event_id"],
+                        REJECT_CODE_VALIDATION_FAILED,
+                        {"branch_id": "Payload branch_id does not match device branch."},
+                    )
                 )
                 continue
 
@@ -86,22 +104,16 @@ class SyncPushView(APIView):
                             sync_event.status = SyncEvent.Status.REJECTED
                             sync_event.save(update_fields=["status", "processed_at"])
                         rejected.append(
-                            {
-                                "event_id": str(event["event_id"]),
-                                "reason": result.reason,
-                                "code": result.reason,
-                                "details": result.details or {},
-                            }
+                            build_rejection(event["event_id"], result.reason, result.details)
                         )
 
             except IntegrityError as exc:
                 rejected.append(
-                    {
-                        "event_id": str(event["event_id"]),
-                        "reason": REJECT_CODE_CONFLICT,
-                        "code": REJECT_CODE_CONFLICT,
-                        "details": {"error": str(exc)},
-                    }
+                    build_rejection(
+                        event["event_id"],
+                        REJECT_CODE_CONFLICT,
+                        {"error": str(exc)},
+                    )
                 )
 
         latest_outbox = SyncOutbox.objects.order_by("-id").first()
