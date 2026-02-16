@@ -14,6 +14,10 @@ DEVICE_NOT_FOUND_CODE = "device_not_found"
 VALIDATION_FAILED_CODE = "validation_error"
 
 
+def _device_error_details(message: str) -> dict[str, list[str]]:
+    return {"device_id": [message]}
+
+
 def validation_failed_response(errors: dict[str, Any], *, status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> Response:
     return error_response(
         code=VALIDATION_FAILED_CODE,
@@ -63,7 +67,7 @@ def get_permitted_device(user: User, device_id) -> tuple[Device | None, Response
     if device is not None:
         return device, None
 
-    return None, forbidden_device_response({"device_id": [error_message]}, status_code=status_code)
+    return None, forbidden_device_response(_device_error_details(error_message), status_code=status_code)
 
 
 def _has_admin_override(user: User) -> bool:
