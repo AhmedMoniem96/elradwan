@@ -264,6 +264,12 @@ class CashShiftTests(TestCase):
             password="pass1234",
             branch=self.branch,
         )
+        self.admin = self.user_model.objects.create_user(
+            username="cashier-admin",
+            password="pass1234",
+            branch=self.branch,
+            role="admin",
+        )
         self.device = Device.objects.create(branch=self.branch, name="POS", identifier="pos-1")
         self.inactive_device = Device.objects.create(
             branch=self.branch,
@@ -307,6 +313,78 @@ class CashShiftTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("active cash shift", str(response.json()).lower())
+
+    def test_payment_contract_requires_all_fields(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.user, device=self.device, opening_amount=Decimal("10.00"))
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "invoice": str(self.invoice.id),
+                "amount": "10.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json(),
+            {
+                "method": ["This field is required for POS payments."],
+                "device": ["This field is required for POS payments."],
+                "event_id": ["This field is required for POS payments."],
+                "paid_at": ["This field is required for POS payments."],
+            },
+        )
+
+    def test_invoice_status_transitions_follow_persisted_payments(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.user, device=self.device, opening_amount=Decimal("10.00"))
+        self.client.force_authenticate(user=self.user)
+
+        first_payment = self.client.post(
+            "/api/v1/payments/",
+            {
+                "invoice": str(self.invoice.id),
+                "method": "cash",
+                "amount": "40.00",
+                "paid_at": timezone.now().isoformat(),
+                "event_id": str(uuid.uuid4()),
+                "device": str(self.device.id),
+            },
+            format="json",
+        )
+        self.assertEqual(first_payment.status_code, 201)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PARTIALLY_PAID)
+        self.assertEqual(self.invoice.amount_paid, Decimal("40.00"))
+        self.assertEqual(self.invoice.balance_due, Decimal("60.00"))
+
+        second_payment = self.client.post(
+            "/api/v1/payments/",
+            {
+                "invoice": str(self.invoice.id),
+                "method": "card",
+                "amount": "60.00",
+                "paid_at": timezone.now().isoformat(),
+                "event_id": str(uuid.uuid4()),
+                "device": str(self.device.id),
+            },
+            format="json",
+        )
+        self.assertEqual(second_payment.status_code, 201)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.assertEqual(self.invoice.amount_paid, Decimal("100.00"))
+        self.assertEqual(self.invoice.balance_due, Decimal("0.00"))
+
+        self.client.force_authenticate(user=self.admin)
+        delete_response = self.client.delete(f"/api/v1/payments/{second_payment.json()['id']}/")
+        self.assertEqual(delete_response.status_code, 204)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PARTIALLY_PAID)
+        self.assertEqual(self.invoice.amount_paid, Decimal("40.00"))
+        self.assertEqual(self.invoice.balance_due, Decimal("60.00"))
 
     def test_cannot_open_shift_with_other_branch_device(self):
         self.client.force_authenticate(user=self.user)
@@ -625,7 +703,6 @@ class PosInvoiceCreateTests(TestCase):
                         "unit_price": "25.00",
                     }
                 ],
-                "initial_payment": {"amount": "50.00", "method": "cash"},
             },
             format="json",
         )
@@ -634,9 +711,11 @@ class PosInvoiceCreateTests(TestCase):
         invoice = Invoice.objects.get(id=response.json()["id"])
         self.assertEqual(invoice.user_id, self.cashier.id)
         self.assertEqual(invoice.device_id, self.device.id)
-        self.assertEqual(invoice.status, Invoice.Status.PAID)
+        self.assertEqual(invoice.status, Invoice.Status.OPEN)
+        self.assertEqual(invoice.amount_paid, Decimal("0.00"))
+        self.assertEqual(invoice.balance_due, Decimal("50.00"))
         self.assertEqual(invoice.lines.count(), 1)
-        self.assertEqual(invoice.payments.count(), 1)
+        self.assertEqual(invoice.payments.count(), 0)
 
     def test_create_pos_invoice_requires_open_shift(self):
         self.client.force_authenticate(user=self.cashier)

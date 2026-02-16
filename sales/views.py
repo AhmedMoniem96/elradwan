@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -28,6 +29,7 @@ from sales.serializers import (
     ReturnSerializer,
     ShiftSummarySerializer,
     get_shift_report,
+    refresh_invoice_payment_status,
 )
 
 
@@ -236,6 +238,12 @@ class PaymentViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         )
 
 
+    def perform_destroy(self, instance):
+        invoice = instance.invoice
+        with transaction.atomic():
+            super().perform_destroy(instance)
+            refresh_invoice_payment_status(invoice)
+
 class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
     queryset = Return.objects.all()
     serializer_class = ReturnSerializer
@@ -372,27 +380,6 @@ class PosInvoiceCreateView(APIView):
             branch=invoice.branch,
             device=invoice.device,
         )
-
-        payment = serializer.validated_data.get("_created_payment")
-        if payment is not None:
-            payment_payload = PaymentSerializer(payment).data
-            emit_outbox(
-                branch_id=payment.invoice.branch_id,
-                entity="payment",
-                entity_id=payment.id,
-                op="upsert",
-                payload=payment_payload,
-            )
-            create_audit_log_from_request(
-                request,
-                action="payment.create",
-                entity="payment",
-                entity_id=payment.id,
-                after_snapshot=payment_payload,
-                event_id=payment.event_id,
-                branch=payment.invoice.branch,
-                device=payment.device,
-            )
 
         return Response(invoice_payload, status=status.HTTP_201_CREATED)
 
