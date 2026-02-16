@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -12,6 +12,9 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import KpiCard from '../components/KpiCard';
+import LoadingState from '../components/LoadingState';
+import ErrorState from '../components/ErrorState';
+import EmptyState from '../components/EmptyState';
 import { useAuth } from '../AuthContext';
 import {
   formatCurrency,
@@ -125,11 +128,13 @@ const getPreviousEquivalentRange = (range) => {
   };
 };
 
+const DASHBOARD_PANEL_MIN_HEIGHT = 290;
+
 function MiniBarChart({ title, data }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: 2, height: '100%' }}>
+    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Stack direction="row" spacing={2} alignItems="end" sx={{ minHeight: 170, mt: 1 }}>
         {data.map((item) => (
@@ -157,7 +162,7 @@ function MiniHorizontalChart({ title, data }) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <Paper sx={{ p: 2, height: '100%' }}>
+    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Stack spacing={1.5} sx={{ mt: 2 }}>
         {data.map((item) => (
@@ -206,7 +211,7 @@ function TrendChart({
     .join(' ');
 
   return (
-    <Paper sx={{ p: 2, height: '100%' }}>
+    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Typography variant="caption" color="text.secondary">
         {peakLabel}: {yFormatter(max)}
@@ -226,7 +231,7 @@ function TrendChart({
 
 function QuickActions({ title, actions }) {
   return (
-    <Paper sx={{ p: 2 }}>
+    <Paper sx={{ p: 2, minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="subtitle1" gutterBottom>{title}</Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
         {actions.map((action) => (
@@ -241,7 +246,7 @@ function QuickActions({ title, actions }) {
 
 function SectionCard({ title, subtitle, children }) {
   return (
-    <Paper sx={{ p: 2, height: '100%' }}>
+    <Paper sx={{ p: 2, height: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
       <Typography variant="h6">{title}</Typography>
       {subtitle && (
         <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
@@ -270,15 +275,33 @@ export default function Dashboard() {
   const [recentActivityLoading, setRecentActivityLoading] = useState(true);
   const [recentActivityFailed, setRecentActivityFailed] = useState(false);
   const [kpiLoading, setKpiLoading] = useState(true);
+  const [kpiFailed, setKpiFailed] = useState(false);
 
   const [trendWindowDays, setTrendWindowDays] = useState(7);
   const [salesSeries, setSalesSeries] = useState([]);
+  const [salesSeriesLoading, setSalesSeriesLoading] = useState(true);
+  const [salesSeriesFailed, setSalesSeriesFailed] = useState(false);
   const [paymentSplitSeries, setPaymentSplitSeries] = useState([]);
+  const [paymentSplitLoading, setPaymentSplitLoading] = useState(true);
+  const [paymentSplitFailed, setPaymentSplitFailed] = useState(false);
+
+  const [kpiRefreshNonce, setKpiRefreshNonce] = useState(0);
+  const [recentActivityRefreshNonce, setRecentActivityRefreshNonce] = useState(0);
+  const [salesSeriesRefreshNonce, setSalesSeriesRefreshNonce] = useState(0);
+  const [paymentSplitRefreshNonce, setPaymentSplitRefreshNonce] = useState(0);
 
   const [salesTotals, setSalesTotals] = useState({ current: 0, previous: 0 });
   const [accountsReceivableTotals, setAccountsReceivableTotals] = useState({ current: 0, previous: 0 });
 
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+
+  const reportWidgetFailure = useCallback((widgetName, error, metadata = {}) => {
+    console.error(`[dashboard] ${widgetName} widget failed`, {
+      message: error?.message,
+      status: error?.response?.status,
+      metadata,
+    });
+  }, []);
 
   const activeRange = useMemo(() => getRangeByPreset(periodPreset, customRange), [periodPreset, customRange]);
 
@@ -292,12 +315,13 @@ export default function Dashboard() {
     }
 
     setKpiLoading(true);
+    setKpiFailed(false);
 
     const previousRange = getPreviousEquivalentRange(activeRange);
     const currentParams = new URLSearchParams({ ...activeRange, timezone }).toString();
     const previousParams = new URLSearchParams({ ...previousRange, timezone }).toString();
 
-    Promise.all([
+    Promise.allSettled([
       axios.get('/api/v1/invoices/dashboard-summary/'),
       axios.get('/api/v1/stock-intelligence/'),
       axios.get(`/api/v1/reports/daily-sales/?${currentParams}`),
@@ -308,21 +332,53 @@ export default function Dashboard() {
       .then(([shiftRes, stockRes, salesCurrentRes, salesPreviousRes, arCurrentRes, arPreviousRes]) => {
         if (!mounted) return;
 
-        setShiftSummary((prev) => ({ ...prev, ...(shiftRes.data || {}) }));
-        setStockSummary((prev) => ({ ...prev, ...(stockRes.data || {}) }));
+        const failedRequests = [];
 
-        const currentSales = sumRows(salesCurrentRes.data?.results || [], 'gross_sales');
-        const previousSales = sumRows(salesPreviousRes.data?.results || [], 'gross_sales');
-        setSalesTotals({ current: currentSales, previous: previousSales });
+        if (shiftRes.status === 'fulfilled') {
+          setShiftSummary((prev) => ({ ...prev, ...(shiftRes.value.data || {}) }));
+        } else {
+          failedRequests.push('shiftSummary');
+          reportWidgetFailure('kpis.shiftSummary', shiftRes.reason, { activeRange });
+        }
 
-        const currentAr = sumRows(arCurrentRes.data?.results || [], 'balance_due');
-        const previousAr = sumRows(arPreviousRes.data?.results || [], 'balance_due');
-        setAccountsReceivableTotals({ current: currentAr, previous: previousAr });
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setSalesTotals({ current: 0, previous: 0 });
-        setAccountsReceivableTotals({ current: 0, previous: 0 });
+        if (stockRes.status === 'fulfilled') {
+          setStockSummary((prev) => ({ ...prev, ...(stockRes.value.data || {}) }));
+        } else {
+          failedRequests.push('stockSummary');
+          reportWidgetFailure('kpis.stockSummary', stockRes.reason, { activeRange });
+        }
+
+        if (salesCurrentRes.status === 'fulfilled' && salesPreviousRes.status === 'fulfilled') {
+          const currentSales = sumRows(salesCurrentRes.value.data?.results || [], 'gross_sales');
+          const previousSales = sumRows(salesPreviousRes.value.data?.results || [], 'gross_sales');
+          setSalesTotals({ current: currentSales, previous: previousSales });
+        } else {
+          failedRequests.push('salesTotals');
+          setSalesTotals({ current: 0, previous: 0 });
+          if (salesCurrentRes.status === 'rejected') {
+            reportWidgetFailure('kpis.salesTotals.current', salesCurrentRes.reason, { activeRange });
+          }
+          if (salesPreviousRes.status === 'rejected') {
+            reportWidgetFailure('kpis.salesTotals.previous', salesPreviousRes.reason, { previousRange });
+          }
+        }
+
+        if (arCurrentRes.status === 'fulfilled' && arPreviousRes.status === 'fulfilled') {
+          const currentAr = sumRows(arCurrentRes.value.data?.results || [], 'balance_due');
+          const previousAr = sumRows(arPreviousRes.value.data?.results || [], 'balance_due');
+          setAccountsReceivableTotals({ current: currentAr, previous: previousAr });
+        } else {
+          failedRequests.push('accountsReceivableTotals');
+          setAccountsReceivableTotals({ current: 0, previous: 0 });
+          if (arCurrentRes.status === 'rejected') {
+            reportWidgetFailure('kpis.accountsReceivable.current', arCurrentRes.reason, { activeRange });
+          }
+          if (arPreviousRes.status === 'rejected') {
+            reportWidgetFailure('kpis.accountsReceivable.previous', arPreviousRes.reason, { previousRange });
+          }
+        }
+
+        setKpiFailed(failedRequests.length > 0);
       })
       .finally(() => {
         if (mounted) {
@@ -333,10 +389,21 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [activeRange, customRange.date_from, customRange.date_to, periodPreset, timezone]);
+  }, [
+    activeRange,
+    customRange.date_from,
+    customRange.date_to,
+    kpiRefreshNonce,
+    periodPreset,
+    reportWidgetFailure,
+    timezone,
+  ]);
 
   useEffect(() => {
     let mounted = true;
+
+    setRecentActivityLoading(true);
+    setRecentActivityFailed(false);
 
     axios
       .get('/api/v1/invoices/recent-activity/')
@@ -346,10 +413,11 @@ export default function Dashboard() {
           setRecentActivityFailed(false);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (mounted) {
           setRecentActivity([]);
           setRecentActivityFailed(true);
+          reportWidgetFailure('recentActivity', error, { activeRange });
         }
       })
       .finally(() => {
@@ -357,6 +425,17 @@ export default function Dashboard() {
           setRecentActivityLoading(false);
         }
       });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeRange, recentActivityRefreshNonce, reportWidgetFailure]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    setSalesSeriesLoading(true);
+    setSalesSeriesFailed(false);
 
     const { date_from, date_to } = buildDateRange(trendWindowDays);
     const params = new URLSearchParams({ date_from, date_to, timezone }).toString();
@@ -368,11 +447,32 @@ export default function Dashboard() {
           setSalesSeries(normalizeDailySales(res.data?.results || [], date_from, date_to));
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (mounted) {
           setSalesSeries(normalizeDailySales([], date_from, date_to));
+          setSalesSeriesFailed(true);
+          reportWidgetFailure('salesTrend', error, { trendWindowDays, timezone });
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setSalesSeriesLoading(false);
         }
       });
+
+    return () => {
+      mounted = false;
+    };
+  }, [reportWidgetFailure, salesSeriesRefreshNonce, timezone, trendWindowDays]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    setPaymentSplitLoading(true);
+    setPaymentSplitFailed(false);
+
+    const { date_from, date_to } = buildDateRange(trendWindowDays);
+    const params = new URLSearchParams({ date_from, date_to, timezone }).toString();
 
     axios
       .get(`/api/v1/reports/payment-method-split/?${params}`)
@@ -381,16 +481,23 @@ export default function Dashboard() {
           setPaymentSplitSeries(Array.isArray(res.data?.results) ? res.data.results : []);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (mounted) {
           setPaymentSplitSeries([]);
+          setPaymentSplitFailed(true);
+          reportWidgetFailure('paymentSplit', error, { trendWindowDays, timezone });
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setPaymentSplitLoading(false);
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, [timezone, trendWindowDays]);
+  }, [paymentSplitRefreshNonce, reportWidgetFailure, timezone, trendWindowDays]);
 
   const salesTrendData = useMemo(
     () => salesSeries.map((item) => ({ label: item.day, value: item.gross_sales })),
@@ -594,6 +701,17 @@ export default function Dashboard() {
         </Grid>
       ))}
 
+      {kpiFailed && (
+        <Grid item xs={12}>
+          <ErrorState
+            title={t('dashboard_kpis_error_title', 'Some KPI cards are unavailable')}
+            helperText={t('dashboard_kpis_error_helper', 'Parts of the summary did not load. You can retry without leaving the page.')}
+            actionLabel={t('retry', 'Retry')}
+            onAction={() => setKpiRefreshNonce((prev) => prev + 1)}
+          />
+        </Grid>
+      )}
+
       {(userRole === 'cashier' || userRole === 'supervisor' || userRole === 'admin') && canViewDashboard && (
         <Grid item xs={12} md={6}>
           <Stack spacing={2}>
@@ -628,13 +746,38 @@ export default function Dashboard() {
               onClick={() => navigateWithParams('/reports', reportsQueryParams)}
               sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
             >
-              <TrendChart
-                title={t('dashboard_sales_amount_trend', 'Gross sales')}
-                points={salesTrendData}
-                yFormatter={formatCurrency}
-                peakLabel={t('dashboard_peak_value', 'Peak')}
-                color="primary.main"
-              />
+              {salesSeriesLoading ? (
+                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <LoadingState
+                    title={t('dashboard_loading_sales_trend_title', 'Loading sales trend')}
+                    helperText={t('dashboard_loading_sales_trend_helper', 'We are preparing the chart for your selected window.')}
+                  />
+                </Paper>
+              ) : salesSeriesFailed ? (
+                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <ErrorState
+                    title={t('dashboard_sales_trend_error_title', 'Sales trend is unavailable')}
+                    helperText={t('dashboard_sales_trend_error_helper', 'Could not load gross sales trend right now. Please retry.')}
+                    actionLabel={t('retry', 'Retry')}
+                    onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
+                  />
+                </Paper>
+              ) : salesTrendData.length === 0 ? (
+                <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                  <EmptyState
+                    title={t('dashboard_sales_trend_empty_title', 'No sales trend data yet')}
+                    helperText={t('dashboard_sales_trend_empty_helper', 'Try a different period or wait for new activity to appear.')}
+                  />
+                </Paper>
+              ) : (
+                <TrendChart
+                  title={t('dashboard_sales_amount_trend', 'Gross sales')}
+                  points={salesTrendData}
+                  yFormatter={formatCurrency}
+                  peakLabel={t('dashboard_peak_value', 'Peak')}
+                  color="primary.main"
+                />
+              )}
             </ButtonBase>
           </Stack>
         </Grid>
@@ -648,13 +791,38 @@ export default function Dashboard() {
                 onClick={() => navigateWithParams('/reports', reportsQueryParams)}
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
-                <TrendChart
-                  title={t('dashboard_invoice_count_trend', 'Invoice count')}
-                  points={invoicesTrendData}
-                  yFormatter={formatNumber}
-                  peakLabel={t('dashboard_peak_value', 'Peak')}
-                  color="secondary.main"
-                />
+                {salesSeriesLoading ? (
+                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                    <LoadingState
+                      title={t('dashboard_loading_invoice_trend_title', 'Loading invoice trend')}
+                      helperText={t('dashboard_loading_invoice_trend_helper', 'Please wait while invoice counts are calculated.')}
+                    />
+                  </Paper>
+                ) : salesSeriesFailed ? (
+                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                    <ErrorState
+                      title={t('dashboard_invoice_trend_error_title', 'Invoice trend is unavailable')}
+                      helperText={t('dashboard_invoice_trend_error_helper', 'We could not load invoice trend data. Retry to continue.')}
+                      actionLabel={t('retry', 'Retry')}
+                      onAction={() => setSalesSeriesRefreshNonce((prev) => prev + 1)}
+                    />
+                  </Paper>
+                ) : invoicesTrendData.length === 0 ? (
+                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                    <EmptyState
+                      title={t('dashboard_invoice_trend_empty_title', 'No invoice trend data')}
+                      helperText={t('dashboard_invoice_trend_empty_helper', 'Invoice counts will show here once transactions are recorded.')}
+                    />
+                  </Paper>
+                ) : (
+                  <TrendChart
+                    title={t('dashboard_invoice_count_trend', 'Invoice count')}
+                    points={invoicesTrendData}
+                    yFormatter={formatNumber}
+                    peakLabel={t('dashboard_peak_value', 'Peak')}
+                    color="secondary.main"
+                  />
+                )}
               </ButtonBase>
             )}
             {canViewInventory && (
@@ -662,14 +830,30 @@ export default function Dashboard() {
                 onClick={() => navigateWithParams('/inventory', { severity: 'critical' })}
                 sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
               >
-                <MiniHorizontalChart
-                  title={
-                    userRole === 'supervisor'
-                      ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
-                      : t('dashboard_stock_distribution', 'Stock alert distribution')
-                  }
-                  data={stockAlertsData}
-                />
+                {kpiLoading ? (
+                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                    <LoadingState
+                      title={t('dashboard_loading_stock_title', 'Loading stock alerts')}
+                      helperText={t('dashboard_loading_stock_helper', 'Fetching latest low and critical stock signals.')}
+                    />
+                  </Paper>
+                ) : stockAlertsData.every((item) => Number(item.value || 0) === 0) ? (
+                  <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                    <EmptyState
+                      title={t('dashboard_stock_empty_title', 'No stock alerts right now')}
+                      helperText={t('dashboard_stock_empty_helper', 'Great news—no low or critical stock alerts were found.')}
+                    />
+                  </Paper>
+                ) : (
+                  <MiniHorizontalChart
+                    title={
+                      userRole === 'supervisor'
+                        ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
+                        : t('dashboard_stock_distribution', 'Stock alert distribution')
+                    }
+                    data={stockAlertsData}
+                  />
+                )}
               </ButtonBase>
             )}
           </Stack>
@@ -682,27 +866,52 @@ export default function Dashboard() {
             onClick={() => navigateWithParams('/reports', reportsQueryParams)}
             sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
           >
-            <MiniBarChart
-              title={
-                userRole === 'admin'
-                  ? t('dashboard_branch_comparison', 'Branch comparison')
-                  : userRole === 'supervisor'
-                    ? t('dashboard_approval_queue', 'Approval queue')
-                    : t('dashboard_pos_shortcuts', 'POS shortcuts')
-              }
-              data={(paymentSplitSeries || []).map((entry) => ({
-                label: toTitle(entry.method || t('unknown', 'Unknown')),
-                value: Number(entry.amount || 0),
-                color: 'info.main',
-              }))}
-            />
+            {paymentSplitLoading ? (
+              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <LoadingState
+                  title={t('dashboard_loading_payment_split_title', 'Loading payment split')}
+                  helperText={t('dashboard_loading_payment_split_helper', 'Getting payment method totals for this period.')}
+                />
+              </Paper>
+            ) : paymentSplitFailed ? (
+              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <ErrorState
+                  title={t('dashboard_payment_split_error_title', 'Payment split is unavailable')}
+                  helperText={t('dashboard_payment_split_error_helper', 'Could not load payment method breakdown. Please retry.')}
+                  actionLabel={t('retry', 'Retry')}
+                  onAction={() => setPaymentSplitRefreshNonce((prev) => prev + 1)}
+                />
+              </Paper>
+            ) : paymentSplitSeries.length === 0 ? (
+              <Paper sx={{ p: 2, width: '100%', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+                <EmptyState
+                  title={t('dashboard_payment_split_empty_title', 'No payment split data')}
+                  helperText={t('dashboard_payment_split_empty_helper', 'Payment method totals will appear once payments are posted.')}
+                />
+              </Paper>
+            ) : (
+              <MiniBarChart
+                title={
+                  userRole === 'admin'
+                    ? t('dashboard_branch_comparison', 'Branch comparison')
+                    : userRole === 'supervisor'
+                      ? t('dashboard_approval_queue', 'Approval queue')
+                      : t('dashboard_pos_shortcuts', 'POS shortcuts')
+                }
+                data={(paymentSplitSeries || []).map((entry) => ({
+                  label: toTitle(entry.method || t('unknown', 'Unknown')),
+                  value: Number(entry.amount || 0),
+                  color: 'info.main',
+                }))}
+              />
+            )}
           </ButtonBase>
         </Grid>
       )}
 
       {(canViewDashboard || canViewAging) && (
       <Grid item xs={12}>
-        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
+        <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
             <Typography variant="h6">
               {userRole === 'admin'
@@ -719,13 +928,22 @@ export default function Dashboard() {
             </Button>
           </Stack>
           {recentActivityLoading ? (
-            <Typography color="text.secondary">{t('loading', 'Loading...')}</Typography>
+            <LoadingState
+              title={t('dashboard_loading_activity_title', 'Loading activity')}
+              helperText={t('dashboard_loading_activity_helper', 'We are bringing the latest transactions for you.')}
+            />
+          ) : recentActivityFailed ? (
+            <ErrorState
+              title={t('dashboard_recent_activity_error_title', 'Recent activity is unavailable')}
+              helperText={t('dashboard_recent_activity_error_helper', 'Could not load transactions at the moment. Please retry.')}
+              actionLabel={t('retry', 'Retry')}
+              onAction={() => setRecentActivityRefreshNonce((prev) => prev + 1)}
+            />
           ) : recentActivity.length === 0 ? (
-            <Typography color="text.secondary">
-              {recentActivityFailed
-                ? t('dashboard_recent_activity_fallback', 'Activity is temporarily unavailable.')
-                : t('no_transactions')}
-            </Typography>
+            <EmptyState
+              title={t('dashboard_recent_activity_empty_title', 'No transactions yet')}
+              helperText={t('dashboard_recent_activity_empty_helper', 'New transactions will appear here as soon as they happen.')}
+            />
           ) : (
             <Stack spacing={1} sx={{ mt: 1 }}>
               {recentActivity.map((item, idx) => (
