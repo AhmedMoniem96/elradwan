@@ -541,3 +541,21 @@ class ReportingTests(TestCase):
         response = self.client.get("/api/v1/reports/top-customers/?format=csv")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "text/csv")
+
+    def test_top_reports_reject_invalid_limit(self):
+        response = self.client.get("/api/v1/reports/top-products/?limit=0")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["limit"], "Limit must be between 1 and 1000.")
+
+        response = self.client.get("/api/v1/reports/top-customers/?limit=invalid")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["limit"], "Limit must be an integer between 1 and 1000.")
+
+    def test_reports_reject_invalid_timezone(self):
+        response = self.client.get("/api/v1/reports/daily-sales/?timezone=Not/AZone")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["timezone"], "Invalid IANA timezone.")
+
+        response = self.client.get("/api/v1/reports/accounts-receivable/?timezone=Not/AZone")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["timezone"], "Invalid IANA timezone.")

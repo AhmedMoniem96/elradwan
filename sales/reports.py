@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from datetime import datetime, time
 from decimal import Decimal
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.core.cache import cache
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum, Value
@@ -38,7 +38,27 @@ class BaseReportView(APIView):
             raise ValidationError({"branch_id": "You can only query your own branch."})
         return [user.branch_id]
 
-    def _date_range(self, request, tz_name):
+    def _parse_timezone(self, tz_name):
+        try:
+            return ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValidationError({"timezone": "Invalid IANA timezone."})
+
+    def _parse_limit(self, request, default=10, minimum=1, maximum=1000):
+        raw_limit = request.query_params.get("limit")
+        if raw_limit is None:
+            return default
+
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            raise ValidationError({"limit": f"Limit must be an integer between {minimum} and {maximum}."})
+
+        if not minimum <= limit <= maximum:
+            raise ValidationError({"limit": f"Limit must be between {minimum} and {maximum}."})
+        return limit
+
+    def _date_range(self, request, tz):
         date_from = parse_date(request.query_params.get("date_from", ""))
         date_to = parse_date(request.query_params.get("date_to", ""))
         if not date_from and not date_to:
@@ -49,7 +69,6 @@ class BaseReportView(APIView):
         if date_from > date_to:
             raise ValidationError({"date_range": "date_from must be before or equal to date_to."})
 
-        tz = ZoneInfo(tz_name)
         start = datetime.combine(date_from, time.min).replace(tzinfo=tz)
         end = datetime.combine(date_to, time.max).replace(tzinfo=tz)
         return start, end
@@ -91,14 +110,15 @@ class DailySalesReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
 
         def run():
             qs = Invoice.objects.exclude(status=Invoice.Status.VOID).filter(branch_id__in=branch_ids)
             if start and end:
                 qs = qs.filter(created_at__gte=start, created_at__lte=end)
             rows = list(
-                qs.annotate(day=TruncDate("created_at", tzinfo=ZoneInfo(tz_name)))
+                qs.annotate(day=TruncDate("created_at", tzinfo=tz))
                 .values("day")
                 .annotate(
                     invoice_count=Count("id"),
@@ -120,8 +140,9 @@ class TopProductsReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
-        limit = int(request.query_params.get("limit", 10))
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
+        limit = self._parse_limit(request)
 
         def run():
             cogs_expr = ExpressionWrapper(
@@ -153,8 +174,9 @@ class TopCustomersReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
-        limit = int(request.query_params.get("limit", 10))
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
+        limit = self._parse_limit(request)
 
         def run():
             qs = Invoice.objects.exclude(status=Invoice.Status.VOID).filter(branch_id__in=branch_ids, customer__isnull=False)
@@ -182,7 +204,8 @@ class PaymentMethodSplitReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
 
         def run():
             qs = Payment.objects.filter(invoice__branch_id__in=branch_ids)
@@ -206,7 +229,8 @@ class GrossMarginReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
 
         def run():
             cogs_expr = ExpressionWrapper(
@@ -235,7 +259,8 @@ class AccountsReceivableReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)
         tz_name = self._tz_name(request, branch_ids)
-        start, end = self._date_range(request, tz_name)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
 
         def run():
             qs = Invoice.objects.exclude(status=Invoice.Status.VOID).filter(branch_id__in=branch_ids, balance_due__gt=0)
@@ -243,9 +268,9 @@ class AccountsReceivableReportView(BaseReportView):
                 qs = qs.filter(created_at__gte=start, created_at__lte=end)
 
             rows = []
-            now = datetime.now(tz=ZoneInfo(tz_name))
+            now = datetime.now(tz=tz)
             for invoice in qs.select_related("customer", "branch").order_by("-balance_due", "created_at"):
-                age_days = max((now - invoice.created_at.astimezone(ZoneInfo(tz_name))).days, 0)
+                age_days = max((now - invoice.created_at.astimezone(tz)).days, 0)
                 rows.append(
                     {
                         "invoice_id": str(invoice.id),
