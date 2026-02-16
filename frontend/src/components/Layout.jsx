@@ -11,6 +11,8 @@ import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import Badge from '@mui/material/Badge';
 import Container from '@mui/material/Container';
+import Chip from '@mui/material/Chip';
+import Button from '@mui/material/Button';
 import MenuIcon from '@mui/icons-material/Menu';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import NotificationsIcon from '@mui/icons-material/Notifications';
@@ -41,6 +43,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThemeContext } from '../ThemeContext';
 import { normalizeCountFromCollection } from '../utils/api';
+import { formatDateTime } from '../utils/formatters';
 import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
@@ -158,17 +161,41 @@ export default function Layout() {
   };
 
   const markAlertRead = (alertId) => {
+    setAlertItems((prev) => prev.filter((item) => item.id !== alertId));
+    setUnreadAlerts((prev) => Math.max(prev - 1, 0));
+
     axios.post('/api/v1/alerts/mark-read/', { alert_ids: [alertId] })
       .then(() => refreshUnreadAlerts())
-      .catch(() => {});
+      .catch(() => refreshUnreadAlerts());
   };
 
   const markAllAlertsRead = () => {
     if (!alertItems.length) return;
+
+    setAlertItems([]);
+    setUnreadAlerts(0);
+
     axios.post('/api/v1/alerts/mark-read/', { alert_ids: alertItems.map((item) => item.id) })
       .then(() => refreshUnreadAlerts())
-      .catch(() => {});
+      .catch(() => refreshUnreadAlerts());
   };
+
+  const getAlertSeverityColor = (severity) => {
+    if (severity === 'critical') return 'error';
+    if (severity === 'low') return 'warning';
+    return 'default';
+  };
+
+  const getAlertMessage = (alert) => (
+    alert.message
+    || alert.description
+    || t('inventory_alert_message', {
+      product: alert.product_name || t('product'),
+      warehouse: alert.warehouse_name || t('warehouse'),
+      current: alert.current_quantity,
+      threshold: alert.threshold_quantity,
+    })
+  );
 
   const changeLanguage = (lng) => {
     i18n.changeLanguage(lng);
@@ -302,27 +329,58 @@ export default function Layout() {
             anchorEl={alertsMenuAnchor}
             open={Boolean(alertsMenuAnchor)}
             onClose={handleAlertsMenuClose}
-            sx={{ '& .MuiMenu-paper': { width: 360, maxWidth: '90vw' } }}
+            sx={{ '& .MuiMenu-paper': { width: 420, maxWidth: '92vw' } }}
           >
             <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-              <Typography variant="subtitle2">{t('inventory_unread_alerts')}</Typography>
-              <MenuItem dense disabled={!alertItems.length} onClick={markAllAlertsRead}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{t('inventory_unread_alerts')}</Typography>
+              <Button size="small" disabled={!alertItems.length} onClick={markAllAlertsRead}>
                 {t('inventory_mark_all_read')}
-              </MenuItem>
+              </Button>
             </Box>
             <Divider />
             {alertItems.length === 0 ? (
               <MenuItem disabled>{t('inventory_no_unread_alerts')}</MenuItem>
             ) : (
               alertItems.slice(0, 8).map((alert) => (
-                <MenuItem key={alert.id} onClick={() => markAlertRead(alert.id)} sx={{ alignItems: 'flex-start', whiteSpace: 'normal' }}>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {alert.title || alert.alert_type || t('alerts')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {alert.message || alert.description || ''}
-                    </Typography>
+                <MenuItem
+                  key={alert.id}
+                  onClick={() => markAlertRead(alert.id)}
+                  sx={{
+                    py: 1.25,
+                    alignItems: 'flex-start',
+                    whiteSpace: 'normal',
+                    borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                  }}
+                >
+                  <Box sx={{ width: '100%', display: 'flex', gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        mt: 0.8,
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        bgcolor: (theme) => (
+                          alert.severity === 'critical'
+                            ? theme.palette.error.main
+                            : theme.palette.warning.main
+                        ),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {alert.title || alert.product_name || t('inventory_alert')}
+                        </Typography>
+                        <Chip size="small" color={getAlertSeverityColor(alert.severity)} label={t(`inventory_severity_${alert.severity}`, alert.severity || t('status'))} />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                        {getAlertMessage(alert)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDateTime(alert.created_at)}
+                      </Typography>
+                    </Box>
                   </Box>
                 </MenuItem>
               ))
