@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import { useTranslation } from 'react-i18next';
+import { formatFieldErrors, parseApiError } from '../utils/api';
 
 export default function Register() {
   const { t } = useTranslation();
@@ -32,30 +33,6 @@ export default function Register() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const isHtmlResponse = (payload) => {
-    if (typeof payload !== 'string') {
-      return false;
-    }
-    const normalized = payload.trim().toLowerCase();
-    return normalized.startsWith('<!doctype html') || normalized.startsWith('<html');
-  };
-
-  const extractErrorMessage = (payload) => {
-    if (!payload) {
-      return '';
-    }
-    if (isHtmlResponse(payload)) {
-      return '';
-    }
-    if (typeof payload === 'string') {
-      return payload;
-    }
-    if (payload.detail) {
-      return payload.detail;
-    }
-    return Object.values(payload).flat().join(', ');
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     try {
@@ -63,13 +40,10 @@ export default function Register() {
       navigate('/login');
     } catch (err) {
       console.error(err);
-      if (err.response && err.response.data) {
-        // Display specific error from backend if available
-        const errorMsg = extractErrorMessage(err.response.data);
-        setError(errorMsg || 'Registration failed. Please try again.');
-      } else {
-        setError('Registration failed. Please try again.');
-      }
+      const parsedError = parseApiError(err);
+      const fieldMessage = formatFieldErrors(parsedError.fieldErrors);
+      const parsedMessage = fieldMessage || parsedError.message;
+      setError(parsedMessage || t('auth.request_failed_fallback'));
     }
   };
 

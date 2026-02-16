@@ -48,14 +48,49 @@ const getCodeFromPayload = (payload) => {
   return typeof rawCode === 'string' ? rawCode : null;
 };
 
+const formatFieldName = (fieldName) => fieldName
+  .replace(/_/g, ' ')
+  .trim();
+
+export const formatFieldErrors = (fieldErrors = {}) => {
+  if (!fieldErrors || typeof fieldErrors !== 'object') {
+    return '';
+  }
+
+  const entries = Object.entries(fieldErrors)
+    .map(([field, value]) => {
+      const message = normalizeFieldMessage(value);
+      if (!message) {
+        return null;
+      }
+
+      const normalizedField = formatFieldName(field);
+      return normalizedField ? `${normalizedField}: ${message}` : message;
+    })
+    .filter(Boolean);
+
+  return entries.join(' • ');
+};
+
 export const parseApiError = (error) => {
   const payload = error?.response?.data;
+  const status = error?.response?.status ?? null;
+
+  if (typeof payload === 'string') {
+    return {
+      code: null,
+      message: sanitizeErrorMessage(payload) || null,
+      fieldErrors: {},
+      status,
+    };
+  }
 
   if (!payload || typeof payload !== 'object') {
     return {
       code: null,
       message: null,
       fieldErrors: {},
+      status,
     };
   }
 
@@ -88,5 +123,6 @@ export const parseApiError = (error) => {
     code: getCodeFromPayload(payload),
     message,
     fieldErrors,
+    status,
   };
 };

@@ -27,38 +27,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import { normalizeCollectionResponse } from '../utils/api';
+import { formatFieldErrors, normalizeCollectionResponse, parseApiError } from '../utils/api';
 
 const initialForm = {
   name: '',
   is_primary: false,
   is_active: true,
-};
-
-const getValidationMessage = (data, fallback) => {
-  if (!data || typeof data !== 'object') return fallback;
-
-  const messages = [];
-  Object.values(data).forEach((value) => {
-    if (typeof value === 'string') {
-      messages.push(value);
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((nested) => {
-        if (typeof nested === 'string') {
-          messages.push(nested);
-        }
-      });
-    }
-  });
-
-  if (messages.length > 0) {
-    return messages.join(' ');
-  }
-
-  return data.detail || fallback;
 };
 
 export default function Warehouses() {
@@ -85,7 +59,9 @@ export default function Warehouses() {
       const response = await axios.get('/api/v1/warehouses/');
       setWarehouses(normalizeCollectionResponse(response.data));
     } catch (err) {
-      setError(err.response?.data?.detail || t('warehouses_load_error'));
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('warehouses_load_error'));
     } finally {
       setLoading(false);
     }
@@ -144,8 +120,9 @@ export default function Warehouses() {
       setSuccess(isEditing ? t('warehouses_update_success') : t('warehouses_create_success'));
       handleCloseDialog();
     } catch (err) {
-      const message = getValidationMessage(err.response?.data, t('warehouses_save_error'));
-      setError(message);
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('warehouses_save_error'));
     } finally {
       setSaving(false);
     }
@@ -159,8 +136,9 @@ export default function Warehouses() {
       await loadWarehouses();
       setSuccess(t('warehouses_delete_success'));
     } catch (err) {
-      const message = getValidationMessage(err.response?.data, t('warehouses_delete_error'));
-      setError(message);
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('warehouses_delete_error'));
     } finally {
       setDeletingId(null);
     }

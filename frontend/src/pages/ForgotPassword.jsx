@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import { useTranslation } from 'react-i18next';
+import { formatFieldErrors, parseApiError } from '../utils/api';
 
 export default function ForgotPassword() {
   const { t } = useTranslation();
@@ -40,7 +41,10 @@ export default function ForgotPassword() {
       setSubmitted(true);
     } catch (requestError) {
       console.error('Password reset request failed', requestError);
-      setError(t('forgot_password_request_error'));
+      const parsedError = parseApiError(requestError);
+      const fieldMessage = formatFieldErrors(parsedError.fieldErrors);
+      const parsedMessage = fieldMessage || parsedError.message;
+      setError(parsedMessage || t('forgot_password_request_error'));
     } finally {
       setIsSubmitting(false);
     }
