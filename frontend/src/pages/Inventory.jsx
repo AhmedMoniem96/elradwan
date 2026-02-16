@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useSync } from '../sync/SyncContext';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
@@ -28,6 +29,14 @@ import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
 const emptyLine = { product: '', quantity: '1.00' };
+
+
+const parsePoFiltersFromQuery = (params) => ({
+  branch_id: params.get('branch_id') || '',
+  warehouse_id: params.get('warehouse_id') || '',
+  severity: params.get('severity') || '',
+  min_stockout_days: params.get('min_stockout_days') || '',
+});
 
 const initialProductForm = {
   id: '',
@@ -53,6 +62,7 @@ const initialProductForm = {
 
 export default function Inventory() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { enqueueEvent, pushNow, pullNow } = useSync();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -66,7 +76,7 @@ export default function Inventory() {
   const [stockoutRisk, setStockoutRisk] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [poPreview, setPoPreview] = useState(null);
-  const [poFilters, setPoFilters] = useState({ branch_id: '', warehouse_id: '', severity: '', min_stockout_days: '' });
+  const [poFilters, setPoFilters] = useState(() => parsePoFiltersFromQuery(searchParams));
   const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [draftStatus, setDraftStatus] = useState({});
   const [error, setError] = useState('');
@@ -123,6 +133,29 @@ export default function Inventory() {
   useEffect(() => {
     loadData();
   }, [t]);
+
+
+  useEffect(() => {
+    const incomingFilters = parsePoFiltersFromQuery(searchParams);
+    const hasChanges = Object.keys(incomingFilters).some((key) => incomingFilters[key] !== poFilters[key]);
+    if (hasChanges) {
+      setPoFilters(incomingFilters);
+    }
+  }, [poFilters, searchParams]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams();
+    Object.entries(poFilters).forEach(([key, value]) => {
+      if (value) nextParams.set(key, value);
+    });
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams);
+    }
+  }, [poFilters, searchParams, setSearchParams]);
+
+  const clearPoFilters = () => {
+    setPoFilters({ branch_id: '', warehouse_id: '', severity: '', min_stockout_days: '' });
+  };
 
   const saveStatus = async (product) => {
     try {
@@ -342,6 +375,29 @@ export default function Inventory() {
     document.body.removeChild(link);
   };
 
+
+  const filteredStockIntelRows = useMemo(() => {
+    return (stockIntel.rows || []).filter((row) => {
+      if (poFilters.warehouse_id && String(row.warehouse_id) !== String(poFilters.warehouse_id)) return false;
+      if (poFilters.severity && row.severity !== poFilters.severity) return false;
+      if (poFilters.min_stockout_days !== '') {
+        const minDays = Number(poFilters.min_stockout_days);
+        if (Number.isFinite(minDays) && Number(row.days_of_cover ?? 0) < minDays) return false;
+      }
+      return true;
+    });
+  }, [poFilters.min_stockout_days, poFilters.severity, poFilters.warehouse_id, stockIntel.rows]);
+
+  const filteredCriticalCount = useMemo(
+    () => filteredStockIntelRows.filter((row) => row.severity === 'critical').length,
+    [filteredStockIntelRows],
+  );
+
+  const filteredLowCount = useMemo(
+    () => filteredStockIntelRows.filter((row) => row.severity === 'low').length,
+    [filteredStockIntelRows],
+  );
+
   return (
     <PageShell>
       <PageHeader title={t('inventory')} />
@@ -410,8 +466,8 @@ export default function Inventory() {
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('inventory_low_critical_stock')}</Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip color="error" label={`${t('inventory_critical_label')}: ${stockIntel.critical_count || 0}`} />
-            <Chip color="warning" label={`${t('inventory_low_label')}: ${stockIntel.low_count || 0}`} />
+            <Chip color="error" label={`${t('inventory_critical_label')}: ${filteredCriticalCount}`} />
+            <Chip color="warning" label={`${t('inventory_low_label')}: ${filteredLowCount}`} />
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">{t('export_csv')}</Button>
             <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">{t('export_pdf')}</Button>
             <TextField
@@ -448,6 +504,9 @@ export default function Inventory() {
             <Button size="small" variant="contained" onClick={createPOFromSuggestions} disabled={isCreatingPO}>
               {t('create_po_from_alerts', 'Create PO from alerts')}
             </Button>
+            <Button size="small" variant="text" onClick={clearPoFilters}>
+              {t('clear_filters', 'Clear filters')}
+            </Button>
           </Stack>
         </Stack>
         <TableContainer>
@@ -467,7 +526,7 @@ export default function Inventory() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {(stockIntel.rows || []).map((row) => (
+              {filteredStockIntelRows.map((row) => (
                 <TableRow key={`${row.warehouse_id}-${row.product_id}`}>
                   <TableCell>{row.warehouse_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>

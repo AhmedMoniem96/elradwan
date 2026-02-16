@@ -15,6 +15,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Stack from '@mui/material/Stack';
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import { useSearchParams } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
@@ -40,9 +41,19 @@ const TableCard = ({ title, columns, rows }) => (
   </SectionPanel>
 );
 
+
+const parseReportsFiltersFromQuery = (params, fallbackTimezone) => ({
+  branch_id: params.get('branch_id') || '',
+  date_from: params.get('date_from') || '',
+  date_to: params.get('date_to') || '',
+  timezone: params.get('timezone') || fallbackTimezone,
+});
+
 export default function Reports() {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const [searchParams, setSearchParams] = useSearchParams();
   const [branches, setBranches] = useState([]);
-  const [filters, setFilters] = useState({ branch_id: '', date_from: '', date_to: '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+  const [filters, setFilters] = useState(() => parseReportsFiltersFromQuery(searchParams, timezone));
   const [dailySales, setDailySales] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
@@ -92,6 +103,29 @@ export default function Reports() {
     loadReports();
   }, [queryParams]);
 
+  useEffect(() => {
+    const incomingFilters = parseReportsFiltersFromQuery(searchParams, timezone);
+    const hasChanges = Object.keys(incomingFilters).some((key) => incomingFilters[key] !== filters[key]);
+    if (hasChanges) {
+      setFilters(incomingFilters);
+    }
+  }, [filters, searchParams, timezone]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) nextParams.set(key, value);
+    });
+
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams);
+    }
+  }, [filters, searchParams, setSearchParams]);
+
+  const clearFilters = () => {
+    setFilters({ branch_id: '', date_from: '', date_to: '', timezone });
+  };
+
   const exportCsv = (endpoint) => {
     const url = `/api/v1/reports/${endpoint}/?${queryParams}&format=csv`;
     window.open(url, '_blank');
@@ -127,6 +161,7 @@ export default function Reports() {
           <TextField type="date" label="To" InputLabelProps={{ shrink: true }} value={filters.date_to} onChange={(e) => setFilters((f) => ({ ...f, date_to: e.target.value }))} />
           <TextField label="Timezone" value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
           <Button variant="outlined" onClick={loadReports}>Refresh</Button>
+          <Button variant="text" onClick={clearFilters}>Clear filters</Button>
           </Stack>
         </SectionPanel>
       </Grid>
