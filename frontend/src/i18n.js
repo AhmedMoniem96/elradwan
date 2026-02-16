@@ -50,6 +50,10 @@ const resources = {
       "reset_password": "Reset Password",
       "send_reset_link": "Send Reset Link",
       "back_to_login": "Back to Login"
+      ,"auth.invalid_credentials": "Invalid username or password"
+      ,"auth.inactive_user": "This account is inactive. Please contact support."
+      ,"auth.validation_error": "Please review the highlighted fields and try again."
+      ,"auth.login_failed_fallback": "Unable to sign in right now. Please try again."
       ,"forgot_password_description": "Enter your email address and we'll send you a password reset link."
       ,"forgot_password_email_required": "Email is required"
       ,"forgot_password_submitting": "Sending..."
@@ -284,6 +288,10 @@ const resources = {
       "reset_password": "تغيير الباسورد",
       "send_reset_link": "ابعت لينك التغيير",
       "back_to_login": "رجوع للدخول"
+      ,"auth.invalid_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة"
+      ,"auth.inactive_user": "الحساب غير مفعّل. تواصل مع الدعم."
+      ,"auth.validation_error": "راجع الحقول المظللة وحاول مرة أخرى."
+      ,"auth.login_failed_fallback": "تعذر تسجيل الدخول حالياً. حاول مرة أخرى."
       ,"forgot_password_description": "اكتب إيميلك وإحنا هنبعت لك لينك تغيير الباسورد."
       ,"forgot_password_email_required": "البريد الإلكتروني مطلوب"
       ,"forgot_password_submitting": "جاري الإرسال..."
