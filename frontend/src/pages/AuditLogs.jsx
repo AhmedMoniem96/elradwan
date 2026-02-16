@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -14,10 +14,21 @@ import {
   Typography,
 } from '@mui/material';
 import axios from 'axios';
+import { useSearchParams } from 'react-router-dom';
+
+
+const parseAuditFiltersFromQuery = (params) => ({
+  start_date: params.get('start_date') || '',
+  end_date: params.get('end_date') || '',
+  action: params.get('action') || '',
+  entity: params.get('entity') || '',
+  actor_id: params.get('actor_id') || '',
+});
 
 export default function AuditLogs() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [logs, setLogs] = useState([]);
-  const [filters, setFilters] = useState({ start_date: '', end_date: '', action: '', entity: '', actor_id: '' });
+  const [filters, setFilters] = useState(() => parseAuditFiltersFromQuery(searchParams));
 
   const loadLogs = async () => {
     const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
@@ -25,9 +36,30 @@ export default function AuditLogs() {
     setLogs(response.data || []);
   };
 
+  const queryString = useMemo(() => new URLSearchParams(Object.entries(filters).filter(([, value]) => value)).toString(), [filters]);
+
   useEffect(() => {
     loadLogs();
-  }, []);
+  }, [queryString]);
+
+  useEffect(() => {
+    const incomingFilters = parseAuditFiltersFromQuery(searchParams);
+    const hasChanges = Object.keys(incomingFilters).some((key) => incomingFilters[key] !== filters[key]);
+    if (hasChanges) {
+      setFilters(incomingFilters);
+    }
+  }, [filters, searchParams]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams);
+    }
+  }, [filters, searchParams, setSearchParams]);
+
+  const clearFilters = () => {
+    setFilters({ start_date: '', end_date: '', action: '', entity: '', actor_id: '' });
+  };
 
   const exportLogs = () => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
@@ -48,6 +80,7 @@ export default function AuditLogs() {
         <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
           <Button variant="contained" onClick={loadLogs}>Apply</Button>
           <Button variant="outlined" onClick={exportLogs}>Export CSV</Button>
+          <Button variant="text" onClick={clearFilters}>Clear filters</Button>
         </Stack>
       </Paper>
 

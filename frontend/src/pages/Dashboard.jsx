@@ -7,8 +7,10 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import KpiCard from '../components/KpiCard';
 import { useAuth } from '../AuthContext';
 import {
@@ -254,6 +256,7 @@ function SectionCard({ title, subtitle, children }) {
 export default function Dashboard() {
   const { t } = useTranslation();
   const { user, can } = useAuth();
+  const navigate = useNavigate();
   const [periodPreset, setPeriodPreset] = useState('today');
   const [customRange, setCustomRange] = useState({ date_from: '', date_to: '' });
 
@@ -481,6 +484,28 @@ export default function Dashboard() {
     ],
   };
 
+
+  const reportsQueryParams = useMemo(() => ({
+    date_from: activeRange.date_from,
+    date_to: activeRange.date_to,
+    timezone,
+  }), [activeRange.date_from, activeRange.date_to, timezone]);
+
+  const navigateWithParams = (pathname, params = {}) => {
+    const query = new URLSearchParams(
+      Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+    ).toString();
+    navigate(query ? `${pathname}?${query}` : pathname);
+  };
+
+  const kpiNavigation = {
+    sales: { pathname: '/reports', params: reportsQueryParams },
+    openShifts: { pathname: '/audit-logs', params: { start_date: activeRange.date_from, end_date: activeRange.date_to } },
+    stockAlerts: { pathname: '/inventory', params: { severity: 'critical' } },
+    accountsReceivable: { pathname: '/reports', params: reportsQueryParams },
+    shiftVariance: { pathname: '/audit-logs', params: { action: 'shift' } },
+  };
+
   const visibleKpis = useMemo(() => {
     if (!canViewDashboard) return [];
 
@@ -551,13 +576,21 @@ export default function Dashboard() {
 
       {visibleKpis.map((kpi) => (
         <Grid key={kpi.key} item xs={12} sm={6} lg={3} xl={2}>
-          <KpiCard
-            title={kpi.title}
-            value={kpi.value}
-            deltaPct={kpi.deltaPct}
-            trend={kpi.trend}
-            loading={kpiLoading}
-          />
+          <ButtonBase
+            onClick={() => {
+              const target = kpiNavigation[kpi.key];
+              if (target) navigateWithParams(target.pathname, target.params);
+            }}
+            sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+          >
+            <KpiCard
+              title={kpi.title}
+              value={kpi.value}
+              deltaPct={kpi.deltaPct}
+              trend={kpi.trend}
+              loading={kpiLoading}
+            />
+          </ButtonBase>
         </Grid>
       ))}
 
@@ -591,13 +624,18 @@ export default function Dashboard() {
                 </TextField>
               </Stack>
             </SectionCard>
-            <TrendChart
-              title={t('dashboard_sales_amount_trend', 'Gross sales')}
-              points={salesTrendData}
-              yFormatter={formatCurrency}
-              peakLabel={t('dashboard_peak_value', 'Peak')}
-              color="primary.main"
-            />
+            <ButtonBase
+              onClick={() => navigateWithParams('/reports', reportsQueryParams)}
+              sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+            >
+              <TrendChart
+                title={t('dashboard_sales_amount_trend', 'Gross sales')}
+                points={salesTrendData}
+                yFormatter={formatCurrency}
+                peakLabel={t('dashboard_peak_value', 'Peak')}
+                color="primary.main"
+              />
+            </ButtonBase>
           </Stack>
         </Grid>
       )}
@@ -606,23 +644,33 @@ export default function Dashboard() {
         <Grid item xs={12} md={6}>
           <Stack spacing={2}>
             {(userRole !== 'cashier' || canViewInventory) && (
-              <TrendChart
-                title={t('dashboard_invoice_count_trend', 'Invoice count')}
-                points={invoicesTrendData}
-                yFormatter={formatNumber}
-                peakLabel={t('dashboard_peak_value', 'Peak')}
-                color="secondary.main"
-              />
+              <ButtonBase
+                onClick={() => navigateWithParams('/reports', reportsQueryParams)}
+                sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+              >
+                <TrendChart
+                  title={t('dashboard_invoice_count_trend', 'Invoice count')}
+                  points={invoicesTrendData}
+                  yFormatter={formatNumber}
+                  peakLabel={t('dashboard_peak_value', 'Peak')}
+                  color="secondary.main"
+                />
+              </ButtonBase>
             )}
             {canViewInventory && (
-              <MiniHorizontalChart
-                title={
-                  userRole === 'supervisor'
-                    ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
-                    : t('dashboard_stock_distribution', 'Stock alert distribution')
-                }
-                data={stockAlertsData}
-              />
+              <ButtonBase
+                onClick={() => navigateWithParams('/inventory', { severity: 'critical' })}
+                sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+              >
+                <MiniHorizontalChart
+                  title={
+                    userRole === 'supervisor'
+                      ? t('dashboard_low_stock_hotspots', 'Low-stock hotspots')
+                      : t('dashboard_stock_distribution', 'Stock alert distribution')
+                  }
+                  data={stockAlertsData}
+                />
+              </ButtonBase>
             )}
           </Stack>
         </Grid>
@@ -630,33 +678,46 @@ export default function Dashboard() {
 
       {canViewDashboard && (userRole !== 'cashier' || canAccessPos) && (
         <Grid item xs={12}>
-          <MiniBarChart
-            title={
-              userRole === 'admin'
-                ? t('dashboard_branch_comparison', 'Branch comparison')
-                : userRole === 'supervisor'
-                  ? t('dashboard_approval_queue', 'Approval queue')
-                  : t('dashboard_pos_shortcuts', 'POS shortcuts')
-            }
-            data={(paymentSplitSeries || []).map((entry) => ({
-              label: toTitle(entry.method || t('unknown', 'Unknown')),
-              value: Number(entry.amount || 0),
-              color: 'info.main',
-            }))}
-          />
+          <ButtonBase
+            onClick={() => navigateWithParams('/reports', reportsQueryParams)}
+            sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
+          >
+            <MiniBarChart
+              title={
+                userRole === 'admin'
+                  ? t('dashboard_branch_comparison', 'Branch comparison')
+                  : userRole === 'supervisor'
+                    ? t('dashboard_approval_queue', 'Approval queue')
+                    : t('dashboard_pos_shortcuts', 'POS shortcuts')
+              }
+              data={(paymentSplitSeries || []).map((entry) => ({
+                label: toTitle(entry.method || t('unknown', 'Unknown')),
+                value: Number(entry.amount || 0),
+                color: 'info.main',
+              }))}
+            />
+          </ButtonBase>
         </Grid>
       )}
 
       {(canViewDashboard || canViewAging) && (
       <Grid item xs={12}>
         <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column' }}>
-          <Typography variant="h6" gutterBottom>
-            {userRole === 'admin'
-              ? t('dashboard_aging_reports', 'Aging reports')
-              : userRole === 'supervisor'
-                ? t('dashboard_shift_exceptions', 'Shift exceptions')
-                : t('dashboard_today_transactions', 'Today\'s transactions')}
-          </Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+            <Typography variant="h6">
+              {userRole === 'admin'
+                ? t('dashboard_aging_reports', 'Aging reports')
+                : userRole === 'supervisor'
+                  ? t('dashboard_shift_exceptions', 'Shift exceptions')
+                  : t('dashboard_today_transactions', 'Today\'s transactions')}
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => navigateWithParams('/audit-logs', { start_date: activeRange.date_from, end_date: activeRange.date_to })}
+            >
+              {t('view_all', 'View all')}
+            </Button>
+          </Stack>
           {recentActivityLoading ? (
             <Typography color="text.secondary">{t('loading', 'Loading...')}</Typography>
           ) : recentActivity.length === 0 ? (
