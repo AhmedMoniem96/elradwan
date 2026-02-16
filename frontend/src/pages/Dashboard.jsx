@@ -8,6 +8,8 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -24,6 +26,7 @@ import LoadingState from '../components/LoadingState';
 import ErrorState from '../components/ErrorState';
 import EmptyState from '../components/EmptyState';
 import { useAuth } from '../AuthContext';
+import { useSync } from '../sync/SyncContext';
 import { PageHeader, PageShell } from '../components/PageLayout';
 import {
   formatCurrency,
@@ -130,6 +133,16 @@ const ALL_BRANCHES_VALUE = '__all__';
 const REPORT_CACHE_TTL_MS = 60 * 1000;
 const FILTER_DEBOUNCE_MS = 300;
 const NON_CRITICAL_DEFER_MS = 250;
+const ALERTS_ACK_KEY = 'dashboard_alerts_acknowledged_v1';
+
+const loadAcknowledgedAlerts = () => {
+  try {
+    const raw = localStorage.getItem(ALERTS_ACK_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
 
 function useDebouncedValue(value, delayMs) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -290,10 +303,115 @@ function SectionCard({ title, subtitle, children }) {
   );
 }
 
+
+const alertSeverityRank = { critical: 0, high: 1, normal: 2 };
+
+function AlertsCenter({
+  t,
+  alerts,
+  alertCounts,
+  lastUpdatedAt,
+  onOpenAlert,
+  onAcknowledge,
+  onMarkInventoryRead,
+  onRetryFailedSync,
+  onDiscardFailedSync,
+}) {
+  return (
+    <Paper sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        <Box>
+          <Typography variant="h6">{t('dashboard_alerts_center', 'Alerts Center')}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {t('dashboard_alerts_last_updated', 'Last updated')}: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '—'}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Chip size="small" color="error" label={`${t('dashboard_critical', 'Critical')}: ${alertCounts.critical}`} />
+          <Chip size="small" color="warning" label={`${t('dashboard_high', 'High')}: ${alertCounts.high}`} />
+          <Chip size="small" color="default" label={`${t('dashboard_normal', 'Normal')}: ${alertCounts.normal}`} />
+        </Stack>
+      </Stack>
+
+      <Divider sx={{ my: 1.5 }} />
+
+      {alerts.length === 0 ? (
+        <EmptyState
+          title={t('dashboard_alerts_center_empty_title', 'No active alerts')}
+          helperText={t('dashboard_alerts_center_empty_helper', 'Inventory, sync, and operational notices will appear here when action is needed.')}
+        />
+      ) : (
+        <Stack spacing={1}>
+          {alerts.map((alert) => {
+            const severityColor = alert.severity === 'critical' ? 'error' : alert.severity === 'high' ? 'warning' : 'default';
+            return (
+              <Box
+                key={alert.id}
+                sx={{
+                  p: 1.25,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1.5,
+                  opacity: alert.acknowledgedAt ? 0.8 : 1,
+                }}
+              >
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+                  <Stack spacing={0.5} sx={{ flex: 1 }}>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Chip size="small" color={severityColor} label={toTitle(alert.severity)} sx={{ textTransform: 'capitalize' }} />
+                      <Chip size="small" variant="outlined" label={alert.categoryLabel} />
+                      {!!alert.acknowledgedAt && <Chip size="small" label={t('dashboard_acknowledged', 'Acknowledged')} />}
+                    </Stack>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.title}</Typography>
+                    <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t('dashboard_alert_created_at', 'Created')}: {formatDateTime(alert.createdAt)}
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Button size="small" variant="outlined" onClick={() => onOpenAlert(alert)}>
+                      {t('dashboard_open', 'Open')}
+                    </Button>
+                    {alert.actions?.includes('markRead') && (
+                      <Button size="small" variant="contained" onClick={() => onMarkInventoryRead(alert)}>
+                        {t('dashboard_mark_read', 'Mark read')}
+                      </Button>
+                    )}
+                    {alert.actions?.includes('retrySync') && (
+                      <Button size="small" variant="contained" onClick={() => onRetryFailedSync(alert)}>
+                        {t('dashboard_retry', 'Retry')}
+                      </Button>
+                    )}
+                    {alert.actions?.includes('discardSync') && (
+                      <Button size="small" variant="outlined" color="warning" onClick={() => onDiscardFailedSync(alert)}>
+                        {t('dashboard_discard', 'Discard')}
+                      </Button>
+                    )}
+                    {!alert.acknowledgedAt && (
+                      <Button size="small" onClick={() => onAcknowledge(alert.id)}>
+                        {t('dashboard_acknowledge', 'Acknowledge')}
+                      </Button>
+                    )}
+                  </Stack>
+                </Stack>
+              </Box>
+            );
+          })}
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
   const theme = useTheme();
   const { user, can } = useAuth();
+  const {
+    failedEvents,
+    retryFailedEvent,
+    discardFailedEvent,
+  } = useSync();
   const navigate = useNavigate();
   const [periodPreset, setPeriodPreset] = useState('today');
   const [customRange, setCustomRange] = useState({ date_from: '', date_to: '' });
@@ -304,6 +422,10 @@ export default function Dashboard() {
     variance_total: '0.00',
   });
   const [stockSummary, setStockSummary] = useState({ low_count: 0, critical_count: 0, unread_alert_count: 0 });
+  const [inventoryAlerts, setInventoryAlerts] = useState([]);
+  const [alertsCenterRefreshNonce, setAlertsCenterRefreshNonce] = useState(0);
+  const [alertsCenterLastUpdatedAt, setAlertsCenterLastUpdatedAt] = useState(null);
+  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState(loadAcknowledgedAlerts);
   const [recentActivity, setRecentActivity] = useState([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(true);
   const [recentActivityFailed, setRecentActivityFailed] = useState(false);
@@ -458,6 +580,39 @@ export default function Dashboard() {
     timezone,
   ]);
 
+
+  useEffect(() => {
+    localStorage.setItem(ALERTS_ACK_KEY, JSON.stringify(acknowledgedAlerts));
+  }, [acknowledgedAlerts]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!canViewInventory) {
+      setInventoryAlerts([]);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    axios
+      .get('/api/v1/inventory-alerts/', { params: { limit: 100 } })
+      .then((res) => {
+        if (!mounted) return;
+        const payload = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.results) ? res.data.results : []);
+        setInventoryAlerts(payload);
+        setAlertsCenterLastUpdatedAt(new Date().toISOString());
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        reportWidgetFailure('alertsCenter.inventoryAlerts', error, { activeRange: debouncedActiveRange });
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [alertsCenterRefreshNonce, canViewInventory, debouncedActiveRange, reportWidgetFailure]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -589,6 +744,11 @@ export default function Dashboard() {
       mounted = false;
     };
   }, [canViewBranchComparison, reportWidgetFailure, t]);
+
+
+  useEffect(() => {
+    setAlertsCenterLastUpdatedAt(new Date().toISOString());
+  }, [failedEvents.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -827,6 +987,124 @@ export default function Dashboard() {
     shiftVariance: { pathname: '/audit-logs', params: { action: 'shift' } },
   };
 
+
+  const securityNotices = useMemo(
+    () => recentActivity
+      .filter((item) => {
+        const type = String(item.transaction_type || '').toLowerCase();
+        return type.includes('audit') || type.includes('security') || type.includes('auth');
+      })
+      .slice(0, 3)
+      .map((item, index) => ({
+        id: `notice-${item.reference_number || index}-${item.timestamp || index}`,
+        sourceId: item.reference_number,
+        type: 'notice',
+        severity: 'normal',
+        categoryLabel: t('dashboard_security_notice', 'Security / audit notice'),
+        title: `${toTitle(item.transaction_type) || t('notice', 'Notice')} • ${item.reference_number || '—'}`,
+        description: `${item.customer || t('walk_in_customer', 'Walk-in')} • ${toTitle(item.method_status)}`,
+        createdAt: item.timestamp || new Date().toISOString(),
+        pathname: '/audit-logs',
+        params: { action: 'security', start_date: activeRange.date_from, end_date: activeRange.date_to },
+        actions: [],
+      })),
+    [activeRange.date_from, activeRange.date_to, recentActivity, t],
+  );
+
+  const alertsCenterRows = useMemo(() => {
+    const inventoryRows = (inventoryAlerts || []).map((alert, index) => {
+      const normalizedSeverity = alert.severity === 'critical' ? 'critical' : alert.severity === 'high' ? 'high' : 'normal';
+      const branchId = alert.branch || alert.branch_id || '';
+      return {
+        id: `inventory-${alert.id || index}`,
+        sourceId: alert.id,
+        type: 'inventory',
+        severity: normalizedSeverity,
+        categoryLabel: t('dashboard_inventory_alert', 'Inventory'),
+        title: t('inventory_alert_message', {
+          defaultValue: '{{product}} in {{warehouse}} is below threshold',
+          product: alert.product_name || t('product', 'Product'),
+          warehouse: alert.warehouse_name || t('warehouse', 'Warehouse'),
+          current: alert.current_quantity ?? 0,
+          threshold: alert.threshold_quantity ?? 0,
+        }),
+        description: `${t('dashboard_branch', 'Branch')}: ${branchId || '—'}`,
+        createdAt: alert.created_at || alert.createdAt || new Date().toISOString(),
+        pathname: '/inventory',
+        params: { severity: normalizedSeverity, branch_id: branchId || undefined },
+        actions: ['markRead'],
+      };
+    });
+
+    const syncRows = (failedEvents || []).slice(0, 20).map((failure) => ({
+      id: `sync-${failure.id}`,
+      sourceId: failure.id,
+      type: 'sync',
+      severity: 'high',
+      categoryLabel: t('dashboard_sync_failure', 'Sync failed event'),
+      title: `${toTitle(failure.eventType)} • ${failure.eventId}`,
+      description: `${t('reason', 'Reason')}: ${failure.reasonCode || failure.reason}`,
+      createdAt: failure.failedAt || new Date().toISOString(),
+      pathname: '/sync',
+      params: { reason: failure.reasonCode || failure.reason },
+      actions: ['retrySync', 'discardSync'],
+    }));
+
+    return [...inventoryRows, ...syncRows, ...securityNotices]
+      .map((row) => ({ ...row, acknowledgedAt: acknowledgedAlerts[row.id] || null }))
+      .sort((left, right) => {
+        const severityDelta = (alertSeverityRank[left.severity] ?? 9) - (alertSeverityRank[right.severity] ?? 9);
+        if (severityDelta !== 0) return severityDelta;
+        return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+      })
+      .slice(0, 20);
+  }, [acknowledgedAlerts, failedEvents, inventoryAlerts, securityNotices, t]);
+
+  const alertsBySeverity = useMemo(
+    () => alertsCenterRows.reduce((acc, row) => {
+      acc[row.severity] = (acc[row.severity] || 0) + 1;
+      return acc;
+    }, { critical: 0, high: 0, normal: 0 }),
+    [alertsCenterRows],
+  );
+
+  const acknowledgeAlert = useCallback((alertId) => {
+    setAcknowledgedAlerts((prev) => ({ ...prev, [alertId]: new Date().toISOString() }));
+  }, []);
+
+  const handleMarkInventoryRead = useCallback(async (alert) => {
+    if (!alert?.sourceId) return;
+    try {
+      await axios.post('/api/v1/alerts/mark-read/', { alert_ids: [alert.sourceId] });
+      setAcknowledgedAlerts((prev) => ({ ...prev, [alert.id]: new Date().toISOString() }));
+      setAlertsCenterRefreshNonce((prev) => prev + 1);
+    } catch (error) {
+      reportWidgetFailure('alertsCenter.markInventoryRead', error, { alertId: alert.sourceId });
+    }
+  }, [reportWidgetFailure]);
+
+  const handleRetryFailedSync = useCallback(async (alert) => {
+    if (!alert?.sourceId) return;
+    try {
+      await retryFailedEvent({ failureId: alert.sourceId });
+      setAcknowledgedAlerts((prev) => ({ ...prev, [alert.id]: new Date().toISOString() }));
+      setAlertsCenterLastUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      reportWidgetFailure('alertsCenter.retryFailedSync', error, { failureId: alert.sourceId });
+    }
+  }, [reportWidgetFailure, retryFailedEvent]);
+
+  const handleDiscardFailedSync = useCallback(async (alert) => {
+    if (!alert?.sourceId) return;
+    try {
+      await discardFailedEvent({ failureId: alert.sourceId, reason: 'dashboard_alerts_center' });
+      setAcknowledgedAlerts((prev) => ({ ...prev, [alert.id]: new Date().toISOString() }));
+      setAlertsCenterLastUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      reportWidgetFailure('alertsCenter.discardFailedSync', error, { failureId: alert.sourceId });
+    }
+  }, [discardFailedEvent, reportWidgetFailure]);
+
   const visibleKpis = useMemo(() => {
     if (!canViewDashboard) return [];
 
@@ -897,6 +1175,20 @@ export default function Dashboard() {
         <QuickActions
           title={t('dashboard_quick_actions', 'Quick actions')}
           actions={roleQuickActions[userRole] || roleQuickActions.cashier}
+        />
+      </Grid>
+
+      <Grid item xs={12}>
+        <AlertsCenter
+          t={t}
+          alerts={alertsCenterRows}
+          alertCounts={alertsBySeverity}
+          lastUpdatedAt={alertsCenterLastUpdatedAt}
+          onOpenAlert={(alert) => navigateWithParams(alert.pathname, alert.params)}
+          onAcknowledge={acknowledgeAlert}
+          onMarkInventoryRead={handleMarkInventoryRead}
+          onRetryFailedSync={handleRetryFailedSync}
+          onDiscardFailedSync={handleDiscardFailedSync}
         />
       </Grid>
 
