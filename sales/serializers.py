@@ -20,6 +20,27 @@ def _get_active_shift(cashier_id, device_id):
     return CashShift.objects.filter(cashier_id=cashier_id, device_id=device_id, closed_at__isnull=True).first()
 
 
+def refresh_invoice_payment_status(invoice):
+    total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    balance_due = max(invoice.total - total_paid, Decimal("0"))
+
+    if total_paid >= invoice.total and invoice.total > 0:
+        invoice.status = Invoice.Status.PAID
+        latest_payment = invoice.payments.order_by("-paid_at", "-id").first()
+        invoice.paid_at = latest_payment.paid_at if latest_payment else timezone.now()
+    elif total_paid > 0:
+        invoice.status = Invoice.Status.PARTIALLY_PAID
+        invoice.paid_at = None
+    else:
+        invoice.status = Invoice.Status.OPEN
+        invoice.paid_at = None
+
+    invoice.amount_paid = _to_money(total_paid)
+    invoice.balance_due = _to_money(balance_due)
+    invoice.save(update_fields=["status", "paid_at", "amount_paid", "balance_due", "updated_at"])
+    return invoice
+
+
 class CashShiftSerializer(serializers.ModelSerializer):
     class Meta:
         model = CashShift
@@ -127,6 +148,16 @@ class PaymentSerializer(serializers.ModelSerializer):
         return obj.invoice.balance_due
 
     def validate(self, attrs):
+        if self.instance is None:
+            missing = {}
+            required_fields = ["invoice", "method", "amount", "device", "event_id", "paid_at"]
+            for field in required_fields:
+                value = self.initial_data.get(field) if hasattr(self, "initial_data") else attrs.get(field)
+                if value in [None, ""]:
+                    missing[field] = "This field is required for POS payments."
+            if missing:
+                raise serializers.ValidationError(missing)
+
         invoice = attrs["invoice"]
         amount = attrs["amount"]
 
@@ -145,23 +176,12 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         payment = super().create(validated_data)
-        invoice = payment.invoice
-        total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-        balance_due = max(invoice.total - total_paid, Decimal("0"))
+        refresh_invoice_payment_status(payment.invoice)
+        return payment
 
-        if total_paid >= invoice.total:
-            invoice.status = Invoice.Status.PAID
-            invoice.paid_at = payment.paid_at or timezone.now()
-        elif total_paid > 0:
-            invoice.status = Invoice.Status.PARTIALLY_PAID
-            invoice.paid_at = None
-        else:
-            invoice.status = Invoice.Status.OPEN
-            invoice.paid_at = None
-
-        invoice.amount_paid = total_paid
-        invoice.balance_due = balance_due
-        invoice.save(update_fields=["status", "paid_at", "amount_paid", "balance_due", "updated_at"])
+    def update(self, instance, validated_data):
+        payment = super().update(instance, validated_data)
+        refresh_invoice_payment_status(payment.invoice)
         return payment
 
 
@@ -414,17 +434,10 @@ class PosInvoiceLineInputSerializer(serializers.Serializer):
     tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
 
 
-class PosInvoiceInitialPaymentSerializer(serializers.Serializer):
-    method = serializers.ChoiceField(choices=Payment.Method.choices, required=False, default=Payment.Method.CASH)
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
-    paid_at = serializers.DateTimeField(required=False, default=timezone.now)
-
-
 class PosInvoiceCreateSerializer(serializers.Serializer):
     customer_id = serializers.UUIDField(required=False, allow_null=True)
     total = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     lines = PosInvoiceLineInputSerializer(many=True)
-    initial_payment = PosInvoiceInitialPaymentSerializer(required=False, allow_null=True)
     device_id = serializers.UUIDField(required=False, allow_null=True)
 
     def validate(self, attrs):
@@ -500,19 +513,12 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         if requested_total > computed_total:
             raise serializers.ValidationError({"total": "Invoice total cannot exceed computed line total."})
 
-        initial_payment = attrs.get("initial_payment")
-        payment_amount = _to_money(initial_payment["amount"]) if initial_payment else Decimal("0.00")
-        if payment_amount > requested_total:
-            raise serializers.ValidationError({"initial_payment": "Initial payment cannot exceed invoice total."})
-
         attrs["_shift"] = shift
         attrs["_customer"] = customer
         attrs["_line_calculations"] = line_calculations
         attrs["_subtotal"] = _to_money(subtotal)
         attrs["_tax_total"] = _to_money(tax_total)
         attrs["_discount_total"] = _to_money(computed_total - requested_total)
-        attrs["_amount_paid"] = payment_amount
-        attrs["_balance_due"] = _to_money(requested_total - payment_amount)
         return attrs
 
     @transaction.atomic
@@ -520,7 +526,6 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         request = self.context["request"]
         user = request.user
         shift = validated_data["_shift"]
-        initial_payment = validated_data.get("initial_payment")
 
         created_at = timezone.now()
         local_invoice_no = f"POS-{created_at.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
@@ -532,14 +537,14 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
             customer=validated_data["_customer"],
             invoice_number=f"{shift.branch.code}-{local_invoice_no}",
             local_invoice_no=local_invoice_no,
-            status=Invoice.Status.PAID if validated_data["_balance_due"] == 0 else Invoice.Status.PARTIALLY_PAID if validated_data["_amount_paid"] > 0 else Invoice.Status.OPEN,
+            status=Invoice.Status.OPEN,
             subtotal=validated_data["_subtotal"],
             discount_total=validated_data["_discount_total"],
             tax_total=validated_data["_tax_total"],
             total=_to_money(validated_data["total"]),
-            amount_paid=validated_data["_amount_paid"],
-            balance_due=validated_data["_balance_due"],
-            paid_at=initial_payment.get("paid_at") if initial_payment and validated_data["_balance_due"] == 0 else None,
+            amount_paid=Decimal("0.00"),
+            balance_due=_to_money(validated_data["total"]),
+            paid_at=None,
             event_id=uuid.uuid4(),
             created_at=created_at,
         )
@@ -547,18 +552,6 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         for line in validated_data["_line_calculations"]:
             InvoiceLine.objects.create(invoice=invoice, **line)
 
-        payment = None
-        if initial_payment:
-            payment = Payment.objects.create(
-                invoice=invoice,
-                method=initial_payment["method"],
-                amount=validated_data["_amount_paid"],
-                paid_at=initial_payment["paid_at"],
-                event_id=uuid.uuid4(),
-                device=shift.device,
-            )
-
-        validated_data["_created_payment"] = payment
         return invoice
 
 

@@ -38,6 +38,7 @@ import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
 const PERCENTAGE_PRESETS = [25, 50, 75, 100];
+const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'wallet', 'other'];
 const MAX_GROUP_RESULTS = 5;
 const MAX_TOTAL_RESULTS = 12;
 
@@ -301,6 +302,8 @@ function PaymentSummaryPanel(props) {
     setPaymentInputMode,
     paymentValue,
     setPaymentValue,
+    paymentMethod,
+    setPaymentMethod,
     handleAddPayment,
     handleCompleteSale,
     canCheckout,
@@ -365,6 +368,14 @@ function PaymentSummaryPanel(props) {
         ))}
       </Stack>
 
+      <ButtonGroup variant="outlined" fullWidth>
+        {PAYMENT_METHODS.map((method) => (
+          <Button key={method} variant={paymentMethod === method ? 'contained' : 'outlined'} onClick={() => setPaymentMethod(method)}>
+            {t(`payment_method_${method}`, { defaultValue: method })}
+          </Button>
+        ))}
+      </ButtonGroup>
+
       <Button variant="contained" color="primary" onClick={handleAddPayment} fullWidth>
         {t('record_payment')}
       </Button>
@@ -377,7 +388,7 @@ function PaymentSummaryPanel(props) {
             <ListItem key={payment.id} divider>
               <ListItemText
                 primary={`${t('payment')} #${index + 1}`}
-                secondary={`${payment.label} → ${formatCurrency(payment.amount)}`}
+                secondary={`${t(`payment_method_${payment.method}`, { defaultValue: payment.method })} • ${payment.label} → ${formatCurrency(payment.amount)}`}
                 sx={{ textAlign: isRTL ? 'right' : 'left' }}
               />
             </ListItem>
@@ -464,6 +475,7 @@ export default function POS() {
   const [isTotalManuallyOverridden, setIsTotalManuallyOverridden] = useState(false);
   const [paymentInputMode, setPaymentInputMode] = useState('amount');
   const [paymentValue, setPaymentValue] = useState('0');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [payments, setPayments] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -676,9 +688,8 @@ export default function POS() {
         quantity: item.quantity,
         unit_price: Number(item.unitPrice.toFixed(2)),
       })),
-      initial_payment: payments.length ? { method: 'cash', amount: paidSoFar } : null,
     }),
-    [cart, parsedInvoiceTotal, paidSoFar, payments.length, selectedCustomer],
+    [cart, parsedInvoiceTotal, selectedCustomer],
   );
 
   const filteredReceipts = useMemo(() => {
@@ -767,6 +778,7 @@ export default function POS() {
       ...prev,
       {
         id: crypto.randomUUID(),
+        method: paymentMethod,
         amount: Number(computedPaymentAmount.toFixed(2)),
         label:
           paymentInputMode === 'percentage'
@@ -790,7 +802,19 @@ export default function POS() {
     setIsCompletingSale(true);
     setActionFeedback({ severity: '', message: '' });
     try {
-      await axios.post('/api/v1/pos/invoices/', invoicePayload);
+      const invoiceResponse = await axios.post('/api/v1/pos/invoices/', invoicePayload);
+      const createdInvoice = invoiceResponse.data;
+      const paymentContracts = payments.map((paymentEntry) => ({
+        invoice: createdInvoice.id,
+        method: paymentEntry.method,
+        amount: Number(paymentEntry.amount.toFixed(2)),
+        device: createdInvoice.device,
+        event_id: crypto.randomUUID(),
+        paid_at: new Date().toISOString(),
+      }));
+
+      await Promise.all(paymentContracts.map((paymentContract) => axios.post('/api/v1/payments/', paymentContract)));
+
       setCart([]);
       setPayments([]);
       setSelectedCustomer(null);
@@ -955,6 +979,8 @@ export default function POS() {
               setPaymentInputMode={setPaymentInputMode}
               paymentValue={paymentValue}
               setPaymentValue={setPaymentValue}
+              paymentMethod={paymentMethod}
+              setPaymentMethod={setPaymentMethod}
               handleAddPayment={handleAddPayment}
               handleCompleteSale={handleCompleteSale}
               canCheckout={canCheckout}
