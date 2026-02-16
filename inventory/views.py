@@ -152,8 +152,9 @@ class PurchaseOrderViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
-    @action(detail=False, methods=["get"], url_path="pending")
+    @action(detail=False, methods=["get"], url_path="pending", pagination_class=None)
     def pending(self, request):
+        """Return all open POs for compact dashboard widgets (intentionally unpaginated)."""
         qs = self.get_queryset().filter(status__in=[PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.APPROVED])
         return Response(self.get_serializer(qs, many=True).data)
 
@@ -177,8 +178,9 @@ class InventoryAlertViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user).filter(resolved_at__isnull=True).order_by("-created_at")
 
-    @action(detail=False, methods=["get"], url_path="unread")
+    @action(detail=False, methods=["get"], url_path="unread", pagination_class=None)
     def unread(self, request):
+        """Unread alerts feed is intentionally unpaginated for badge counters."""
         qs = self.get_queryset().filter(is_read=False)
         return Response(self.get_serializer(qs, many=True).data)
 

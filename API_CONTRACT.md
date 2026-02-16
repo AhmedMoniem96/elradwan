@@ -100,7 +100,32 @@ The server emits **SyncOutbox** rows on every domain change. The `id` is a **BIG
 - `GET /api/v1/customers`
 - `GET /api/v1/invoices`
 
-All lists are paginated and read-only for the PWA.
+Default list pagination uses DRF page-number format.
+
+**Defaults**
+- `page=1` when omitted
+- `page_size=50` when omitted
+- `page_size` can be provided by client via query param
+- `page_size` is capped at `200` (values above 200 are clamped to 200)
+
+**Paginated response shape**
+```json
+{
+  "count": 123,
+  "next": "https://api.example.com/api/v1/products/?page=2&page_size=50",
+  "previous": null,
+  "results": [
+    {"id": "uuid", "...": "..."}
+  ]
+}
+```
+
+**Explicit unpaginated endpoints**
+- `GET /api/v1/purchase-orders/pending/` (small dashboard dataset of open POs)
+- `GET /api/v1/alerts/unread/` (badge/feed lookup; caller typically needs complete unread set)
+- `GET /api/v1/invoices/recent-activity/` (fixed latest-10 activity feed)
+
+These endpoints intentionally return a JSON array instead of the paginated envelope.
 
 ---
 

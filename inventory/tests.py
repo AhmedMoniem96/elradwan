@@ -45,7 +45,9 @@ class BranchScopedInventoryTests(TestCase):
         response = self.client.get("/api/v1/products/")
 
         self.assertEqual(response.status_code, 200)
-        ids = {item["id"] for item in response.json()}
+        payload = response.json()
+        self.assertEqual(sorted(payload.keys()), ["count", "next", "previous", "results"])
+        ids = {item["id"] for item in payload["results"]}
         self.assertIn(str(self.product_a.id), ids)
         self.assertNotIn(str(self.product_b.id), ids)
 
@@ -166,6 +168,7 @@ class ProcurementFlowTests(TestCase):
 
         pending_res = self.client.get("/api/v1/purchase-orders/pending/")
         self.assertEqual(pending_res.status_code, 200)
+        self.assertIsInstance(pending_res.json(), list)
         self.assertEqual(len(pending_res.json()), 0)
 
         history_res = self.client.get("/api/v1/reports/purchases/received-history/")
@@ -290,6 +293,7 @@ class StockIntelligenceTests(TestCase):
 
         unread_res = self.client.get("/api/v1/alerts/unread/")
         self.assertEqual(unread_res.status_code, 200)
+        self.assertIsInstance(unread_res.json(), list)
         self.assertEqual(len(unread_res.json()), 1)
 
         mark_read_res = self.client.post(
