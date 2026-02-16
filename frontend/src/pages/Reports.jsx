@@ -124,12 +124,12 @@ export default function Reports() {
       setArReport(arReportRes.status === 'fulfilled' ? normalizeCollectionResponse(arReportRes.value.data) : []);
 
       if (failedRequests.length > 0) {
-        setError('في بيانات من التقارير ما اتحمّلتش. جرّب تعمل تحديث.');
+        setError('reports_partial_load_error');
       } else {
         setError('');
       }
     } catch {
-      setError('في مشكلة في تحميل التقارير. جرّب تعمل تحديث.');
+      setError('reports_load_error');
     } finally {
       setIsLoading(false);
     }
@@ -186,40 +186,40 @@ export default function Reports() {
   return (
     <PageShell>
       <PageHeader
-        title="Reports"
-        subtitle="Standardized cards, spacing, and table density across analytics views."
+        title={t('reports')}
+        subtitle={t('reports_page_subtitle')}
       />
 
       {error && (
         <ErrorState
           icon={InsightsOutlinedIcon}
-          title="التقارير مش راضية تتحمّل"
-          helperText={error}
-          actionLabel="جرّب تاني"
+          title={t('reports_error_title')}
+          helperText={t(error)}
+          actionLabel={t('reports_retry')}
           onAction={loadReports}
         />
       )}
-      {isLoading && <LoadingState icon={InsightsOutlinedIcon} title="بنجهّز التقارير" helperText="استنّى شوية وهتظهر البيانات." />}
+      {isLoading && <LoadingState icon={InsightsOutlinedIcon} title={t('reports_loading_title')} helperText={t('reports_loading_helper')} />}
 
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <SectionPanel title="Filters" subtitle="Use a consistent filter rhythm and button hierarchy.">
+          <SectionPanel title={t('reports_filters_title')} subtitle={t('reports_filters_subtitle')}>
             <Stack direction="row" spacing={2} useFlexGap flexWrap="wrap" alignItems="center">
               <TextField
                 select
-                label="Branch"
+                label={t('branch')}
                 value={filters.branch_id}
                 onChange={(e) => setFilters((f) => ({ ...f, branch_id: e.target.value }))}
                 sx={{ minWidth: 180 }}
               >
-                <MenuItem value="">All</MenuItem>
+                <MenuItem value="">{t('all')}</MenuItem>
                 {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
               </TextField>
               <Stack spacing={0.5}>
                 <Stack direction="row" spacing={2}>
                   <TextField
                     type="date"
-                    label="From"
+                    label={t('from')}
                     InputLabelProps={{ shrink: true }}
                     value={filters.date_from}
                     error={Boolean(dateValidationError)}
@@ -230,7 +230,7 @@ export default function Reports() {
                   />
                   <TextField
                     type="date"
-                    label="To"
+                    label={t('to')}
                     InputLabelProps={{ shrink: true }}
                     value={filters.date_to}
                     error={Boolean(dateValidationError)}
@@ -242,18 +242,18 @@ export default function Reports() {
                 </Stack>
                 {dateValidationError && <FormHelperText error>{t(dateValidationError)}</FormHelperText>}
               </Stack>
-              <TextField label="Timezone" value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
-              <Button variant="contained" onClick={applyFilters}>Refresh</Button>
-              <Button variant="text" onClick={clearFilters}>Clear filters</Button>
+              <TextField label={t('timezone')} value={filters.timezone} onChange={(e) => setFilters((f) => ({ ...f, timezone: e.target.value }))} sx={{ minWidth: 200 }} />
+              <Button variant="contained" onClick={applyFilters}>{t('refresh')}</Button>
+              <Button variant="text" onClick={clearFilters}>{t('clear_filters')}</Button>
             </Stack>
           </SectionPanel>
         </Grid>
 
         {[
-          ['Revenue', formatCurrency(grossMargin.revenue)],
-          ['COGS', formatCurrency(grossMargin.cogs)],
-          ['Gross Margin', formatCurrency(grossMargin.gross_margin)],
-          ['Margin %', `${formatNumber(Number(grossMargin.margin_pct || 0).toFixed(2))}%`],
+          [t('reports_metric_revenue'), formatCurrency(grossMargin.revenue)],
+          [t('reports_metric_cogs'), formatCurrency(grossMargin.cogs)],
+          [t('reports_metric_gross_margin'), formatCurrency(grossMargin.gross_margin)],
+          [t('reports_metric_margin_pct'), `${formatNumber(Number(grossMargin.margin_pct || 0).toFixed(2))}%`],
         ].map(([label, value]) => (
           <Grid item xs={12} md={3} key={label}>
             <Card variant="panel">
@@ -266,7 +266,7 @@ export default function Reports() {
         ))}
 
         <Grid item xs={12} md={6}>
-          <SectionPanel title="Payment Method Split">
+          <SectionPanel title={t('reports_payment_method_split_title')}>
             <Stack spacing={1.5}>
               {paymentSplit.map((p) => (
                 <Box key={p.method}>
@@ -277,62 +277,66 @@ export default function Reports() {
                 </Box>
               ))}
             </Stack>
-            {!paymentSplit.length && <EmptyState icon={InsightsOutlinedIcon} title="مفيش بيانات دفع" helperText="اختار فترة زمنية أو فرع مختلف." />}
-            <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('payment-method-split')}>Export CSV</Button>
+            {!paymentSplit.length && <EmptyState icon={InsightsOutlinedIcon} title={t('reports_payment_empty_title')} helperText={t('reports_payment_empty_helper')} />}
+            <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('payment-method-split')}>{t('reports_export_csv')}</Button>
           </SectionPanel>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <TableCard
-            title="Daily Sales"
-            columns={[{ key: 'day', label: 'Day', render: (v) => formatDate(v) }, { key: 'invoice_count', label: 'Invoices', render: (v) => formatNumber(v) }, { key: 'gross_sales', label: 'Gross Sales', render: (v) => formatCurrency(v) }]}
+            title={t('reports_daily_sales_title')}
+            columns={[
+              { key: 'day', label: t('reports_column_day'), render: (v) => formatDate(v) },
+              { key: 'invoice_count', label: t('reports_column_invoices'), render: (v) => formatNumber(v) },
+              { key: 'gross_sales', label: t('reports_column_gross_sales'), render: (v) => formatCurrency(v) },
+            ]}
             rows={dailySales}
           />
-          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('daily-sales')}>Export CSV</Button>
+          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('daily-sales')}>{t('reports_export_csv')}</Button>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <TableCard
-            title="Top Products (drill-down)"
+            title={t('reports_top_products_title')}
             columns={[
-              { key: 'product__name', label: 'Product' },
-              { key: 'quantity', label: 'Qty', render: (v) => formatNumber(v) },
-              { key: 'revenue', label: 'Revenue', render: (v) => formatCurrency(v) },
-              { key: 'gross_margin', label: 'Margin', render: (v) => formatCurrency(v) },
+              { key: 'product__name', label: t('product') },
+              { key: 'quantity', label: t('reports_column_qty'), render: (v) => formatNumber(v) },
+              { key: 'revenue', label: t('reports_metric_revenue'), render: (v) => formatCurrency(v) },
+              { key: 'gross_margin', label: t('reports_column_margin'), render: (v) => formatCurrency(v) },
             ]}
             rows={topProducts}
           />
-          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('top-products')}>Export CSV</Button>
+          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('top-products')}>{t('reports_export_csv')}</Button>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <TableCard
-            title="Top Customers (drill-down)"
+            title={t('reports_top_customers_title')}
             columns={[
-              { key: 'customer__name', label: 'Customer' },
-              { key: 'invoice_count', label: 'Invoices', render: (v) => formatNumber(v) },
-              { key: 'gross_sales', label: 'Sales', render: (v) => formatCurrency(v) },
-              { key: 'balance_due', label: 'Outstanding', render: (v) => formatCurrency(v) },
+              { key: 'customer__name', label: t('customer') },
+              { key: 'invoice_count', label: t('reports_column_invoices'), render: (v) => formatNumber(v) },
+              { key: 'gross_sales', label: t('reports_column_sales'), render: (v) => formatCurrency(v) },
+              { key: 'balance_due', label: t('reports_column_outstanding'), render: (v) => formatCurrency(v) },
             ]}
             rows={topCustomers}
           />
-          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('top-customers')}>Export CSV</Button>
+          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('top-customers')}>{t('reports_export_csv')}</Button>
         </Grid>
 
         <Grid item xs={12}>
           <TableCard
-            title="Accounts Receivable / Partial Payments"
+            title={t('reports_accounts_receivable_title')}
             columns={[
-              { key: 'invoice_number', label: 'Invoice' },
-              { key: 'customer', label: 'Customer' },
-              { key: 'status', label: 'Status' },
-              { key: 'amount_paid', label: 'Paid', render: (v) => formatCurrency(v) },
-              { key: 'balance_due', label: 'Balance', render: (v) => formatCurrency(v) },
-              { key: 'age_days', label: 'Age (days)', render: (v) => formatNumber(v) },
+              { key: 'invoice_number', label: t('invoice') },
+              { key: 'customer', label: t('customer') },
+              { key: 'status', label: t('status') },
+              { key: 'amount_paid', label: t('paid'), render: (v) => formatCurrency(v) },
+              { key: 'balance_due', label: t('balance'), render: (v) => formatCurrency(v) },
+              { key: 'age_days', label: t('reports_column_age_days'), render: (v) => formatNumber(v) },
             ]}
             rows={arReport}
           />
-          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('accounts-receivable')}>Export CSV</Button>
+          <Button sx={{ mt: 1 }} size="small" onClick={() => exportCsv('accounts-receivable')}>{t('reports_export_csv')}</Button>
         </Grid>
       </Grid>
     </PageShell>
