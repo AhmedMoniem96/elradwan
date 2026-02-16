@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta
 
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Sum
 from django.http import HttpResponse
 from django.utils import timezone
@@ -86,9 +86,19 @@ class OutboxMutationMixin:
         if not getattr(user, "branch_id", None):
             raise ValidationError("Authenticated user must belong to a branch to create records.")
 
-        instance = serializer.save(branch_id=user.branch_id)
+        try:
+            instance = serializer.save(branch_id=user.branch_id)
+        except IntegrityError as exc:
+            raise ValidationError({"non_field_errors": [self._format_integrity_error(exc)]})
         self._emit(instance, "upsert")
         self._audit(action=f"{self.audit_entity}.create", entity=self.audit_entity, instance=instance, after_snapshot=self.get_serializer(instance).data)
+
+    def _format_integrity_error(self, exc):
+        message = str(exc)
+        lowered = message.lower()
+        if "duplicate key value" in lowered or "unique constraint" in lowered:
+            return "A record with these values already exists."
+        return "Unable to save this record due to a database constraint."
 
     def perform_update(self, serializer):
         before_snapshot = self.get_serializer(serializer.instance).data
@@ -207,6 +217,13 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        sku = serializer.validated_data.get("sku")
+        if sku and Product.objects.filter(branch_id=user.branch_id, sku=sku).exists():
+            raise ValidationError({"sku": ["A product with this SKU already exists in your branch."]})
+        super().perform_create(serializer)
 
 
 class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
