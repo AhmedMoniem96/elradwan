@@ -13,6 +13,7 @@ from common.audit import create_audit_log_from_request
 from common.permissions import RoleCapabilityPermission, user_has_capability
 from common.utils import emit_outbox
 from core.views import scoped_queryset_for_user
+from sync.permissions import resolve_device_for_user
 from sales.models import CashShift, Customer, Invoice, Payment, Return
 from sales.serializers import (
     CashShiftCloseSerializer,
@@ -357,13 +358,17 @@ class CashShiftOpenView(APIView):
         device_id = serializer.validated_data["device"]
         opening_amount = serializer.validated_data["opening_amount"]
 
-        if CashShift.objects.filter(cashier=user, device_id=device_id, closed_at__isnull=True).exists():
+        device, device_error, _ = resolve_device_for_user(user, device_id, allow_admin_override=False)
+        if device is None:
+            raise ValidationError({"device": device_error})
+
+        if CashShift.objects.filter(cashier=user, device_id=device.id, closed_at__isnull=True).exists():
             raise ValidationError("An open shift already exists for this cashier and device.")
 
         shift = CashShift.objects.create(
             branch_id=user.branch_id,
             cashier=user,
-            device_id=device_id,
+            device=device,
             opening_amount=opening_amount,
         )
 
