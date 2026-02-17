@@ -71,6 +71,63 @@ class BranchScopedInventoryTests(TestCase):
         created = Product.objects.get(id=response.json()["id"])
         self.assertEqual(created.branch_id, self.branch_a.id)
 
+    def test_admin_create_product_allows_blank_nullable_fields_in_multipart(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "sku": "A-MULTI",
+                "name": "Multipart Product",
+                "price": "11.00",
+                "tax_rate": "0.0000",
+                "category": "",
+                "cost": "",
+                "preferred_supplier": "",
+                "slug": "",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = Product.objects.get(id=response.json()["id"])
+        self.assertIsNone(created.category)
+        self.assertIsNone(created.cost)
+        self.assertIsNone(created.preferred_supplier)
+        self.assertIsNone(created.slug)
+
+    def test_admin_update_product_allows_blank_nullable_fields_in_multipart(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        supplier = Supplier.objects.create(branch=self.branch_a, name="Supplier A", code="SUP-A")
+        product = Product.objects.create(
+            branch=self.branch_a,
+            sku="A-UPD",
+            name="Updatable Product",
+            price=Decimal("12.00"),
+            cost=Decimal("3.00"),
+            preferred_supplier=supplier,
+            slug="updatable-product",
+        )
+
+        response = self.client.patch(
+            f"/api/v1/admin/products/{product.id}/",
+            {
+                "category": "",
+                "cost": "",
+                "preferred_supplier": "",
+                "slug": "",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertIsNone(product.category)
+        self.assertIsNone(product.cost)
+        self.assertIsNone(product.preferred_supplier)
+        self.assertIsNone(product.slug)
+
 
     def test_admin_create_product_handles_uuid_in_outbox_payload(self):
         self.client.force_authenticate(user=self.admin_a)

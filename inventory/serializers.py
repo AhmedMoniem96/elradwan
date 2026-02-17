@@ -77,6 +77,13 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.image.url
         return request.build_absolute_uri(obj.image.url)
 
+    def validate(self, attrs):
+        nullable_optional_fields = ["category", "cost", "preferred_supplier", "slug"]
+        for field_name in nullable_optional_fields:
+            if attrs.get(field_name, serializers.empty) == "":
+                attrs[field_name] = None
+        return attrs
+
 
 class WarehouseSerializer(serializers.ModelSerializer):
     class Meta:
