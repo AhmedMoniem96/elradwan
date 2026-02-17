@@ -277,15 +277,15 @@ function AlertsCenter({
     <Panel compact>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
         <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_alerts_center', 'Alerts Center')}</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_alerts_center')}</Typography>
           <Typography variant="caption" color="text.secondary">
-            {t('dashboard_alerts_last_updated', 'Last updated')}: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '—'}
+            {t('dashboard_alerts_last_updated')}: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '—'}
           </Typography>
         </Box>
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-          <Chip size="small" color="error" label={`${t('dashboard_critical', 'Critical')}: ${alertCounts.critical}`} />
-          <Chip size="small" color="warning" label={`${t('dashboard_high', 'High')}: ${alertCounts.high}`} />
-          <Chip size="small" color="default" label={`${t('dashboard_normal', 'Normal')}: ${alertCounts.normal}`} />
+          <Chip size="small" color="error" label={`${t('dashboard_critical')}: ${alertCounts.critical}`} />
+          <Chip size="small" color="warning" label={`${t('dashboard_high')}: ${alertCounts.high}`} />
+          <Chip size="small" color="default" label={`${t('dashboard_normal')}: ${alertCounts.normal}`} />
         </Stack>
       </Stack>
 
@@ -293,8 +293,8 @@ function AlertsCenter({
 
       {alerts.length === 0 ? (
         <EmptyState
-          title={t('dashboard_alerts_center_empty_title', 'No active alerts')}
-          helperText={t('dashboard_alerts_center_empty_helper', 'Inventory, sync, and operational notices will appear here when action is needed.')}
+          title={t('dashboard_alerts_center_empty_title')}
+          helperText={t('dashboard_alerts_center_empty_helper')}
         />
       ) : (
         <Stack spacing={0.75}>
@@ -317,36 +317,36 @@ function AlertsCenter({
                     <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                       <Chip size="small" color={severityColor} label={toTitle(alert.severity)} sx={{ textTransform: 'capitalize' }} />
                       <Chip size="small" variant="outlined" label={alert.categoryLabel} />
-                      {!!alert.acknowledgedAt && <Chip size="small" label={t('dashboard_acknowledged', 'Acknowledged')} />}
+                      {!!alert.acknowledgedAt && <Chip size="small" label={t('dashboard_acknowledged')} />}
                     </Stack>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>{alert.title}</Typography>
                     <Typography variant="caption" color="text.secondary">{alert.description}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {t('dashboard_alert_created_at', 'Created')}: {formatDateTime(alert.createdAt)}
+                      {t('dashboard_alert_created_at')}: {formatDateTime(alert.createdAt)}
                     </Typography>
                   </Stack>
                   <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Button size="small" variant="outlined" onClick={() => onOpenAlert(alert)}>
-                      {t('dashboard_open', 'Open')}
+                      {t('dashboard_open')}
                     </Button>
                     {alert.actions?.includes('markRead') && (
                       <Button size="small" variant="contained" onClick={() => onMarkInventoryRead(alert)}>
-                        {t('dashboard_mark_read', 'Mark read')}
+                        {t('dashboard_mark_read')}
                       </Button>
                     )}
                     {alert.actions?.includes('retrySync') && (
                       <Button size="small" variant="contained" onClick={() => onRetryFailedSync(alert)}>
-                        {t('dashboard_retry', 'Retry')}
+                        {t('dashboard_retry')}
                       </Button>
                     )}
                     {alert.actions?.includes('discardSync') && (
                       <Button size="small" variant="outlined" color="warning" onClick={() => onDiscardFailedSync(alert)}>
-                        {t('dashboard_discard', 'Discard')}
+                        {t('dashboard_discard')}
                       </Button>
                     )}
                     {!alert.acknowledgedAt && (
                       <Button size="small" onClick={() => onAcknowledge(alert.id)}>
-                        {t('dashboard_acknowledge', 'Acknowledge')}
+                        {t('dashboard_acknowledge')}
                       </Button>
                     )}
                   </Stack>
@@ -710,7 +710,7 @@ export default function Dashboard() {
         const list = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.results) ? res.data.results : []);
         setBranches(list.map((branch) => ({
           id: String(branch.id),
-          name: branch.name || branch.code || `${t('branches', 'Branches')} #${branch.id}`,
+          name: branch.name || branch.code || `${t('branches')} #${branch.id}`,
         })));
       })
       .catch((error) => {
@@ -857,9 +857,9 @@ export default function Dashboard() {
 
   const stockAlertsData = useMemo(
     () => [
-      { label: t('dashboard_critical_stock', 'Critical'), value: Number(stockSummary.critical_count || 0), color: 'error.main' },
-      { label: t('dashboard_low_stock', 'Low'), value: Number(stockSummary.low_count || 0), color: 'warning.main' },
-      { label: t('dashboard_unread_alerts', 'Unread'), value: Number(stockSummary.unread_alert_count || 0), color: 'info.main' },
+      { label: t('dashboard_critical_stock'), value: Number(stockSummary.critical_count || 0), color: 'error.main' },
+      { label: t('dashboard_low_stock'), value: Number(stockSummary.low_count || 0), color: 'warning.main' },
+      { label: t('dashboard_unread_alerts'), value: Number(stockSummary.unread_alert_count || 0), color: 'info.main' },
     ],
     [stockSummary.critical_count, stockSummary.low_count, stockSummary.unread_alert_count, t],
   );
@@ -890,54 +890,54 @@ export default function Dashboard() {
   const roleQuickActions = {
     cashier: [
       {
-        label: t('dashboard_open_shift', 'Open Shift'),
+        label: t('dashboard_open_shift'),
         disabled: !canAccessPos,
         onClick: () => navigate('/pos'),
         emphasis: true,
       },
       {
-        label: t('dashboard_close_shift', 'Close Shift'),
+        label: t('dashboard_close_shift'),
         disabled: !canCloseSelfShift,
         onClick: () => navigate('/pos'),
       },
       {
-        label: t('dashboard_open_pos', 'Open POS'),
+        label: t('dashboard_open_pos'),
         disabled: !canAccessPos,
         onClick: () => navigate('/pos'),
       },
     ],
     supervisor: [
       {
-        label: t('dashboard_close_shift', 'Close Shift'),
+        label: t('dashboard_close_shift'),
         disabled: !canCloseOverride,
         onClick: () => navigate('/pos'),
         emphasis: true,
       },
       {
-        label: t('dashboard_view_alerts', 'View Alerts'),
+        label: t('dashboard_view_alerts'),
         disabled: !canViewInventory,
         onClick: () => navigate('/inventory'),
       },
       {
-        label: t('dashboard_approval_queue', 'Approval Queue'),
+        label: t('dashboard_approval_queue'),
         disabled: !canApproveQueue,
         onClick: () => navigate('/suppliers'),
       },
     ],
     admin: [
       {
-        label: t('dashboard_view_alerts', 'View Alerts'),
+        label: t('dashboard_view_alerts'),
         disabled: !canViewInventory,
         onClick: () => navigate('/inventory'),
       },
       {
-        label: t('dashboard_create_po', 'Create PO'),
+        label: t('dashboard_create_po'),
         disabled: !canApproveQueue,
         onClick: () => navigate('/suppliers'),
         emphasis: true,
       },
       {
-        label: t('dashboard_branch_compare', 'Branch Comparison'),
+        label: t('dashboard_branch_compare'),
         disabled: !canViewBranchComparison,
         onClick: () => navigate('/reports'),
       },
@@ -953,7 +953,7 @@ export default function Dashboard() {
     {
       id: 'gross-sales',
       value: formatCurrency(salesTotals.current),
-      caption: t('dashboard_sales_amount_trend', 'Gross sales'),
+      caption: t('dashboard_sales_amount_trend'),
       helper: Number.isFinite(salesDeltaPct)
         ? `${trendFromDelta(salesDeltaPct) === 'down' ? '↓' : trendFromDelta(salesDeltaPct) === 'up' ? '↑' : '→'} ${formatNumber(Math.abs(salesDeltaPct))}%`
         : '—',
@@ -961,7 +961,7 @@ export default function Dashboard() {
     {
       id: 'accounts-receivable',
       value: formatCurrency(accountsReceivableTotals.current),
-      caption: t('dashboard_accounts_receivable', 'Accounts receivable'),
+      caption: t('dashboard_accounts_receivable'),
       helper: Number.isFinite(receivablesDeltaPct)
         ? `${trendFromDelta(receivablesDeltaPct) === 'down' ? '↓' : trendFromDelta(receivablesDeltaPct) === 'up' ? '↑' : '→'} ${formatNumber(Math.abs(receivablesDeltaPct))}%`
         : '—',
@@ -969,18 +969,18 @@ export default function Dashboard() {
     {
       id: 'active-shifts',
       value: formatNumber(shiftSummary.active_shift_count || 0),
-      caption: t('dashboard_current_shift_status', 'Current shift status'),
-      helper: t('dashboard_active_shifts', 'Active shifts'),
+      caption: t('dashboard_current_shift_status'),
+      helper: t('dashboard_active_shifts'),
     },
     {
       id: 'critical-stock',
       value: formatNumber(stockSummary.critical_count || 0),
-      caption: t('dashboard_critical_stock', 'Critical stock'),
+      caption: t('dashboard_critical_stock'),
       helper: paymentSplitLoading
-        ? t('dashboard_loading_payment_split_title', 'Loading payment split')
+        ? t('dashboard_loading_payment_split_title')
         : paymentSplitFailed
-          ? t('dashboard_payment_split_error_title', 'Payment split is unavailable')
-          : `${t('dashboard_payment_methods', 'Payment methods')}: ${formatNumber(paymentSplitSeries.length)}`,
+          ? t('dashboard_payment_split_error_title')
+          : `${t('dashboard_payment_methods')}: ${formatNumber(paymentSplitSeries.length)}`,
     },
   ];
 
@@ -1018,9 +1018,9 @@ export default function Dashboard() {
         sourceId: item.reference_number,
         type: 'notice',
         severity: 'normal',
-        categoryLabel: t('dashboard_security_notice', 'Security / audit notice'),
-        title: `${toTitle(item.transaction_type) || t('notice', 'Notice')} • ${item.reference_number || '—'}`,
-        description: `${item.customer || t('walk_in_customer', 'Walk-in')} • ${toTitle(item.method_status)}`,
+        categoryLabel: t('dashboard_security_notice'),
+        title: `${toTitle(item.transaction_type) || t('notice')} • ${item.reference_number || '—'}`,
+        description: `${item.customer || t('walk_in_customer')} • ${toTitle(item.method_status)}`,
         createdAt: item.timestamp || new Date().toISOString(),
         pathname: '/audit-logs',
         params: { action: 'security', start_date: activeRange.date_from, end_date: activeRange.date_to },
@@ -1038,15 +1038,15 @@ export default function Dashboard() {
         sourceId: alert.id,
         type: 'inventory',
         severity: normalizedSeverity,
-        categoryLabel: t('dashboard_inventory_alert', 'Inventory'),
+        categoryLabel: t('dashboard_inventory_alert'),
         title: t('inventory_alert_message', {
           defaultValue: '{{product}} in {{warehouse}} is below threshold',
-          product: alert.product_name || t('product', 'Product'),
-          warehouse: alert.warehouse_name || t('warehouse', 'Warehouse'),
+          product: alert.product_name || t('product'),
+          warehouse: alert.warehouse_name || t('warehouse'),
           current: alert.current_quantity ?? 0,
           threshold: alert.threshold_quantity ?? 0,
         }),
-        description: `${t('dashboard_branch', 'Branch')}: ${branchId || '—'}`,
+        description: `${t('dashboard_branch')}: ${branchId || '—'}`,
         createdAt: alert.created_at || alert.createdAt || new Date().toISOString(),
         pathname: '/inventory',
         params: { severity: normalizedSeverity, branch_id: branchId || undefined },
@@ -1059,9 +1059,9 @@ export default function Dashboard() {
       sourceId: failure.id,
       type: 'sync',
       severity: 'high',
-      categoryLabel: t('dashboard_sync_failure', 'Sync failed event'),
+      categoryLabel: t('dashboard_sync_failure'),
       title: `${toTitle(failure.eventType)} • ${failure.eventId}`,
-      description: `${t('reason', 'Reason')}: ${failure.reasonCode || failure.reason}`,
+      description: `${t('reason')}: ${failure.reasonCode || failure.reason}`,
       createdAt: failure.failedAt || new Date().toISOString(),
       pathname: '/sync',
       params: { reason: failure.reasonCode || failure.reason },
@@ -1128,8 +1128,8 @@ export default function Dashboard() {
   return (
     <PageShell>
       <PageHeader
-        title={t('dashboard', 'Dashboard')}
-        subtitle={t('dashboard_subtitle', 'Unified spacing, typography, and density tokens applied.')}
+        title={t('dashboard')}
+        subtitle={t('dashboard_subtitle')}
       />
     <Grid container spacing={2}>
       <Grid item xs={12}>
@@ -1139,10 +1139,10 @@ export default function Dashboard() {
               <Grid item xs={12} lg={8}>
                 <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
+                  {t('dashboard_welcome_title')}{user?.username ? `, ${user.username}` : ''}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
+                  {t('dashboard_welcome_caption')}
                 </Typography>
                 </Box>
               </Grid>
@@ -1155,9 +1155,9 @@ export default function Dashboard() {
                   justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
                   sx={{ textAlign: { xs: 'start', lg: 'end' } }}
                 >
-                  <Chip size="small" color="primary" label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} />
-                  <Chip size="small" label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} />
-                  <Chip size="small" color="info" label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} />
+                  <Chip size="small" color="primary" label={`${t('dashboard_role')}: ${toTitle(userRole)}`} />
+                  <Chip size="small" label={`${t('dashboard_timezone')}: ${timezone}`} />
+                  <Chip size="small" color="info" label={`${t('dashboard_period')}: ${periodPreset.toUpperCase()}`} />
                 </Stack>
               </Grid>
             </Grid>
@@ -1168,14 +1168,14 @@ export default function Dashboard() {
                   select
                   fullWidth
                   size="small"
-                  label={t('dashboard_period', 'Period')}
+                  label={t('dashboard_period')}
                   value={periodPreset}
                   onChange={(event) => setPeriodPreset(event.target.value)}
                 >
-                  <MenuItem value="today">{t('dashboard_period_today', 'Today')}</MenuItem>
-                  <MenuItem value="7d">{t('dashboard_period_7d', 'Last 7 days')}</MenuItem>
-                  <MenuItem value="30d">{t('dashboard_period_30d', 'Last 30 days')}</MenuItem>
-                  <MenuItem value="custom">{t('dashboard_period_custom', 'Custom range')}</MenuItem>
+                  <MenuItem value="today">{t('dashboard_period_today')}</MenuItem>
+                  <MenuItem value="7d">{t('dashboard_period_7d')}</MenuItem>
+                  <MenuItem value="30d">{t('dashboard_period_30d')}</MenuItem>
+                  <MenuItem value="custom">{t('dashboard_period_custom')}</MenuItem>
                 </TextField>
               </Grid>
               {periodPreset === 'custom' && (
@@ -1185,7 +1185,7 @@ export default function Dashboard() {
                       fullWidth
                       size="small"
                       type="date"
-                      label={t('from', 'From')}
+                      label={t('from')}
                       InputLabelProps={{ shrink: true }}
                       value={customRange.date_from}
                       onChange={(event) => setCustomRange((prev) => ({ ...prev, date_from: event.target.value }))}
@@ -1196,7 +1196,7 @@ export default function Dashboard() {
                       fullWidth
                       size="small"
                       type="date"
-                      label={t('to', 'To')}
+                      label={t('to')}
                       InputLabelProps={{ shrink: true }}
                       value={customRange.date_to}
                       onChange={(event) => setCustomRange((prev) => ({ ...prev, date_to: event.target.value }))}
@@ -1214,7 +1214,7 @@ export default function Dashboard() {
                     marginInlineStart: { xs: 0, lg: 'auto' },
                   }}
                 >
-                  {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
+                  {t('dashboard_range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
                 </Typography>
               </Grid>
             </Grid>
@@ -1242,9 +1242,9 @@ export default function Dashboard() {
       {kpiFailed && (
         <Grid item xs={12}>
           <ErrorState
-            title={t('dashboard_kpis_error_title', 'Some KPI cards are unavailable')}
-            helperText={t('dashboard_kpis_error_helper', 'Parts of the summary did not load. You can retry without leaving the page.')}
-            actionLabel={t('retry', 'Retry')}
+            title={t('dashboard_kpis_error_title')}
+            helperText={t('dashboard_kpis_error_helper')}
+            actionLabel={t('retry')}
             onAction={() => setKpiRefreshNonce((prev) => prev + 1)}
           />
         </Grid>
@@ -1297,10 +1297,10 @@ export default function Dashboard() {
                   sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
                 >
                   <TrendChart
-                    title={t('dashboard_sales_amount_trend', 'Gross sales')}
+                    title={t('dashboard_sales_amount_trend')}
                     points={salesTrendData}
                     yFormatter={formatCurrency}
-                    peakLabel={t('dashboard_peak_value', 'Peak')}
+                    peakLabel={t('dashboard_peak_value')}
                     color="primary.main"
                     labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
                   />
@@ -1314,10 +1314,10 @@ export default function Dashboard() {
                   sx={{ width: '100%', textAlign: 'inherit', borderRadius: 2 }}
                 >
                   <TrendChart
-                    title={t('dashboard_invoice_count_trend', 'Invoice count')}
+                    title={t('dashboard_invoice_count_trend')}
                     points={invoicesTrendData}
                     yFormatter={formatNumber}
-                    peakLabel={t('dashboard_peak_value', 'Peak')}
+                    peakLabel={t('dashboard_peak_value')}
                     color="secondary.main"
                   />
                 </ButtonBase>
@@ -1333,16 +1333,16 @@ export default function Dashboard() {
           <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_admin_branch_analytics')}</Typography>
                 <TextField
                   select
                   size="small"
-                  label={t('branches', 'Branches')}
+                  label={t('branches')}
                   value={selectedBranchId}
                   onChange={(event) => setSelectedBranchId(event.target.value)}
                   sx={{ minWidth: 220, marginInlineStart: { md: 'auto' } }}
                 >
-                  <MenuItem value={ALL_BRANCHES_VALUE}>{t('dashboard_all_branches', 'All branches')}</MenuItem>
+                  <MenuItem value={ALL_BRANCHES_VALUE}>{t('dashboard_all_branches')}</MenuItem>
                   {branches.map((branch) => (
                     <MenuItem key={branch.id} value={branch.id}>{branch.name} ({branch.id})</MenuItem>
                   ))}
@@ -1351,20 +1351,20 @@ export default function Dashboard() {
 
               {adminBranchLoading ? (
                 <LoadingState
-                  title={t('dashboard_loading_branch_analytics_title', 'Loading branch analytics')}
-                  helperText={t('dashboard_loading_branch_analytics_helper', 'Fetching branch sales, margin, and stockout risk signals.')}
+                  title={t('dashboard_loading_branch_analytics_title')}
+                  helperText={t('dashboard_loading_branch_analytics_helper')}
                 />
               ) : adminBranchRows.length === 0 ? (
                 <EmptyState
-                  title={t('dashboard_branch_analytics_empty_title', 'No branch analytics data')}
-                  helperText={t('dashboard_branch_analytics_empty_helper', 'Try another period or branch selection to view branch metrics.')}
+                  title={t('dashboard_branch_analytics_empty_title')}
+                  helperText={t('dashboard_branch_analytics_empty_helper')}
                 />
               ) : (
                 <>
                   <Grid container spacing={2}>
                     <Grid item xs={12} md={4}>
                       <MiniHorizontalChart
-                        title={t('dashboard_branch_sales_ranking', 'Branch sales ranking')}
+                        title={t('dashboard_branch_sales_ranking')}
                         data={adminBranchRanking}
                         valueFormatter={formatCurrency}
                         labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
@@ -1372,7 +1372,7 @@ export default function Dashboard() {
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <MiniHorizontalChart
-                        title={t('dashboard_branch_margin_comparison', 'Branch margin comparison')}
+                        title={t('dashboard_branch_margin_comparison')}
                         data={adminBranchMargin}
                         valueFormatter={(value) => `${formatNumber(value)}%`}
                         labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
@@ -1380,7 +1380,7 @@ export default function Dashboard() {
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <MiniHorizontalChart
-                        title={t('dashboard_branch_stockout_risk_counts', 'Branch stockout-risk counts')}
+                        title={t('dashboard_branch_stockout_risk_counts')}
                         data={adminBranchStockout}
                         valueFormatter={formatNumber}
                         labelColor={theme.customTokens?.contrast?.chartLabel || 'text.secondary'}
@@ -1401,7 +1401,7 @@ export default function Dashboard() {
                                 direction: prev.key === 'branch_name' && prev.direction === 'asc' ? 'desc' : 'asc',
                               }))}
                             >
-                              {t('branches', 'Branches')}
+                              {t('branches')}
                             </TableSortLabel>
                           </TableCell>
                           <TableCell align="right">
@@ -1413,7 +1413,7 @@ export default function Dashboard() {
                                 direction: prev.key === 'sales' && prev.direction === 'desc' ? 'asc' : 'desc',
                               }))}
                             >
-                              {t('dashboard_branch_sales', 'Sales')}
+                              {t('dashboard_branch_sales')}
                             </TableSortLabel>
                           </TableCell>
                           <TableCell align="right">
@@ -1425,7 +1425,7 @@ export default function Dashboard() {
                                 direction: prev.key === 'margin_pct' && prev.direction === 'desc' ? 'asc' : 'desc',
                               }))}
                             >
-                              {t('dashboard_margin', 'Margin %')}
+                              {t('dashboard_margin')}
                             </TableSortLabel>
                           </TableCell>
                           <TableCell align="right">
@@ -1437,7 +1437,7 @@ export default function Dashboard() {
                                 direction: prev.key === 'stockout_risk_count' && prev.direction === 'desc' ? 'asc' : 'desc',
                               }))}
                             >
-                              {t('dashboard_stockout_risk', 'Stockout risk')}
+                              {t('dashboard_stockout_risk')}
                             </TableSortLabel>
                           </TableCell>
                         </TableRow>
@@ -1459,7 +1459,7 @@ export default function Dashboard() {
 
               {adminBranchFailed && (
                 <Typography variant="caption" color="error.main">
-                  {t('dashboard_branch_analytics_partial', 'Some branch metrics could not be loaded fully. Data may be partial.')}
+                  {t('dashboard_branch_analytics_partial')}
                 </Typography>
               )}
             </Stack>
@@ -1473,34 +1473,34 @@ export default function Dashboard() {
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               {userRole === 'admin'
-                ? t('dashboard_aging_reports', 'Aging reports')
+                ? t('dashboard_aging_reports')
                 : userRole === 'supervisor'
-                  ? t('dashboard_shift_exceptions', 'Shift exceptions')
-                  : t('dashboard_today_transactions', 'Today\'s transactions')}
+                  ? t('dashboard_shift_exceptions')
+                  : t('dashboard_today_transactions')}
             </Typography>
             <Button
               size="small"
               onClick={() => navigateWithParams('/audit-logs', { start_date: activeRange.date_from, end_date: activeRange.date_to })}
             >
-              {t('view_all', 'View all')}
+              {t('view_all')}
             </Button>
           </Stack>
           {recentActivityLoading ? (
             <LoadingState
-              title={t('dashboard_loading_activity_title', 'Loading activity')}
-              helperText={t('dashboard_loading_activity_helper', 'We are bringing the latest transactions for you.')}
+              title={t('dashboard_loading_activity_title')}
+              helperText={t('dashboard_loading_activity_helper')}
             />
           ) : recentActivityFailed ? (
             <ErrorState
-              title={t('dashboard_recent_activity_error_title', 'Recent activity is unavailable')}
-              helperText={t('dashboard_recent_activity_error_helper', 'Could not load transactions at the moment. Please retry.')}
-              actionLabel={t('retry', 'Retry')}
+              title={t('dashboard_recent_activity_error_title')}
+              helperText={t('dashboard_recent_activity_error_helper')}
+              actionLabel={t('retry')}
               onAction={() => setRecentActivityRefreshNonce((prev) => prev + 1)}
             />
           ) : recentActivity.length === 0 ? (
             <EmptyState
-              title={t('dashboard_recent_activity_empty_title', 'No transactions yet')}
-              helperText={t('dashboard_recent_activity_empty_helper', 'New transactions will appear here as soon as they happen.')}
+              title={t('dashboard_recent_activity_empty_title')}
+              helperText={t('dashboard_recent_activity_empty_helper')}
             />
           ) : (
             <Stack spacing={0.75} sx={{ mt: 1 }}>
@@ -1519,7 +1519,7 @@ export default function Dashboard() {
                   <Typography variant="body2">
                     {toTitle(item.transaction_type)} • {item.reference_number}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">{item.customer || t('walk_in_customer', 'Walk-in')}</Typography>
+                  <Typography variant="body2" color="text.secondary">{item.customer || t('walk_in_customer')}</Typography>
                   <Typography variant="body2">{formatCurrency(item.amount)}</Typography>
                   <Typography variant="body2" color="text.secondary">{toTitle(item.method_status)}</Typography>
                   <Typography variant="body2" color="text.secondary">{formatDateTime(item.timestamp)}</Typography>
