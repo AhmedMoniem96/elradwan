@@ -96,7 +96,7 @@ class OutboxMutationMixin:
 
 
 class CustomerViewSet(OutboxMutationMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
-    queryset = Customer.objects.all()
+    queryset = Customer.objects.order_by("created_at", "id")
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {
@@ -376,7 +376,7 @@ class ReturnViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
 
 class AdminCustomerViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
-    queryset = Customer.objects.all()
+    queryset = Customer.objects.order_by("created_at", "id")
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
