@@ -1,4 +1,11 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
 import axios from 'axios';
 import { getStoredDeviceId } from './sync/SyncContext';
 import { hasCapability } from './permissions';
@@ -79,6 +86,115 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [availableBranches, setAvailableBranches] = useState([]);
   const [availableDevices, setAvailableDevices] = useState([]);
+  const isRefreshingRef = useRef(false);
+  const pendingRequestsRef = useRef([]);
+
+  const flushPendingRequests = (nextToken) => {
+    pendingRequestsRef.current.forEach(({ resolve }) => resolve(nextToken));
+    pendingRequestsRef.current = [];
+  };
+
+  const rejectPendingRequests = (error) => {
+    pendingRequestsRef.current.forEach(({ reject }) => reject(error));
+    pendingRequestsRef.current = [];
+  };
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    delete axios.defaults.headers.common.Authorization;
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  useEffect(() => {
+    const requestInterceptor = axios.interceptors.request.use((config) => {
+      const storedAccessToken = localStorage.getItem('access_token');
+
+      if (storedAccessToken) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${storedAccessToken}`;
+      }
+
+      return config;
+    });
+
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error?.config;
+        const statusCode = error?.response?.status;
+
+        if (!originalRequest || statusCode !== 401 || originalRequest.skipAuthRefresh) {
+          return Promise.reject(error);
+        }
+
+        const isAuthPath = originalRequest.url?.includes('/api/v1/token/');
+        if (isAuthPath) {
+          return Promise.reject(error);
+        }
+
+        if (originalRequest._retry) {
+          logout();
+          return Promise.reject(error);
+        }
+
+        originalRequest._retry = true;
+        const refreshToken = localStorage.getItem('refresh_token');
+
+        if (!refreshToken) {
+          logout();
+          return Promise.reject(error);
+        }
+
+        if (isRefreshingRef.current) {
+          return new Promise((resolve, reject) => {
+            pendingRequestsRef.current.push({ resolve, reject });
+          })
+            .then((nextToken) => {
+              originalRequest.headers = originalRequest.headers || {};
+              originalRequest.headers.Authorization = `Bearer ${nextToken}`;
+              return axios(originalRequest);
+            });
+        }
+
+        isRefreshingRef.current = true;
+
+        try {
+          const refreshResponse = await axios.post(
+            '/api/v1/token/refresh/',
+            { refresh: refreshToken },
+            { skipAuthRefresh: true },
+          );
+          const nextToken = refreshResponse.data?.access;
+
+          if (!nextToken) {
+            throw new Error('Token refresh response did not include access token.');
+          }
+
+          localStorage.setItem('access_token', nextToken);
+          axios.defaults.headers.common.Authorization = `Bearer ${nextToken}`;
+          setToken(nextToken);
+          flushPendingRequests(nextToken);
+
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${nextToken}`;
+          return axios(originalRequest);
+        } catch (refreshError) {
+          rejectPendingRequests(refreshError);
+          logout();
+          return Promise.reject(refreshError);
+        } finally {
+          isRefreshingRef.current = false;
+        }
+      },
+    );
+
+    return () => {
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
+    };
+  }, [logout]);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -161,13 +277,6 @@ export const AuthProvider = ({ children }) => {
         fieldErrors: parsedError.fieldErrors,
       };
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    setToken(null);
-    setUser(null);
   };
 
   const setActiveBranchId = (branchId) => {
