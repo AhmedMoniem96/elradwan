@@ -181,6 +181,8 @@ function ProductSearchPanel(props) {
     searchGroups,
     addToCart,
     handleSelectCategory,
+    openProductManager,
+    canOpenProductManager,
   } = props;
 
   return (
@@ -234,7 +236,18 @@ function ProductSearchPanel(props) {
                     const isActive = flatIndex === activeResultIndex;
                     if (group.type === 'product') {
                       return (
-                        <ListItem key={`product-${entry.id}`} disablePadding secondaryAction={<Button size="small" variant="contained" color="primary" onClick={() => addToCart(entry)}>{t('add')}</Button>}>
+                        <ListItem
+                          key={`product-${entry.id}`}
+                          disablePadding
+                          secondaryAction={(
+                            <Stack direction="row" spacing={1}>
+                              {canOpenProductManager && (
+                                <Button size="small" variant="outlined" color="inherit" onClick={() => openProductManager(entry)}>{t('edit')}</Button>
+                              )}
+                              <Button size="small" variant="contained" color="primary" onClick={() => addToCart(entry)}>{t('add')}</Button>
+                            </Stack>
+                          )}
+                        >
                           <ListItemButton selected={isActive} onClick={() => addToCart(entry)}>
                             <ListItemAvatar>
                               <Avatar variant="rounded" src={entry.image_url || ''} alt={entry.name} sx={{ width: 36, height: 36 }} />
@@ -1073,6 +1086,11 @@ export default function POS() {
     setActiveCategoryId(null);
   };
 
+  const openProductManager = (product) => {
+    if (!product?.id || !can('inventory.view')) return;
+    navigate(`/inventory?product_id=${product.id}`);
+  };
+
   const activateResult = (result) => {
     if (!result) return;
     if (result.type === 'product') return addToCart(result.item);
@@ -1416,6 +1434,8 @@ export default function POS() {
               searchGroups={searchGroups}
               addToCart={addToCart}
               handleSelectCategory={handleSelectCategory}
+              openProductManager={openProductManager}
+              canOpenProductManager={can('inventory.view')}
             />
 
             <CartPanel t={t} isRTL={isRTL} cart={cart} updateQuantity={updateQuantity} />

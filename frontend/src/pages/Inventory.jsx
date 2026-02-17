@@ -121,6 +121,7 @@ export default function Inventory() {
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [stockStatusFilter, setStockStatusFilter] = useState('');
+  const [activeProductId, setActiveProductId] = useState('');
   const [transferForm, setTransferForm] = useState({
     source_warehouse_id: '',
     destination_warehouse_id: '',
@@ -309,6 +310,7 @@ export default function Inventory() {
   const clearProductForm = () => {
     setProductForm(initialProductForm);
     setProductErrors(initialProductErrors);
+    setActiveProductId('');
   };
 
   const validateProductForm = () => {
@@ -497,6 +499,18 @@ export default function Inventory() {
         .some((field) => String(field).toLowerCase().includes(filterValue));
     });
   }, [products, stockStatusFilter, t]);
+
+  useEffect(() => {
+    const requestedProductId = searchParams.get('product_id');
+    if (!requestedProductId || !products.length) return;
+
+    const product = products.find((item) => String(item.id) === String(requestedProductId));
+    if (!product) return;
+
+    startEditProduct(product);
+    setActiveProductId(String(product.id));
+    setStockStatusFilter(product.name || product.sku || '');
+  }, [products, searchParams]);
 
   return (
     <PageShell>
@@ -867,7 +881,11 @@ export default function Inventory() {
               {filteredProducts.map((product) => {
                 const statusMeta = getStockStatusMeta(draftStatus[product.id] || product.stock_status);
                 return (
-                <TableRow key={product.id}>
+                <TableRow
+                  key={product.id}
+                  selected={activeProductId && String(activeProductId) === String(product.id)}
+                  sx={activeProductId && String(activeProductId) === String(product.id) ? { '& td': { backgroundColor: 'action.selected' } } : undefined}
+                >
                   <TableCell>
                     <Avatar variant="rounded" src={product.image_url || ''} alt={product.name} sx={{ width: 40, height: 40 }} />
                   </TableCell>
@@ -922,7 +940,14 @@ export default function Inventory() {
                           }}
                         />
                       )}
-                      <Button variant="outlined" size="small" onClick={() => startEditProduct(product)}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                          startEditProduct(product);
+                          setActiveProductId(String(product.id));
+                        }}
+                      >
                         {t('edit')}
                       </Button>
                       <Button variant="contained" size="small" onClick={() => saveStatus(product)}>
