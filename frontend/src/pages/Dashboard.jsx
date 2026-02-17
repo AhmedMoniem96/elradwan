@@ -267,15 +267,15 @@ function AlertsCenter({
   onDiscardFailedSync,
 }) {
   return (
-    <Panel>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+    <Panel compact>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
         <Box>
-          <Typography variant="h6">{t('dashboard_alerts_center', 'Alerts Center')}</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_alerts_center', 'Alerts Center')}</Typography>
           <Typography variant="caption" color="text.secondary">
             {t('dashboard_alerts_last_updated', 'Last updated')}: {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : '—'}
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
           <Chip size="small" color="error" label={`${t('dashboard_critical', 'Critical')}: ${alertCounts.critical}`} />
           <Chip size="small" color="warning" label={`${t('dashboard_high', 'High')}: ${alertCounts.high}`} />
           <Chip size="small" color="default" label={`${t('dashboard_normal', 'Normal')}: ${alertCounts.normal}`} />
@@ -290,23 +290,24 @@ function AlertsCenter({
           helperText={t('dashboard_alerts_center_empty_helper', 'Inventory, sync, and operational notices will appear here when action is needed.')}
         />
       ) : (
-        <Stack spacing={1}>
+        <Stack spacing={0.75}>
           {alerts.map((alert) => {
             const severityColor = alert.severity === 'critical' ? 'error' : alert.severity === 'high' ? 'warning' : 'default';
             return (
               <Box
                 key={alert.id}
                 sx={{
-                  p: 1.25,
+                  px: 1.5,
+                  py: 1,
                   border: '1px solid',
                   borderColor: 'divider',
                   borderRadius: 1.5,
                   opacity: alert.acknowledgedAt ? 0.8 : 1,
                 }}
               >
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={0.75} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
                   <Stack spacing={0.5} sx={{ flex: 1 }}>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                       <Chip size="small" color={severityColor} label={toTitle(alert.severity)} sx={{ textTransform: 'capitalize' }} />
                       <Chip size="small" variant="outlined" label={alert.categoryLabel} />
                       {!!alert.acknowledgedAt && <Chip size="small" label={t('dashboard_acknowledged', 'Acknowledged')} />}
@@ -317,7 +318,7 @@ function AlertsCenter({
                       {t('dashboard_alert_created_at', 'Created')}: {formatDateTime(alert.createdAt)}
                     </Typography>
                   </Stack>
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Button size="small" variant="outlined" onClick={() => onOpenAlert(alert)}>
                       {t('dashboard_open', 'Open')}
                     </Button>
@@ -1094,13 +1095,13 @@ export default function Dashboard() {
         title={t('dashboard', 'Dashboard')}
         subtitle={t('dashboard_subtitle', 'Unified spacing, typography, and density tokens applied.')}
       />
-    <Grid container spacing={3}>
+    <Grid container spacing={2}>
       <Grid item xs={12}>
         <Panel compact>
           <Stack spacing={2}>
             <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2}>
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                   {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -1198,8 +1199,8 @@ export default function Dashboard() {
             <Grid key={card.id} item xs={12} sm={6} lg={3}>
               <Panel compact sx={{ height: '100%' }}>
                 <Typography variant="h5" sx={{ fontWeight: 700 }}>{card.value}</Typography>
-                <Typography variant="body2" color="text.secondary">{card.caption}</Typography>
-                <Typography variant="caption" color="text.secondary">{card.helper}</Typography>
+                <Typography variant="caption" color="text.secondary">{card.caption}</Typography>
+                <Typography variant="body2" color="text.secondary">{card.helper}</Typography>
               </Panel>
             </Grid>
           ))}
@@ -1266,7 +1267,7 @@ export default function Dashboard() {
           <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
-                <Typography variant="h6">{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_admin_branch_analytics', 'Admin branch analytics')}</Typography>
                 <TextField
                   select
                   size="small"
@@ -1402,9 +1403,9 @@ export default function Dashboard() {
 
       {(canViewDashboard || canViewAging) && (
       <Grid item xs={12}>
-        <Panel sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
+        <Panel compact sx={{ display: 'flex', flexDirection: 'column', minHeight: DASHBOARD_PANEL_MIN_HEIGHT }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-            <Typography variant="h6">
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               {userRole === 'admin'
                 ? t('dashboard_aging_reports', 'Aging reports')
                 : userRole === 'supervisor'
@@ -1436,7 +1437,7 @@ export default function Dashboard() {
               helperText={t('dashboard_recent_activity_empty_helper', 'New transactions will appear here as soon as they happen.')}
             />
           ) : (
-            <Stack spacing={1} sx={{ mt: 1 }}>
+            <Stack spacing={0.75} sx={{ mt: 1 }}>
               {recentActivity.map((item, idx) => (
                 <Box
                   key={`${item.transaction_type}-${item.reference_number}-${item.timestamp}-${idx}`}
@@ -1444,7 +1445,7 @@ export default function Dashboard() {
                     display: 'grid',
                     gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr 0.7fr 0.8fr 1.1fr' },
                     gap: 1,
-                    py: 1,
+                    py: 0.75,
                     borderBottom: '1px solid',
                     borderColor: 'divider',
                   }}

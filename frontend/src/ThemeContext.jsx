@@ -115,6 +115,9 @@ export const ThemeContextProvider = ({ children }) => {
         customSpacing: {
           ...tokens.spacing,
           cardPadding: tokens.spacing.panelPadding,
+          compactGap: 1,
+          compactGapTight: 0.75,
+          compactRowPaddingY: 0.75,
         },
         customElevation: {
           cardShadow: tokens.elevation.panel,
@@ -197,12 +200,25 @@ export const ThemeContextProvider = ({ children }) => {
             },
           },
           MuiListItemButton: {
+            defaultProps: {
+              dense: true,
+            },
             styleOverrides: {
               root: {
                 borderRadius: 10,
+                paddingTop: 6,
+                paddingBottom: 6,
                 '&.Mui-selected': {
                   backgroundColor: isDark ? 'rgba(126, 169, 255, 0.2)' : 'rgba(30, 91, 184, 0.14)',
                 },
+              },
+            },
+          },
+          MuiListItem: {
+            styleOverrides: {
+              root: {
+                paddingTop: 6,
+                paddingBottom: 6,
               },
             },
           },
@@ -214,8 +230,8 @@ export const ThemeContextProvider = ({ children }) => {
           MuiTableCell: {
             styleOverrides: {
               root: {
-                paddingTop: 10,
-                paddingBottom: 10,
+                paddingTop: 8,
+                paddingBottom: 8,
               },
               head: {
                 fontWeight: 600,
