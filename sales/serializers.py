@@ -101,7 +101,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = ["id", "branch", "name", "phone", "email", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
 class InvoiceLineSerializer(serializers.ModelSerializer):
