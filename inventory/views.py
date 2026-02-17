@@ -114,7 +114,7 @@ class OutboxMutationMixin:
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.order_by("created_at", "id")
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
@@ -124,7 +124,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Product.objects.select_related("preferred_supplier")
+    queryset = Product.objects.select_related("preferred_supplier").order_by("created_at", "id")
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
@@ -196,7 +196,7 @@ class InventoryAlertViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
-    queryset = Category.objects.all()
+    queryset = Category.objects.order_by("created_at", "id")
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
@@ -208,7 +208,7 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
 
 class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
-    queryset = Product.objects.select_related("preferred_supplier")
+    queryset = Product.objects.select_related("preferred_supplier").order_by("created_at", "id")
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}

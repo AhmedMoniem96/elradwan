@@ -1,4 +1,7 @@
 import uuid
+import json
+
+from django.core.serializers.json import DjangoJSONEncoder
 
 from core.models import AuditLog
 
@@ -31,6 +34,11 @@ def create_audit_log(
     event_id=None,
     request_id=None,
 ):
+    def _json_safe(value):
+        if value is None:
+            return None
+        return json.loads(json.dumps(value, cls=DjangoJSONEncoder))
+
     AuditLog.objects.create(
         actor=actor,
         branch=branch,
@@ -38,8 +46,8 @@ def create_audit_log(
         action=action,
         entity=entity,
         entity_id=entity_id,
-        before_snapshot=before_snapshot,
-        after_snapshot=after_snapshot,
+        before_snapshot=_json_safe(before_snapshot),
+        after_snapshot=_json_safe(after_snapshot),
         event_id=_parse_uuid(event_id),
         request_id=request_id,
     )
