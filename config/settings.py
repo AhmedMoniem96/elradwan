@@ -42,12 +42,17 @@ if DJANGO_ENV == "dev":
 else:
     ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", default=[])
 
+if DJANGO_ENV in {"staging", "prod"} and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("ALLOWED_HOSTS must be configured when DJANGO_ENV is staging or prod.")
+
 if DJANGO_ENV == "dev":
     CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=True)
     CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", default=[])
 else:
     CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
     CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", default=[])
+
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", default=[])
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -68,6 +73,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "common.logging.RequestLogMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -178,6 +184,16 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "common.pagination.StandardResultsSetPagination",
     "PAGE_SIZE": 50,
     "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("DRF_THROTTLE_ANON", "100/hour"),
+        "user": os.getenv("DRF_THROTTLE_USER", "1000/hour"),
+        "auth": os.getenv("DRF_THROTTLE_AUTH", "30/minute"),
+        "password_reset": os.getenv("DRF_THROTTLE_PASSWORD_RESET", "10/hour"),
+    },
 }
 
 SIMPLE_JWT = {
@@ -205,3 +221,39 @@ PASSWORD_RESET_FRONTEND_URL = os.getenv("PASSWORD_RESET_FRONTEND_URL", "http://l
 parsed_password_reset_url = urlparse(PASSWORD_RESET_FRONTEND_URL)
 if not (parsed_password_reset_url.scheme and parsed_password_reset_url.netloc):
     raise ImproperlyConfigured("PASSWORD_RESET_FRONTEND_URL must be an absolute URL including scheme and host.")
+
+
+# Security defaults (strict in staging/prod, relaxed in dev)
+IS_PRODUCTION_LIKE = DJANGO_ENV in {"staging", "prod"}
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", default=IS_PRODUCTION_LIKE)
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", default=IS_PRODUCTION_LIKE)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", default=IS_PRODUCTION_LIKE)
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000" if IS_PRODUCTION_LIKE else "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=IS_PRODUCTION_LIKE)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", default=False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
+REFERRER_POLICY = os.getenv("REFERRER_POLICY", "same-origin")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if env_bool("SECURE_PROXY_SSL_HEADER_ENABLED", default=IS_PRODUCTION_LIKE) else None
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "common.logging.JsonFormatter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+        },
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "api.request": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+    },
+}

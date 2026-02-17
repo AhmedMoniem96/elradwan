@@ -328,3 +328,20 @@ class UserRegistrationSerializerTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"email": ["A user with this email already exists."]})
+
+
+class HealthAndReadinessTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_healthz_returns_ok_and_request_id_header(self):
+        response = self.client.get('/healthz')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ok')
+        self.assertIn('X-Request-ID', response)
+
+    def test_readyz_returns_ready(self):
+        response = self.client.get('/readyz')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ready')
+        self.assertIn('X-Request-ID', response)
