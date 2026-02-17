@@ -130,6 +130,23 @@ class BranchScopedSalesTests(TestCase):
             self.assertEqual(item["reference_number"], "INV-A-1")
             self.assertEqual(item["customer"], self.customer_a.name)
 
+    def test_pos_create_customer_assigns_authenticated_user_branch(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.post(
+            "/api/v1/customers/",
+            {
+                "name": "Walk-in Customer",
+                "phone": "5551000",
+                "email": "walkin@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = Customer.objects.get(id=response.json()["id"])
+        self.assertEqual(created.branch_id, self.branch_a.id)
+
     def test_user_cannot_create_payment_for_other_branch_invoice(self):
         self.client.force_authenticate(user=self.admin_a)
 
