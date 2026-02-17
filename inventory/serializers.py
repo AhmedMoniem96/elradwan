@@ -77,6 +77,16 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.image.url
         return request.build_absolute_uri(obj.image.url)
 
+    def validate(self, attrs):
+        # Multipart form submissions commonly send empty strings for optional fields.
+        # Normalize these values to None so admins can create/update products without
+        # tripping UUID/decimal validation errors on nullable fields.
+        nullable_fields = ("category", "cost", "preferred_supplier", "slug")
+        for field_name in nullable_fields:
+            if self.initial_data.get(field_name, None) == "":
+                attrs[field_name] = None
+        return attrs
+
 
 class WarehouseSerializer(serializers.ModelSerializer):
     class Meta:
