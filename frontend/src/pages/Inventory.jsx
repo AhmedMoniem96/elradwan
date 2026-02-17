@@ -352,7 +352,7 @@ export default function Inventory() {
     try {
       const payload = new FormData();
       [
-        'category', 'sku', 'barcode', 'name', 'description', 'brand', 'unit', 'slug', 'price', 'cost',
+        'category', 'name', 'description', 'brand', 'unit', 'slug', 'price', 'cost',
         'tax_rate', 'minimum_quantity', 'reorder_quantity', 'preferred_supplier', 'stock_status',
       ].forEach((key) => {
         const value = productForm[key];
@@ -360,6 +360,16 @@ export default function Inventory() {
           payload.append(key, value);
         }
       });
+
+      const trimmedSku = String(productForm.sku || '').trim();
+      if (trimmedSku) {
+        payload.append('sku', trimmedSku);
+      }
+
+      const trimmedBarcode = String(productForm.barcode || '').trim();
+      if (trimmedBarcode) {
+        payload.append('barcode', trimmedBarcode);
+      }
       payload.append('is_sellable_online', productForm.is_sellable_online ? 'true' : 'false');
       payload.append('is_active', productForm.is_active ? 'true' : 'false');
       if (productForm.image instanceof File) {
@@ -515,8 +525,8 @@ export default function Inventory() {
               helperText={productErrors.name}
               fullWidth
             />
-            <TextField label={t('sku')} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} placeholder={t('inventory_product_sku_placeholder')} fullWidth />
-            <TextField label={t('barcode')} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder={t('inventory_product_barcode_placeholder')} fullWidth />
+            <TextField label={`${t('sku')} (optional)`} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} placeholder={`${t('inventory_product_sku_placeholder')} (optional)`} fullWidth />
+            <TextField label={`${t('barcode')} (optional)`} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder={`${t('inventory_product_barcode_placeholder')} (optional)`} fullWidth />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField select label={t('category')} value={productForm.category} onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))} fullWidth>
