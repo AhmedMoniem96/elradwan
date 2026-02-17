@@ -259,6 +259,11 @@ const resources = {
       ,"pos_search_products_group": "Products"
       ,"pos_search_categories_group": "Categories"
       ,"pos_search_customers_group": "Customers"
+      ,"pos_add_customer_card_title": "➕ Add customer from POS"
+      ,"pos_add_customer_card_hint": "Click to open a quick form: name, phone, and email."
+      ,"pos_add_customer_required": "Please enter customer name and phone number."
+      ,"pos_add_customer_success": "Customer added and selected on this invoice."
+      ,"pos_add_customer_error": "Unable to add customer from POS screen."
             ,"all": "All"
       ,"search": "Search"
       ,"create": "Create"
@@ -610,6 +615,11 @@ const resources = {
       ,"pos_search_products_group": "المنتجات"
       ,"pos_search_categories_group": "الفئات"
       ,"pos_search_customers_group": "العملاء"
+      ,"pos_add_customer_card_title": "➕ إضافة عميل من شاشة الكاشير"
+      ,"pos_add_customer_card_hint": "اضغط لفتح نموذج سريع: الاسم، الموبايل، والإيميل."
+      ,"pos_add_customer_required": "اكتب اسم العميل ورقم الموبايل."
+      ,"pos_add_customer_success": "تمت إضافة العميل واختياره في الفاتورة."
+      ,"pos_add_customer_error": "تعذر إضافة العميل من شاشة الكاشير."
             ,"all": "الكل"
       ,"search": "بحث"
       ,"create": "إنشاء"
@@ -712,7 +722,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en',
+    lng: 'ar',
+    fallbackLng: 'ar',
     interpolation: {
       escapeValue: false
     }

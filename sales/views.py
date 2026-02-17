@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
@@ -95,11 +95,18 @@ class OutboxMutationMixin:
         instance.delete()
 
 
-class CustomerViewSet(viewsets.ReadOnlyModelViewSet):
+class CustomerViewSet(OutboxMutationMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
-    permission_action_map = {"list": "sales.customers.view", "retrieve": "sales.customers.view"}
+    permission_action_map = {
+        "list": "sales.customers.view",
+        "retrieve": "sales.customers.view",
+        "create": "sales.pos.access",
+    }
+
+    outbox_entity = "customer"
+    audit_entity = "customer"
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
