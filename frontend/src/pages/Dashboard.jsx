@@ -128,6 +128,13 @@ const getRangeByPreset = (period, customRange) => {
 const DASHBOARD_PANEL_MIN_HEIGHT = 360;
 const ALL_BRANCHES_VALUE = '__all__';
 
+const normalizeBranchParam = (value) => {
+  if (!value || value === ALL_BRANCHES_VALUE) {
+    return undefined;
+  }
+  return value;
+};
+
 
 const REPORT_CACHE_TTL_MS = 60 * 1000;
 const FILTER_DEBOUNCE_MS = 300;
@@ -429,9 +436,13 @@ export default function Dashboard() {
   const debouncedActiveRange = useDebouncedValue(activeRange, FILTER_DEBOUNCE_MS);
   const debouncedTrendWindowDays = useDebouncedValue(trendWindowDays, FILTER_DEBOUNCE_MS);
   const debouncedSelectedBranchId = useDebouncedValue(selectedBranchId, FILTER_DEBOUNCE_MS);
+  const normalizedBranchId = useMemo(() => normalizeBranchParam(debouncedSelectedBranchId), [debouncedSelectedBranchId]);
 
   const cachedReportGet = useCallback((url, params = {}) => {
-    const search = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])).toString();
+    const normalizedParams = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== '' && value !== null && value !== undefined),
+    );
+    const search = new URLSearchParams(Object.entries(normalizedParams).map(([key, value]) => [key, String(value)])).toString();
     const requestKey = `${url}?${search}`;
     const now = Date.now();
     const cached = reportCacheRef.current.get(requestKey);
@@ -441,7 +452,7 @@ export default function Dashboard() {
     }
 
     const promise = axios.get(url, {
-      params,
+      params: normalizedParams,
       headers: { 'Cache-Control': `max-age=${Math.floor(REPORT_CACHE_TTL_MS / 1000)}` },
     }).then((res) => res.data);
 
@@ -469,9 +480,13 @@ export default function Dashboard() {
     setKpiFailed(false);
 
     Promise.allSettled([
-      axios.get('/api/v1/invoices/dashboard-summary/'),
-      axios.get('/api/v1/stock-intelligence/'),
-      cachedReportGet('/api/v1/reports/dashboard-metrics/', { ...debouncedActiveRange, timezone }),
+      axios.get('/api/v1/invoices/dashboard-summary/', { params: { branch_id: normalizedBranchId } }),
+      axios.get('/api/v1/stock-intelligence/', { params: { branch_id: normalizedBranchId } }),
+      cachedReportGet('/api/v1/reports/dashboard-metrics/', {
+        ...debouncedActiveRange,
+        timezone,
+        branch_id: normalizedBranchId,
+      }),
     ])
       .then(([shiftRes, stockRes, metricsRes]) => {
         if (!mounted) return;
@@ -527,6 +542,7 @@ export default function Dashboard() {
     kpiRefreshNonce,
     periodPreset,
     reportWidgetFailure,
+    normalizedBranchId,
     timezone,
   ]);
 
@@ -546,7 +562,7 @@ export default function Dashboard() {
     }
 
     axios
-      .get('/api/v1/alerts/', { params: { limit: 100 } })
+      .get('/api/v1/alerts/', { params: { limit: 100, branch_id: normalizedBranchId } })
       .then((res) => {
         if (!mounted) return;
         const payload = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.results) ? res.data.results : []);
@@ -561,7 +577,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [alertsCenterRefreshNonce, canViewInventory, debouncedActiveRange, reportWidgetFailure]);
+  }, [alertsCenterRefreshNonce, canViewInventory, debouncedActiveRange, normalizedBranchId, reportWidgetFailure]);
 
   useEffect(() => {
     let mounted = true;
@@ -606,7 +622,7 @@ export default function Dashboard() {
 
     const { date_from, date_to } = buildDateRange(debouncedTrendWindowDays);
 
-    cachedReportGet('/api/v1/reports/daily-sales/', { date_from, date_to, timezone })
+    cachedReportGet('/api/v1/reports/daily-sales/', { date_from, date_to, timezone, branch_id: normalizedBranchId })
       .then((data) => {
         if (mounted) {
           setSalesSeries(normalizeDailySales(data?.results || [], date_from, date_to));
@@ -616,7 +632,11 @@ export default function Dashboard() {
         if (mounted) {
           setSalesSeries(normalizeDailySales([], date_from, date_to));
           setSalesSeriesFailed(true);
-          reportWidgetFailure('salesTrend', error, { trendWindowDays: debouncedTrendWindowDays, timezone });
+          reportWidgetFailure('salesTrend', error, {
+            trendWindowDays: debouncedTrendWindowDays,
+            timezone,
+            branchId: normalizedBranchId,
+          });
         }
       })
       .finally(() => {
@@ -628,7 +648,7 @@ export default function Dashboard() {
     return () => {
       mounted = false;
     };
-  }, [cachedReportGet, debouncedTrendWindowDays, reportWidgetFailure, salesSeriesRefreshNonce, timezone]);
+  }, [cachedReportGet, debouncedTrendWindowDays, normalizedBranchId, reportWidgetFailure, salesSeriesRefreshNonce, timezone]);
 
   useEffect(() => {
     let mounted = true;
@@ -639,7 +659,12 @@ export default function Dashboard() {
     const { date_from, date_to } = buildDateRange(debouncedTrendWindowDays);
 
     const timer = window.setTimeout(() => {
-      cachedReportGet('/api/v1/reports/payment-method-split/', { date_from, date_to, timezone })
+      cachedReportGet('/api/v1/reports/payment-method-split/', {
+        date_from,
+        date_to,
+        timezone,
+        branch_id: normalizedBranchId,
+      })
         .then((data) => {
           if (mounted) {
             setPaymentSplitSeries(Array.isArray(data?.results) ? data.results : []);
@@ -649,7 +674,11 @@ export default function Dashboard() {
           if (mounted) {
             setPaymentSplitSeries([]);
             setPaymentSplitFailed(true);
-            reportWidgetFailure('paymentSplit', error, { trendWindowDays: debouncedTrendWindowDays, timezone });
+            reportWidgetFailure('paymentSplit', error, {
+              trendWindowDays: debouncedTrendWindowDays,
+              timezone,
+              branchId: normalizedBranchId,
+            });
           }
         })
         .finally(() => {
@@ -663,7 +692,7 @@ export default function Dashboard() {
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, [cachedReportGet, debouncedTrendWindowDays, paymentSplitRefreshNonce, reportWidgetFailure, timezone]);
+  }, [cachedReportGet, debouncedTrendWindowDays, normalizedBranchId, paymentSplitRefreshNonce, reportWidgetFailure, timezone]);
 
   useEffect(() => {
     let mounted = true;
@@ -727,7 +756,12 @@ export default function Dashboard() {
       };
     }
 
-    const alertPromise = axios.get('/api/v1/alerts/', { params: { limit: 1000 } });
+    const alertPromise = axios.get('/api/v1/alerts/', {
+      params: {
+        limit: 1000,
+        branch_id: normalizedBranchId,
+      },
+    });
 
     Promise.allSettled(branchTargets.map(async (branch) => {
       const branchQuery = {
@@ -806,6 +840,7 @@ export default function Dashboard() {
     canViewBranchComparison,
     reportWidgetFailure,
     debouncedSelectedBranchId,
+    normalizedBranchId,
     timezone,
   ]);
 
@@ -959,7 +994,8 @@ export default function Dashboard() {
     date_from: activeRange.date_from,
     date_to: activeRange.date_to,
     timezone,
-  }), [activeRange.date_from, activeRange.date_to, timezone]);
+    branch_id: normalizedBranchId,
+  }), [activeRange.date_from, activeRange.date_to, normalizedBranchId, timezone]);
 
   const navigateWithParams = (pathname, params = {}) => {
     const query = new URLSearchParams(
