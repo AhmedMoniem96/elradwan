@@ -86,6 +86,15 @@ const initialProductForm = {
   image: null,
 };
 
+const initialProductErrors = {
+  name: '',
+  price: '',
+  cost: '',
+  tax_rate: '',
+  minimum_quantity: '',
+  reorder_quantity: '',
+};
+
 export default function Inventory() {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -108,6 +117,7 @@ export default function Inventory() {
   const [draftStatus, setDraftStatus] = useState({});
   const [error, setError] = useState('');
   const [productForm, setProductForm] = useState(initialProductForm);
+  const [productErrors, setProductErrors] = useState(initialProductErrors);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [stockStatusFilter, setStockStatusFilter] = useState('');
@@ -272,6 +282,7 @@ export default function Inventory() {
   };
 
   const startEditProduct = (product) => {
+    setProductErrors(initialProductErrors);
     setProductForm({
       id: product.id,
       category: product.category || '',
@@ -295,9 +306,48 @@ export default function Inventory() {
     });
   };
 
-  const clearProductForm = () => setProductForm(initialProductForm);
+  const clearProductForm = () => {
+    setProductForm(initialProductForm);
+    setProductErrors(initialProductErrors);
+  };
+
+  const validateProductForm = () => {
+    const errors = { ...initialProductErrors };
+
+    if (!String(productForm.name || '').trim()) {
+      errors.name = t('inventory_product_validation_name_required');
+    }
+
+    const validateNumber = (field, { optional = false } = {}) => {
+      const rawValue = productForm[field];
+      if (optional && (rawValue === '' || rawValue === null || rawValue === undefined)) {
+        return;
+      }
+      const numericValue = Number(rawValue);
+      if (!Number.isFinite(numericValue)) {
+        errors[field] = t('inventory_product_validation_number_invalid');
+        return;
+      }
+      if (numericValue < 0) {
+        errors[field] = t('inventory_product_validation_number_non_negative');
+      }
+    };
+
+    validateNumber('price');
+    validateNumber('cost', { optional: true });
+    validateNumber('tax_rate');
+    validateNumber('minimum_quantity');
+    validateNumber('reorder_quantity');
+
+    setProductErrors(errors);
+    return !Object.values(errors).some(Boolean);
+  };
 
   const saveProduct = async () => {
+    if (!validateProductForm()) {
+      return;
+    }
+
     setIsSavingProduct(true);
     try {
       const payload = new FormData();
@@ -453,9 +503,20 @@ export default function Inventory() {
         
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField label={t('name')} value={productForm.name} onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))} fullWidth />
-            <TextField label={t('sku')} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} fullWidth />
-            <TextField label={t('barcode')} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} fullWidth />
+            <TextField
+              label={t('name')}
+              value={productForm.name}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, name: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, name: '' }));
+              }}
+              placeholder={t('inventory_product_name_placeholder')}
+              error={!!productErrors.name}
+              helperText={productErrors.name}
+              fullWidth
+            />
+            <TextField label={t('sku')} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} placeholder={t('inventory_product_sku_placeholder')} fullWidth />
+            <TextField label={t('barcode')} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder={t('inventory_product_barcode_placeholder')} fullWidth />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField select label={t('category')} value={productForm.category} onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))} fullWidth>
@@ -478,13 +539,78 @@ export default function Inventory() {
             </TextField>
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField label={t('price')} value={productForm.price} onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))} fullWidth />
-            <TextField label={t('cost')} value={productForm.cost} onChange={(e) => setProductForm((prev) => ({ ...prev, cost: e.target.value }))} fullWidth />
-            <TextField label={t('tax_rate')} value={productForm.tax_rate} onChange={(e) => setProductForm((prev) => ({ ...prev, tax_rate: e.target.value }))} fullWidth />
+            <TextField
+              label={t('price')}
+              type="number"
+              value={productForm.price}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, price: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, price: '' }));
+              }}
+              placeholder={t('inventory_product_price_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.price}
+              helperText={productErrors.price}
+              fullWidth
+            />
+            <TextField
+              label={t('cost')}
+              type="number"
+              value={productForm.cost}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, cost: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, cost: '' }));
+              }}
+              placeholder={t('inventory_product_cost_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.cost}
+              helperText={productErrors.cost}
+              fullWidth
+            />
+            <TextField
+              label={t('tax_rate')}
+              type="number"
+              value={productForm.tax_rate}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, tax_rate: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, tax_rate: '' }));
+              }}
+              placeholder={t('inventory_product_tax_rate_placeholder')}
+              inputProps={{ min: 0, step: '0.0001' }}
+              error={!!productErrors.tax_rate}
+              helperText={productErrors.tax_rate}
+              fullWidth
+            />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField label={t('minimum_quantity')} value={productForm.minimum_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, minimum_quantity: e.target.value }))} fullWidth />
-            <TextField label={t('reorder_quantity')} value={productForm.reorder_quantity} onChange={(e) => setProductForm((prev) => ({ ...prev, reorder_quantity: e.target.value }))} fullWidth />
+            <TextField
+              label={t('minimum_quantity')}
+              type="number"
+              value={productForm.minimum_quantity}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, minimum_quantity: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, minimum_quantity: '' }));
+              }}
+              placeholder={t('inventory_product_minimum_quantity_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.minimum_quantity}
+              helperText={productErrors.minimum_quantity}
+              fullWidth
+            />
+            <TextField
+              label={t('reorder_quantity')}
+              type="number"
+              value={productForm.reorder_quantity}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, reorder_quantity: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, reorder_quantity: '' }));
+              }}
+              placeholder={t('inventory_product_reorder_quantity_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.reorder_quantity}
+              helperText={productErrors.reorder_quantity}
+              fullWidth
+            />
             <TextField
               select
               label={t('stock_status')}
@@ -503,8 +629,8 @@ export default function Inventory() {
               ))}
             </TextField>
           </Stack>
-          <TextField label={t('slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} fullWidth />
-          <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} fullWidth multiline minRows={2} />
+          <TextField label={t('slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} placeholder={t('inventory_product_slug_placeholder')} fullWidth />
+          <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} placeholder={t('inventory_product_description_placeholder')} fullWidth multiline minRows={2} />
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
             <Button variant="outlined" component="label">
               {t('upload_image')}
@@ -523,7 +649,7 @@ export default function Inventory() {
             />
           </Stack>
           <Stack direction="row" spacing={2}>
-            <Button variant="contained" onClick={saveProduct} disabled={isSavingProduct || !productForm.name || !productForm.sku}>
+            <Button variant="contained" onClick={saveProduct} disabled={isSavingProduct}>
               {productForm.id ? t('save') : t('create')}
             </Button>
             <Button variant="outlined" onClick={clearProductForm}>{t('clear')}</Button>
