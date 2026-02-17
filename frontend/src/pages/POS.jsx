@@ -582,6 +582,9 @@ export default function POS() {
   const [heldCartsOpen, setHeldCartsOpen] = useState(false);
   const [heldCarts, setHeldCarts] = useState([]);
   const [heldCartSearch, setHeldCartSearch] = useState('');
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '', email: '' });
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -1223,6 +1226,53 @@ export default function POS() {
     setHeldCarts((prev) => prev.filter((entry) => entry.id !== heldCartId));
   };
 
+  const handleOpenAddCustomer = () => {
+    setNewCustomerForm({ name: '', phone: '', email: '' });
+    setAddCustomerOpen(true);
+  };
+
+  const handleCreateCustomer = async () => {
+    const payload = {
+      name: newCustomerForm.name.trim(),
+      phone: newCustomerForm.phone.trim(),
+      email: newCustomerForm.email.trim() || null,
+    };
+
+    if (!payload.name || !payload.phone) {
+      setActionFeedback({
+        severity: 'error',
+        message: t('pos_add_customer_required', { defaultValue: 'اكتب اسم العميل ورقم الموبايل.' }),
+      });
+      return;
+    }
+
+    setCreatingCustomer(true);
+    try {
+      const response = await axios.post('/api/v1/customers/', payload);
+      const createdCustomer = response?.data;
+      setCustomers((prev) => [createdCustomer, ...prev.filter((item) => item.id !== createdCustomer.id)]);
+      setSelectedCustomer(createdCustomer);
+      setCustomerQuery(createdCustomer?.name || '');
+      setAddCustomerOpen(false);
+      setActionFeedback({
+        severity: 'success',
+        message: t('pos_add_customer_success', { defaultValue: 'تمت إضافة العميل واختياره في الفاتورة.' }),
+      });
+    } catch (err) {
+      console.error('Failed to create customer from POS', err);
+      setActionFeedback({
+        severity: 'error',
+        message:
+          err?.response?.data?.detail
+          || err?.response?.data?.phone?.[0]
+          || err?.response?.data?.name?.[0]
+          || t('pos_add_customer_error', { defaultValue: 'تعذر إضافة العميل من شاشة الكاشير.' }),
+      });
+    } finally {
+      setCreatingCustomer(false);
+    }
+  };
+
   const canCheckout = cart.length > 0 && remaining === 0 && payments.length > 0;
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -1247,6 +1297,25 @@ export default function POS() {
             </Button>
           )}
         </Stack>
+
+        <Card
+          variant="outlined"
+          sx={{
+            borderStyle: 'dashed',
+            borderColor: 'primary.main',
+            borderWidth: 1.5,
+            bgcolor: 'action.hover',
+            cursor: 'pointer',
+          }}
+          onClick={handleOpenAddCustomer}
+        >
+          <CardContent sx={{ py: 1.5 }}>
+            <Typography fontWeight={700}>{t('pos_add_customer_card_title', { defaultValue: '➕ إضافة عميل من شاشة الكاشير' })}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t('pos_add_customer_card_hint', { defaultValue: 'اضغط هنا لفتح نموذج سريع: الاسم، الموبايل، والإيميل.' })}
+            </Typography>
+          </CardContent>
+        </Card>
 
         {!!error && <ErrorState title={t('pos_load_products_error', { defaultValue: 'في مشكلة في تحميل البيانات' })} helperText={error} actionLabel={t('retry', { defaultValue: 'جرّب تاني' })} onAction={() => window.location.reload()} />}
         {!!actionFeedback.message && (
@@ -1492,6 +1561,38 @@ export default function POS() {
               <Typography>{t('pos_receipt_returns')}: {formatNumber((activeReceipt.returns || []).length)}</Typography>
             </Stack>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{t('add_customer')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ py: 1 }}>
+            <TextField
+              label={t('name')}
+              value={newCustomerForm.name}
+              onChange={(event) => setNewCustomerForm((prev) => ({ ...prev, name: event.target.value }))}
+              autoFocus
+              required
+            />
+            <TextField
+              label={t('phone')}
+              value={newCustomerForm.phone}
+              onChange={(event) => setNewCustomerForm((prev) => ({ ...prev, phone: event.target.value }))}
+              required
+            />
+            <TextField
+              label={t('email')}
+              value={newCustomerForm.email}
+              onChange={(event) => setNewCustomerForm((prev) => ({ ...prev, email: event.target.value }))}
+            />
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button onClick={() => setAddCustomerOpen(false)}>{t('cancel')}</Button>
+              <Button variant="contained" onClick={handleCreateCustomer} disabled={creatingCustomer}>
+                {creatingCustomer ? t('saving') : t('save')}
+              </Button>
+            </Stack>
+          </Stack>
         </DialogContent>
       </Dialog>
     </PageShell>
