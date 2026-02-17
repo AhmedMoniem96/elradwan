@@ -222,7 +222,7 @@ function ProductSearchPanel(props) {
           <LoadingState
             icon={Inventory2OutlinedIcon}
             title={t('pos_receipts_loading')}
-            helperText={t('pos_load_products_error', { defaultValue: 'بنحمّل المنتجات حالاً...' })}
+            helperText={t('pos_products_loading_hint')}
           />
         ) : (searchQuery || activeCategoryId) ? (
           <List dense sx={{ p: 0 }}>
@@ -265,11 +265,11 @@ function ProductSearchPanel(props) {
                 </Box>
               ))
             ) : (
-              <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_no_search_results')} helperText={t('pos_quick_add_hint', { defaultValue: 'جرّب اسم منتج تاني أو SKU أو باركود.' })} />
+              <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_no_search_results')} helperText={t('pos_search_no_results_hint')} />
             )}
           </List>
         ) : (
-          <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helperText={t('pos_quick_add_hint', { defaultValue: 'دوّر على منتج واضغط Enter عشان تضيف أول نتيجة.' })} />
+          <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helperText={t('pos_quick_add_hint')} />
         )}
       </Box>
     </SectionCard>
@@ -281,7 +281,7 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
     <SectionCard title={t('cart')} subtitle={t('pos_cart_empty')} accent="warning.main">
       <Box sx={{ maxHeight: { xs: '30vh', md: '50vh' }, overflowY: 'auto' }}>
         {cart.length === 0 ? (
-          <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_cart_empty')} helperText={t('pos_quick_add_hint', { defaultValue: 'ضيف منتجات من البحث عشان تبدأ البيع.' })} />
+          <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_cart_empty')} helperText={t('pos_cart_empty_hint')} />
         ) : (
           <Stack spacing={1}>
             {cart.map((item) => (
@@ -289,7 +289,7 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
                 <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" fontWeight={700} noWrap>{item.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">SKU: {item.sku || t('none')}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t('pos_sku_label')}: {item.sku || t('none')}</Typography>
                   </Box>
                   <Typography variant="caption" color="text.secondary">{formatCurrency(item.unitPrice)}</Typography>
                   <ButtonGroup size="small" sx={{ direction: isRTL ? 'rtl' : 'ltr', '& .MuiButton-root': { minWidth: 28 } }}>
@@ -358,7 +358,7 @@ function PaymentSummaryPanel(props) {
           fullWidth
         />
         <Button variant="outlined" color="warning" onClick={() => { setInvoiceTotal(cartSubtotal.toFixed(2)); setIsTotalManuallyOverridden(false); }}>
-          {t('pos_reset_to_cart_total', { defaultValue: 'Reset to cart total' })}
+          {t('pos_reset_to_cart_total')}
         </Button>
       </Stack>
 
@@ -374,7 +374,7 @@ function PaymentSummaryPanel(props) {
       <ButtonGroup variant="outlined" fullWidth>
         {PAYMENT_METHODS.map((method) => (
           <Button key={method} variant={paymentMethod === method ? 'contained' : 'outlined'} onClick={() => setPaymentMethod(method)}>
-            {t(`payment_method_${method}`, { defaultValue: method })}
+            {t(`payment_method_${method}`)}
           </Button>
         ))}
       </ButtonGroup>
@@ -384,14 +384,14 @@ function PaymentSummaryPanel(props) {
       </Button>
 
       {payments.length === 0 ? (
-        <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_no_payments', { defaultValue: 'لسه مفيش مدفوعات متسجلة.' })} helperText={t('payment_amount')} />
+        <EmptyState icon={PointOfSaleOutlinedIcon} title={t('pos_no_payments')} helperText={t('payment_amount')} />
       ) : (
         <List dense>
           {payments.map((payment, index) => (
             <ListItem key={payment.id} divider>
               <ListItemText
                 primary={`${t('payment')} #${index + 1}`}
-                secondary={`${t(`payment_method_${payment.method}`, { defaultValue: payment.method })} • ${payment.label} → ${formatCurrency(payment.amount)}`}
+                secondary={`${t(`payment_method_${payment.method}`)} • ${payment.label} → ${formatCurrency(payment.amount)}`}
                 sx={{ textAlign: isRTL ? 'right' : 'left' }}
               />
             </ListItem>
@@ -408,8 +408,8 @@ function PaymentSummaryPanel(props) {
         fullWidth
       >
         {isCompletingSale
-          ? t('pos_completing_sale', { defaultValue: 'Completing Sale...' })
-          : t('pos_complete_sale', { defaultValue: 'Complete Sale' })}
+          ? t('pos_completing_sale')
+          : t('pos_complete_sale')}
       </Button>
     </SectionCard>
   );
@@ -461,10 +461,10 @@ function ReceiptHistoryDialog(props) {
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                     <Button size="small" onClick={() => setActiveReceipt(receipt)}>{t('pos_open_receipt_details')}</Button>
                     <Button size="small" variant="contained" color="warning" onClick={() => onCreateReturnDraft(receipt)}>
-                      {t('pos_return_items_action', { defaultValue: 'Return items' })}
+                      {t('pos_return_items_action')}
                     </Button>
                     <Button size="small" variant="outlined" disabled>
-                      {t('pos_exchange_items_action', { defaultValue: 'Exchange' })}
+                      {t('pos_exchange_items_action')}
                     </Button>
                   </Stack>
                 </Stack>
@@ -491,13 +491,13 @@ function HeldCartsDialog(props) {
 
   return (
     <Dialog open={heldCartsOpen} onClose={() => setHeldCartsOpen(false)} fullWidth maxWidth="md">
-      <DialogTitle>{t('pos_held_carts', { defaultValue: 'Held carts' })}</DialogTitle>
+      <DialogTitle>{t('pos_held_carts')}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ py: 1 }}>
           <TextField
             size="small"
-            label={t('search', { defaultValue: 'Search' })}
-            placeholder={t('pos_held_carts_search_placeholder', { defaultValue: 'Search by note, customer, or time' })}
+            label={t('search')}
+            placeholder={t('pos_held_carts_search_placeholder')}
             value={heldCartSearch}
             onChange={(event) => setHeldCartSearch(event.target.value)}
           />
@@ -505,26 +505,26 @@ function HeldCartsDialog(props) {
           {filteredHeldCarts.length === 0 ? (
             <EmptyState
               icon={PointOfSaleOutlinedIcon}
-              title={t('pos_held_carts_empty', { defaultValue: 'No held carts found' })}
-              helperText={t('pos_held_carts_empty_hint', { defaultValue: 'Hold a cart from the POS screen to resume it later.' })}
+              title={t('pos_held_carts_empty')}
+              helperText={t('pos_held_carts_empty_hint')}
             />
           ) : (
             filteredHeldCarts.map((heldCart) => (
               <Card key={heldCart.id} variant="outlined">
                 <CardContent sx={{ p: 1.5 }}>
                   <Stack spacing={0.5}>
-                    <Typography fontWeight={700}>{heldCart.note || t('pos_held_carts_no_note', { defaultValue: 'No note' })}</Typography>
-                    <Typography variant="body2">{t('customer')}: {heldCart.customer?.name || t('walk_in_customer', { defaultValue: 'Walk-in customer' })}</Typography>
+                    <Typography fontWeight={700}>{heldCart.note || t('pos_held_carts_no_note')}</Typography>
+                    <Typography variant="body2">{t('customer')}: {heldCart.customer?.name || t('walk_in_customer')}</Typography>
                     <Typography variant="body2">{t('pos_receipt_totals')}: {formatCurrency(heldCart.total)}</Typography>
                     <Typography variant="body2">{t('pos_receipt_datetime')}: {formatDateTime(heldCart.created_at)}</Typography>
                     <Typography variant="body2">{t('pos_receipt_cashier')}: {heldCart.cashier || t('none')}</Typography>
                     <Typography variant="body2">{t('pos_receipt_line_items')}: {formatNumber((heldCart.items || []).length)}</Typography>
                     <Stack direction="row" spacing={1} sx={{ pt: 0.5 }}>
                       <Button size="small" variant="contained" onClick={() => onResumeHeldCart(heldCart)}>
-                        {t('resume', { defaultValue: 'Resume' })}
+                        {t('resume')}
                       </Button>
                       <Button size="small" color="error" onClick={() => onDeleteHeldCart(heldCart.id)}>
-                        {t('delete', { defaultValue: 'Delete' })}
+                        {t('delete')}
                       </Button>
                     </Stack>
                   </Stack>
@@ -914,7 +914,7 @@ export default function POS() {
 
       return nextCart;
     });
-    setActionFeedback({ severity: 'success', message: t('pos_item_added', { defaultValue: 'Item added to cart.' }) });
+    setActionFeedback({ severity: 'success', message: t('pos_item_added') });
     setSearchQuery('');
   };
 
@@ -944,7 +944,7 @@ export default function POS() {
     if (computedPaymentAmount <= 0) {
       setActionFeedback({
         severity: 'error',
-        message: t('pos_payment_invalid', { defaultValue: 'Enter a valid payment amount.' }),
+        message: t('pos_payment_invalid'),
       });
       return;
     }
@@ -961,7 +961,7 @@ export default function POS() {
     setPaymentValue('0');
     setActionFeedback({
       severity: 'success',
-      message: t('pos_payment_recorded', { defaultValue: 'Payment recorded successfully.' }),
+      message: t('pos_payment_recorded'),
     });
   };
 
@@ -995,21 +995,17 @@ export default function POS() {
       setIsTotalManuallyOverridden(false);
       setActionFeedback({
         severity: 'success',
-        message: t('pos_sale_completed', { defaultValue: 'Sale completed successfully.' }),
+        message: t('pos_sale_completed'),
       });
     } catch (err) {
       console.error('Failed to complete sale', err);
       const status = err?.response?.status;
-      let message = t('pos_complete_sale_error', { defaultValue: 'Unable to complete sale. Please try again.' });
+      let message = t('pos_complete_sale_error');
 
       if (status === 405) {
-        message = t('pos_complete_sale_method_not_allowed', {
-          defaultValue: 'POS sale endpoint is not enabled. Contact your supervisor to enable POS invoice creation.',
-        });
+        message = t('pos_complete_sale_method_not_allowed');
       } else if (status === 403) {
-        message = t('pos_complete_sale_forbidden', {
-          defaultValue: 'You are not allowed to create POS invoices. Ask your supervisor/admin for POS create permission.',
-        });
+        message = t('pos_complete_sale_forbidden');
       }
 
       setActionFeedback({
@@ -1082,7 +1078,7 @@ export default function POS() {
       setReturnDraftPayments(draft.payment_methods || []);
     } catch (err) {
       console.error('Failed to prepare return draft', err);
-      setReturnDraftError(t('pos_return_prepare_error', { defaultValue: 'Unable to prepare return draft.' }));
+      setReturnDraftError(t('pos_return_prepare_error'));
     } finally {
       setReturnDraftLoading(false);
     }
@@ -1125,7 +1121,7 @@ export default function POS() {
     }));
 
     if (refundPayload.length === 0 || returnRefundTotal !== returnTotal) {
-      setReturnDraftError(t('pos_return_no_refund_methods', { defaultValue: 'Unable to fully allocate refund to payment methods.' }));
+      setReturnDraftError(t('pos_return_no_refund_methods'));
       return;
     }
 
@@ -1146,7 +1142,7 @@ export default function POS() {
 
       setActionFeedback({
         severity: 'success',
-        message: t('pos_return_success', { defaultValue: 'Return processed successfully.' }),
+        message: t('pos_return_success'),
       });
       handleCloseReturnDraft(true);
       loadReceipts();
@@ -1155,7 +1151,7 @@ export default function POS() {
       setReturnDraftError(
         err?.response?.data?.detail
         || err?.response?.data?.refunds?.[0]
-        || t('pos_return_submit_error', { defaultValue: 'Unable to process return.' }),
+        || t('pos_return_submit_error'),
       );
     } finally {
       setReturnSubmitting(false);
@@ -1166,7 +1162,7 @@ export default function POS() {
     if (!cart.length) {
       setActionFeedback({
         severity: 'error',
-        message: t('pos_hold_cart_empty', { defaultValue: 'Add items before holding a cart.' }),
+        message: t('pos_hold_cart_empty'),
       });
       return;
     }
@@ -1203,7 +1199,7 @@ export default function POS() {
     // Optional future enhancement: mirror held cart payload to backend endpoint for multi-device sync.
     setActionFeedback({
       severity: 'success',
-      message: t('pos_hold_cart_saved', { defaultValue: 'Cart held successfully.' }),
+      message: t('pos_hold_cart_saved'),
     });
   };
 
@@ -1218,7 +1214,7 @@ export default function POS() {
     setHeldCartsOpen(false);
     setActionFeedback({
       severity: 'success',
-      message: t('pos_hold_cart_resumed', { defaultValue: 'Held cart resumed.' }),
+      message: t('pos_hold_cart_resumed'),
     });
   };
 
@@ -1241,7 +1237,7 @@ export default function POS() {
     if (!payload.name || !payload.phone) {
       setActionFeedback({
         severity: 'error',
-        message: t('pos_add_customer_required', { defaultValue: 'اكتب اسم العميل ورقم الموبايل.' }),
+        message: t('pos_add_customer_required'),
       });
       return;
     }
@@ -1256,7 +1252,7 @@ export default function POS() {
       setAddCustomerOpen(false);
       setActionFeedback({
         severity: 'success',
-        message: t('pos_add_customer_success', { defaultValue: 'تمت إضافة العميل واختياره في الفاتورة.' }),
+        message: t('pos_add_customer_success'),
       });
     } catch (err) {
       console.error('Failed to create customer from POS', err);
@@ -1266,7 +1262,7 @@ export default function POS() {
           err?.response?.data?.detail
           || err?.response?.data?.phone?.[0]
           || err?.response?.data?.name?.[0]
-          || t('pos_add_customer_error', { defaultValue: 'تعذر إضافة العميل من شاشة الكاشير.' }),
+          || t('pos_add_customer_error'),
       });
     } finally {
       setCreatingCustomer(false);
@@ -1289,7 +1285,7 @@ export default function POS() {
             {t('pos_receipts_open')}
           </Button>
           <Button variant="outlined" onClick={() => setHeldCartsOpen(true)}>
-            {t('pos_held_carts_open', { defaultValue: 'Held carts' })} ({heldCarts.length})
+            {t('pos_held_carts_open')} ({heldCarts.length})
           </Button>
           {can('inventory.view') && (
             <Button variant="outlined" onClick={() => navigate('/suppliers')}>
@@ -1310,14 +1306,14 @@ export default function POS() {
           onClick={handleOpenAddCustomer}
         >
           <CardContent sx={{ py: 1.5 }}>
-            <Typography fontWeight={700}>{t('pos_add_customer_card_title', { defaultValue: '➕ إضافة عميل من شاشة الكاشير' })}</Typography>
+            <Typography fontWeight={700}>{t('pos_add_customer_card_title')}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {t('pos_add_customer_card_hint', { defaultValue: 'اضغط هنا لفتح نموذج سريع: الاسم، الموبايل، والإيميل.' })}
+              {t('pos_add_customer_card_hint')}
             </Typography>
           </CardContent>
         </Card>
 
-        {!!error && <ErrorState title={t('pos_load_products_error', { defaultValue: 'في مشكلة في تحميل البيانات' })} helperText={error} actionLabel={t('retry', { defaultValue: 'جرّب تاني' })} onAction={() => window.location.reload()} />}
+        {!!error && <ErrorState title={t('pos_load_products_error')} helperText={error} actionLabel={t('retry')} onAction={() => window.location.reload()} />}
         {!!actionFeedback.message && (
           <Alert severity={actionFeedback.severity || 'info'}>{actionFeedback.message}</Alert>
         )}
@@ -1332,21 +1328,21 @@ export default function POS() {
         >
           <Stack spacing={2}>
             <SectionCard
-              title={t('pos_hold_cart_title', { defaultValue: 'Hold current cart' })}
-              subtitle={t('pos_hold_cart_subtitle', { defaultValue: 'Save this cart to resume it later on this device.' })}
+              title={t('pos_hold_cart_title')}
+              subtitle={t('pos_hold_cart_subtitle')}
               accent="info.main"
             >
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                 <TextField
                   size="small"
-                  label={t('note', { defaultValue: 'Note' })}
-                  placeholder={t('pos_held_cart_note_placeholder', { defaultValue: 'Optional note (table, order name, etc.)' })}
+                  label={t('note')}
+                  placeholder={t('pos_held_cart_note_placeholder')}
                   value={heldCartNote}
                   onChange={(event) => setHeldCartNote(event.target.value)}
                   fullWidth
                 />
                 <Button variant="contained" onClick={handleHoldCurrentCart}>
-                  {t('pos_hold_cart_action', { defaultValue: 'Hold cart' })}
+                  {t('pos_hold_cart_action')}
                 </Button>
               </Stack>
             </SectionCard>
@@ -1440,12 +1436,12 @@ export default function POS() {
       />
 
       <Dialog open={returnDraftOpen} onClose={handleCloseReturnDraft} fullWidth maxWidth="md">
-        <DialogTitle>{t('pos_return_items_action', { defaultValue: 'Return items' })}</DialogTitle>
+        <DialogTitle>{t('pos_return_items_action')}</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ py: 1 }}>
             {returnDraftError && <Alert severity="error">{returnDraftError}</Alert>}
             {returnDraftLoading ? (
-              <LoadingState icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helperText={t('pos_return_items_action', { defaultValue: 'Preparing return draft...' })} />
+              <LoadingState icon={ReceiptLongOutlinedIcon} title={t('pos_receipts_loading')} helperText={t('pos_return_draft_loading_hint')} />
             ) : (
               <>
                 <Typography variant="body2">
@@ -1453,8 +1449,8 @@ export default function POS() {
                 </Typography>
                 <TextField
                   size="small"
-                  label={t('reason', { defaultValue: 'Reason' })}
-                  placeholder={t('pos_return_reason_placeholder', { defaultValue: 'Optional reason for return' })}
+                  label={t('reason')}
+                  placeholder={t('pos_return_reason_placeholder')}
                   value={returnReason}
                   onChange={(event) => setReturnReason(event.target.value)}
                   fullWidth
@@ -1467,7 +1463,7 @@ export default function POS() {
                       <Stack spacing={1}>
                         <Typography variant="body2" fontWeight={600}>{line.product_name}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {t('pos_return_available_qty', { defaultValue: 'Sold: {{sold}} • Previously returned: {{returned}} • Available: {{available}}', sold: formatNumber(line.sold_quantity), returned: formatNumber(line.returned_quantity), available: formatNumber(line.available_quantity) })}
+                          {t('pos_return_available_qty', { sold: formatNumber(line.sold_quantity), returned: formatNumber(line.returned_quantity), available: formatNumber(line.available_quantity) })}
                         </Typography>
                         <TextField
                           size="small"
@@ -1478,17 +1474,17 @@ export default function POS() {
                           onChange={(event) => handleReturnLineQuantityChange(line.invoice_line, event.target.value)}
                         />
                         <FormHelperText>
-                          {t('pos_return_line_refund_hint', { defaultValue: 'Per unit refund: {{amount}}', amount: formatCurrency(line.unit_refund_total || 0) })}
+                          {t('pos_return_line_refund_hint', { amount: formatCurrency(line.unit_refund_total || 0) })}
                         </FormHelperText>
                       </Stack>
                     </CardContent>
                   </Card>
                 ))}
                 <Divider />
-                <Typography fontWeight={700}>{t('pos_return_total_preview', { defaultValue: 'Return total preview' })}: {formatCurrency(returnTotal)}</Typography>
+                <Typography fontWeight={700}>{t('pos_return_total_preview')}: {formatCurrency(returnTotal)}</Typography>
                 {returnRefundTotal !== returnTotal && returnTotal > 0 && (
                   <Alert severity="warning">
-                    {t('pos_return_refund_limit_warning', { defaultValue: 'Refund exceeds paid amount split. Reduce quantities to continue.' })}
+                    {t('pos_return_refund_limit_warning')}
                   </Alert>
                 )}
                 <Typography fontWeight={600}>{t('pos_receipt_payment_methods')}</Typography>
@@ -1499,8 +1495,8 @@ export default function POS() {
                     {returnRefundPreview.map((refund) => (
                       <ListItem key={refund.method} divider>
                         <ListItemText
-                          primary={`${t(`payment_method_${refund.method}`, { defaultValue: refund.method })} → ${formatCurrency(refund.suggestedAmount)}`}
-                          secondary={t('pos_return_payment_refund_hint', { defaultValue: 'Paid via method: {{amount}}', amount: formatCurrency(refund.paidAmount) })}
+                          primary={`${t(`payment_method_${refund.method}`)} → ${formatCurrency(refund.suggestedAmount)}`}
+                          secondary={t('pos_return_payment_refund_hint', { amount: formatCurrency(refund.paidAmount) })}
                           sx={{ textAlign: isRTL ? 'right' : 'left' }}
                         />
                       </ListItem>
@@ -1518,8 +1514,8 @@ export default function POS() {
                     onClick={handleConfirmReturn}
                   >
                     {returnSubmitting
-                      ? t('saving', { defaultValue: 'Saving...' })
-                      : t('pos_return_confirm_partial', { defaultValue: 'Confirm return (supports partial)' })}
+                      ? t('saving')
+                      : t('pos_return_confirm_partial')}
                   </Button>
                 </Stack>
               </>
