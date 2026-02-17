@@ -220,7 +220,7 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        sku = serializer.validated_data.get("sku")
+        sku = (serializer.validated_data.get("sku") or "").strip()
         if sku and Product.objects.filter(branch_id=user.branch_id, sku=sku).exists():
             raise ValidationError({"sku": ["A product with this SKU already exists in your branch."]})
         super().perform_create(serializer)

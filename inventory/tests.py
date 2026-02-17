@@ -164,6 +164,78 @@ class BranchScopedInventoryTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"sku": ["A product with this SKU already exists in your branch."]})
 
+    def test_admin_create_product_without_sku_and_barcode(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "name": "No SKU Product",
+                "price": "11.00",
+                "tax_rate": "0.0000",
+                "sku": "   ",
+                "barcode": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = Product.objects.get(id=response.json()["id"])
+        self.assertIsNone(created.sku)
+        self.assertIsNone(created.barcode)
+
+    def test_admin_create_products_with_blank_sku_do_not_conflict(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        first_response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "name": "Blank SKU Product 1",
+                "price": "11.00",
+                "tax_rate": "0.0000",
+                "sku": "",
+            },
+            format="json",
+        )
+        second_response = self.client.post(
+            "/api/v1/admin/products/",
+            {
+                "name": "Blank SKU Product 2",
+                "price": "12.00",
+                "tax_rate": "0.0000",
+                "sku": "  ",
+            },
+            format="json",
+        )
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+
+    def test_admin_update_product_clears_sku_and_barcode_with_blank_values(self):
+        self.client.force_authenticate(user=self.admin_a)
+
+        product = Product.objects.create(
+            branch=self.branch_a,
+            sku="TO-CLEAR",
+            barcode="BAR-1",
+            name="Clearable Product",
+            price=Decimal("12.00"),
+        )
+
+        response = self.client.patch(
+            f"/api/v1/admin/products/{product.id}/",
+            {
+                "sku": " ",
+                "barcode": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertIsNone(product.sku)
+        self.assertIsNone(product.barcode)
+
     def test_admin_create_warehouse_ignores_injected_branch(self):
         self.client.force_authenticate(user=self.admin_a)
 

@@ -25,7 +25,7 @@ class Product(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, null=True, blank=True)
-    sku = models.CharField(max_length=64)
+    sku = models.CharField(max_length=64, null=True, blank=True)
     barcode = models.CharField(max_length=128, null=True, blank=True)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
@@ -46,7 +46,13 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("branch", "sku")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "sku"],
+                condition=models.Q(sku__isnull=False) & ~models.Q(sku=""),
+                name="uniq_product_branch_sku_non_empty",
+            ),
+        ]
         indexes = [
             models.Index(fields=["branch", "barcode"]),
             models.Index(fields=["branch", "is_active"]),
