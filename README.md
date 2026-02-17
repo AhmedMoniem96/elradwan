@@ -20,3 +20,7 @@ POS & Inventory management system.
 - **Per release**: evaluate major upgrades (Django, DRF, React, Vite, Node) in dedicated PRs with migration notes.
 
 See detailed policy and CI compatibility checks in [`docs/dependency_management.md`](docs/dependency_management.md).
+## System hardening quick wins
+
+- See [`docs/system_edit_suggestions.md`](docs/system_edit_suggestions.md) for a prioritized set of operational and security edits you can apply to this system.
+

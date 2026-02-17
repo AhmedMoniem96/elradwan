@@ -3,6 +3,7 @@ import logging
 
 from django.conf import settings
 from django.http import HttpResponse
+from django.db import connections
 from django.utils.dateparse import parse_datetime
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -10,9 +11,11 @@ from django.core.mail import send_mail
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from rest_framework import generics, status, viewsets
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.response import Response
 
 from common.audit import create_audit_log_from_request
@@ -68,6 +71,8 @@ class RegisterView(generics.CreateAPIView):
 
 class EmailOrUsernameTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailOrUsernameTokenObtainPairSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
 
 
 class BranchViewSet(viewsets.ModelViewSet):
@@ -222,6 +227,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 class PasswordResetRequestView(generics.GenericAPIView):
     serializer_class = PasswordResetRequestSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_reset"
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -257,6 +264,29 @@ class PasswordResetRequestView(generics.GenericAPIView):
             {"detail": "If an account exists for this email, reset instructions were sent."},
             status=status.HTTP_200_OK,
         )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def healthz(request):
+    return Response({"status": "ok", "request_id": getattr(request, "request_id", None)})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def readyz(request):
+    try:
+        with connections["default"].cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception as exc:
+        logger.exception("readiness_check_failed")
+        return Response(
+            {"status": "error", "request_id": getattr(request, "request_id", None), "detail": str(exc)},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    return Response({"status": "ready", "request_id": getattr(request, "request_id", None)})
 
 
 class PasswordResetConfirmView(generics.GenericAPIView):
