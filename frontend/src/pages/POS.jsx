@@ -181,7 +181,6 @@ function ProductSearchPanel(props) {
     searchGroups,
     addToCart,
     handleSelectCategory,
-    handleSelectCustomer,
   } = props;
 
   return (
@@ -254,13 +253,7 @@ function ProductSearchPanel(props) {
                         </ListItem>
                       );
                     }
-                    return (
-                      <ListItem key={`customer-${entry.id}`} disablePadding secondaryAction={<Button size="small" variant="contained" color="primary" onClick={() => handleSelectCustomer(entry)}>{t('select_customer')}</Button>}>
-                        <ListItemButton selected={isActive} onClick={() => handleSelectCustomer(entry)}>
-                          <ListItemText primary={entry.name || t('unnamed_customer')} secondary={entry.phone || t('no_phone')} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
-                        </ListItemButton>
-                      </ListItem>
-                    );
+                    return null;
                   })}
                 </Box>
               ))
@@ -270,6 +263,45 @@ function ProductSearchPanel(props) {
           </List>
         ) : (
           <EmptyState icon={Inventory2OutlinedIcon} title={t('pos_smart_product_search')} helperText={t('pos_quick_add_hint')} />
+        )}
+      </Box>
+    </SectionCard>
+  );
+}
+
+function CustomerSearchPanel({ t, isRTL, customerQuery, setCustomerQuery, selectedCustomer, clearSelectedCustomer, handleSelectCustomer, matchedCustomers, customersLoading }) {
+  return (
+    <SectionCard title={t('smart_customer_search')} subtitle={t('pos_customer_search_placeholder')} accent="success.main">
+      <TextField
+        fullWidth
+        size="small"
+        label={t('smart_customer_search')}
+        placeholder={t('pos_customer_search_placeholder')}
+        value={customerQuery}
+        onChange={(event) => setCustomerQuery(event.target.value)}
+      />
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+        <Typography fontWeight={700}>{t('customer')}:</Typography>
+        <Chip color={selectedCustomer ? 'success' : 'default'} label={selectedCustomer?.name || t('walk_in_customer')} variant={selectedCustomer ? 'filled' : 'outlined'} />
+        {selectedCustomer && <Button size="small" color="warning" onClick={clearSelectedCustomer}>{t('clear_selected_customer')}</Button>}
+      </Stack>
+      <Box sx={{ maxHeight: 220, overflowY: 'auto' }}>
+        {customersLoading ? (
+          <LoadingState icon={ReceiptLongOutlinedIcon} title={t('customers')} helperText={t('pos_receipts_loading')} />
+        ) : matchedCustomers.length > 0 ? (
+          <List dense sx={{ p: 0 }}>
+            {matchedCustomers.map((customer) => (
+              <ListItem key={`selector-customer-${customer.id}`} disablePadding secondaryAction={<Button size="small" variant="contained" onClick={() => handleSelectCustomer(customer)}>{t('select_customer')}</Button>}>
+                <ListItemButton onClick={() => handleSelectCustomer(customer)}>
+                  <ListItemText primary={customer.name || t('unnamed_customer')} secondary={customer.phone || t('no_phone')} sx={{ textAlign: isRTL ? 'right' : 'left' }} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        ) : customerQuery.trim() ? (
+          <EmptyState icon={ReceiptLongOutlinedIcon} title={t('no_customers_matched_search')} helperText={t('pos_customer_search_placeholder')} />
+        ) : (
+          <Typography variant="body2" color="text.secondary">{t('invoice_payload_customer_hint')}: {selectedCustomer?.id || t('none')}</Typography>
         )}
       </Box>
     </SectionCard>
@@ -720,19 +752,9 @@ export default function POS() {
           .map((item) => item.category)
       : [];
 
-    const matchedCustomers = query
-      ? indexedCustomers
-          .map((customer) => ({ customer, score: scoreCustomerMatch(customer, query) }))
-          .filter((item) => item.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, MAX_GROUP_RESULTS)
-          .map((item) => item.customer)
-      : [];
-
     const grouped = [
       { key: 'products', label: t('pos_search_products_group'), items: matchedProducts, type: 'product' },
       { key: 'categories', label: t('pos_search_categories_group'), items: matchedCategories, type: 'category' },
-      { key: 'customers', label: t('pos_search_customers_group'), items: matchedCustomers, type: 'customer' },
     ];
 
     let remaining = MAX_TOTAL_RESULTS;
@@ -756,6 +778,20 @@ export default function POS() {
       ),
     [searchGroups],
   );
+
+  const matchedCustomerOptions = useMemo(() => {
+    const query = customerQuery.trim();
+    if (!query) {
+      return indexedCustomers.slice(0, 8);
+    }
+
+    return indexedCustomers
+      .map((customer) => ({ customer, score: scoreCustomerMatch(customer, query) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map((item) => item.customer);
+  }, [customerQuery, indexedCustomers]);
 
   const cartSubtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0),
@@ -1019,6 +1055,11 @@ export default function POS() {
 
   const handleSelectCustomer = (customer) => {
     setSelectedCustomer(customer);
+    setCustomerQuery(customer?.name || '');
+  };
+
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null);
     setCustomerQuery('');
   };
 
@@ -1347,6 +1388,18 @@ export default function POS() {
               </Stack>
             </SectionCard>
 
+            <CustomerSearchPanel
+              t={t}
+              isRTL={isRTL}
+              customerQuery={customerQuery}
+              setCustomerQuery={setCustomerQuery}
+              selectedCustomer={selectedCustomer}
+              clearSelectedCustomer={clearSelectedCustomer}
+              handleSelectCustomer={handleSelectCustomer}
+              matchedCustomers={matchedCustomerOptions}
+              customersLoading={customersLoading}
+            />
+
             <ProductSearchPanel
               t={t}
               isRTL={isRTL}
@@ -1363,7 +1416,6 @@ export default function POS() {
               searchGroups={searchGroups}
               addToCart={addToCart}
               handleSelectCategory={handleSelectCategory}
-              handleSelectCustomer={handleSelectCustomer}
             />
 
             <CartPanel t={t} isRTL={isRTL} cart={cart} updateQuantity={updateQuantity} />
