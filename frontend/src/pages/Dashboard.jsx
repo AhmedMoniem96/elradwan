@@ -1099,21 +1099,32 @@ export default function Dashboard() {
       <Grid item xs={12}>
         <Panel compact>
           <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2}>
-              <Box>
+            <Grid container spacing={2} alignItems="flex-start">
+              <Grid item xs={12} lg={8}>
+                <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                   {t('dashboard_welcome_title', 'Welcome back')}{user?.username ? `, ${user.username}` : ''}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {t('dashboard_welcome_caption', 'Monitor operations, identify risks, and take action quickly from one place.')}
                 </Typography>
-              </Box>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="flex-start">
-                <Chip size="small" color="primary" label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} />
-                <Chip size="small" label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} />
-                <Chip size="small" color="info" label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} />
-              </Stack>
-            </Stack>
+                </Box>
+              </Grid>
+              <Grid item xs={12} lg={4}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  flexWrap="wrap"
+                  useFlexGap
+                  justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
+                  sx={{ textAlign: { xs: 'start', lg: 'end' } }}
+                >
+                  <Chip size="small" color="primary" label={`${t('dashboard_role', 'Role')}: ${toTitle(userRole)}`} />
+                  <Chip size="small" label={`${t('dashboard_timezone', 'Timezone')}: ${timezone}`} />
+                  <Chip size="small" color="info" label={`${t('dashboard_period', 'Period')}: ${periodPreset.toUpperCase()}`} />
+                </Stack>
+              </Grid>
+            </Grid>
 
             <Grid container spacing={2} alignItems="flex-end">
               <Grid item xs={12} md={4} lg={3}>
@@ -1158,26 +1169,36 @@ export default function Dashboard() {
                 </>
               )}
               <Grid item xs={12} lg>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: { xs: 'left', lg: 'right' } }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    display: 'block',
+                    textAlign: { xs: 'start', lg: 'end' },
+                    marginInlineStart: { xs: 0, lg: 'auto' },
+                  }}
+                >
                   {t('dashboard_range', 'Range')}: {formatDate(`${activeRange.date_from}T00:00:00`)} - {formatDate(`${activeRange.date_to}T00:00:00`)}
                 </Typography>
               </Grid>
             </Grid>
 
-            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-              {dashboardQuickActions.map((action) => (
-                <Button
-                  key={action.label}
-                  variant={action.emphasis ? 'contained' : 'outlined'}
-                  size="small"
-                  disabled={action.disabled}
-                  onClick={action.onClick}
-                  sx={{ fontWeight: 700 }}
-                >
-                  {action.label}
-                </Button>
-              ))}
-            </Stack>
+            <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap justifyContent="flex-end">
+                {dashboardQuickActions.map((action) => (
+                  <Button
+                    key={action.label}
+                    variant={action.emphasis ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={action.disabled}
+                    onClick={action.onClick}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </Stack>
+            </Box>
           </Stack>
         </Panel>
       </Grid>
@@ -1198,7 +1219,16 @@ export default function Dashboard() {
           {dashboardKpiCards.map((card) => (
             <Grid key={card.id} item xs={12} sm={6} lg={3}>
               <Panel compact sx={{ height: '100%' }}>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>{card.value}</Typography>
+                <Typography
+                  variant="h5"
+                  sx={{
+                    fontWeight: 700,
+                    textAlign: 'end',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {card.value}
+                </Typography>
                 <Typography variant="caption" color="text.secondary">{card.caption}</Typography>
                 <Typography variant="body2" color="text.secondary">{card.helper}</Typography>
               </Panel>
