@@ -6,6 +6,10 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Stack,
   Table,
   TableBody,
@@ -16,6 +20,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
@@ -54,6 +59,9 @@ export default function Suppliers() {
   const [paymentDrafts, setPaymentDrafts] = useState({});
   const [paymentErrors, setPaymentErrors] = useState({});
   const [submittingSupplierId, setSubmittingSupplierId] = useState(null);
+  const [supplierDialogOpen, setSupplierDialogOpen] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({ name: '', code: '' });
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
 
   const loadSupplierData = async () => {
     setIsLoading(true);
@@ -156,119 +164,196 @@ export default function Suppliers() {
     }
   };
 
+  const openSupplierDialog = () => {
+    setSupplierForm({ name: '', code: '' });
+    setSupplierDialogOpen(true);
+  };
+
+  const closeSupplierDialog = () => {
+    if (isSavingSupplier) return;
+    setSupplierDialogOpen(false);
+    setSupplierForm({ name: '', code: '' });
+  };
+
+  const submitSupplier = async () => {
+    const payload = {
+      name: supplierForm.name.trim(),
+      code: supplierForm.code.trim(),
+      is_active: true,
+    };
+
+    if (!payload.name || !payload.code) {
+      setError(t('suppliers_required_fields_error'));
+      return;
+    }
+
+    setIsSavingSupplier(true);
+    setError('');
+
+    try {
+      await axios.post('/api/v1/admin/suppliers/', payload);
+      await loadSupplierData();
+      closeSupplierDialog();
+    } catch (err) {
+      console.error('Failed to create supplier', err);
+      const parsedError = parseApiError(err);
+      const parsedMessage = formatFieldErrors(parsedError.fieldErrors) || parsedError.message;
+      setError(parsedMessage || t('suppliers_save_error'));
+    } finally {
+      setIsSavingSupplier(false);
+    }
+  };
+
   return (
-    <PageShell>
-      <PageHeader title={t('suppliers')} subtitle={t('suppliers_subtitle')} />
+    <>
+      <PageShell>
+        <PageHeader
+          title={t('suppliers')}
+          subtitle={t('suppliers_subtitle')}
+          action={can('admin.records.manage') ? (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openSupplierDialog}>
+              {t('suppliers_add_supplier')}
+            </Button>
+          ) : null}
+        />
 
-      <SectionPanel
-        title={t('suppliers_balances_overview')}
-        subtitle={t('suppliers_balances_overview_subtitle')}
-      >
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
-          <AgingWidget label={t('suppliers_balance')} value={totals.balance} />
-          <AgingWidget label={t('suppliers_aging_current')} value={totals.current} />
-          <AgingWidget label={t('suppliers_aging_30')} value={totals.d30} />
-          <AgingWidget label={t('suppliers_aging_60')} value={totals.d60} />
-          <AgingWidget label={t('suppliers_aging_90_plus')} value={totals.d90} />
-        </Stack>
-      </SectionPanel>
+        <SectionPanel
+          title={t('suppliers_balances_overview')}
+          subtitle={t('suppliers_balances_overview_subtitle')}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+            <AgingWidget label={t('suppliers_balance')} value={totals.balance} />
+            <AgingWidget label={t('suppliers_aging_current')} value={totals.current} />
+            <AgingWidget label={t('suppliers_aging_30')} value={totals.d30} />
+            <AgingWidget label={t('suppliers_aging_60')} value={totals.d60} />
+            <AgingWidget label={t('suppliers_aging_90_plus')} value={totals.d90} />
+          </Stack>
+        </SectionPanel>
 
-      <SectionPanel>
-        <Stack spacing={2}>
-          <TextField
-            label={t('suppliers_search_label')}
-            placeholder={t('suppliers_search_placeholder')}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            fullWidth
-          />
+        <SectionPanel>
+          <Stack spacing={2}>
+            <TextField
+              label={t('suppliers_search_label')}
+              placeholder={t('suppliers_search_placeholder')}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              fullWidth
+            />
 
-          {error && <Alert severity="error">{error}</Alert>}
+            {error && <Alert severity="error">{error}</Alert>}
 
-          {isLoading ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CircularProgress size={18} />
-              <Typography variant="body2">{t('suppliers_loading')}</Typography>
-            </Stack>
-          ) : (
-            <TableContainer component={Card} variant="outlined">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('name')}</TableCell>
-                    <TableCell>{t('suppliers_primary_contact')}</TableCell>
-                    <TableCell>{t('suppliers_balance')}</TableCell>
-                    <TableCell>{t('suppliers_aging_current')}</TableCell>
-                    <TableCell>{t('suppliers_aging_30')}</TableCell>
-                    <TableCell>{t('suppliers_aging_60')}</TableCell>
-                    <TableCell>{t('suppliers_aging_90_plus')}</TableCell>
-                    {can('supplier.payment.create') && <TableCell>{t('suppliers_quick_payment')}</TableCell>}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredSuppliers.map((supplier) => {
-                    const primaryContact = (supplier.contacts || []).find((contact) => contact.is_primary)
-                      || (supplier.contacts || [])[0];
-                    const summary = agingBySupplierId.get(String(supplier.id));
-
-                    return (
-                      <TableRow key={supplier.id} hover>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight={600}>{supplier.name}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">{primaryContact?.name || '-'}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {primaryContact?.phone || primaryContact?.email || '-'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>{formatMoney(summary?.balance_due)}</TableCell>
-                        <TableCell>{formatMoney(getAgingValue(summary, 'current'))}</TableCell>
-                        <TableCell>{formatMoney(getAgingValue(summary, '30'))}</TableCell>
-                        <TableCell>{formatMoney(getAgingValue(summary, '60'))}</TableCell>
-                        <TableCell>{formatMoney(getAgingValue(summary, '90_plus'))}</TableCell>
-                        {can('supplier.payment.create') && (
-                          <TableCell>
-                            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
-                              <TextField
-                                size="small"
-                                type="number"
-                                value={paymentDrafts[supplier.id] || ''}
-                                onChange={(event) => handlePaymentDraftChange(supplier.id, event.target.value)}
-                                placeholder={t('payment_amount')}
-                                error={Boolean(paymentErrors[supplier.id])}
-                                helperText={paymentErrors[supplier.id] || ''}
-                                inputProps={{ min: '0', step: '0.01' }}
-                              />
-                              <Button
-                                size="small"
-                                variant="contained"
-                                disabled={submittingSupplierId === supplier.id}
-                                onClick={() => submitQuickPayment(supplier.id)}
-                              >
-                                {t('record_payment')}
-                              </Button>
-                            </Stack>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                  {filteredSuppliers.length === 0 && (
+            {isLoading ? (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={18} />
+                <Typography variant="body2">{t('suppliers_loading')}</Typography>
+              </Stack>
+            ) : (
+              <TableContainer component={Card} variant="outlined">
+                <Table size="small">
+                  <TableHead>
                     <TableRow>
-                      <TableCell colSpan={can('supplier.payment.create') ? 8 : 7}>
-                        <Box sx={{ py: 2 }}>
-                          <Typography variant="body2">{t('suppliers_empty_state')}</Typography>
-                        </Box>
-                      </TableCell>
+                      <TableCell>{t('name')}</TableCell>
+                      <TableCell>{t('suppliers_primary_contact')}</TableCell>
+                      <TableCell>{t('suppliers_balance')}</TableCell>
+                      <TableCell>{t('suppliers_aging_current')}</TableCell>
+                      <TableCell>{t('suppliers_aging_30')}</TableCell>
+                      <TableCell>{t('suppliers_aging_60')}</TableCell>
+                      <TableCell>{t('suppliers_aging_90_plus')}</TableCell>
+                      {can('supplier.payment.create') && <TableCell>{t('suppliers_quick_payment')}</TableCell>}
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Stack>
-      </SectionPanel>
-    </PageShell>
+                  </TableHead>
+                  <TableBody>
+                    {filteredSuppliers.map((supplier) => {
+                      const primaryContact = (supplier.contacts || []).find((contact) => contact.is_primary)
+                        || (supplier.contacts || [])[0];
+                      const summary = agingBySupplierId.get(String(supplier.id));
+
+                      return (
+                        <TableRow key={supplier.id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={600}>{supplier.name}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{primaryContact?.name || '-'}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {primaryContact?.phone || primaryContact?.email || '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{formatMoney(summary?.balance_due)}</TableCell>
+                          <TableCell>{formatMoney(getAgingValue(summary, 'current'))}</TableCell>
+                          <TableCell>{formatMoney(getAgingValue(summary, '30'))}</TableCell>
+                          <TableCell>{formatMoney(getAgingValue(summary, '60'))}</TableCell>
+                          <TableCell>{formatMoney(getAgingValue(summary, '90_plus'))}</TableCell>
+                          {can('supplier.payment.create') && (
+                            <TableCell>
+                              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
+                                <TextField
+                                  size="small"
+                                  type="number"
+                                  value={paymentDrafts[supplier.id] || ''}
+                                  onChange={(event) => handlePaymentDraftChange(supplier.id, event.target.value)}
+                                  placeholder={t('payment_amount')}
+                                  error={Boolean(paymentErrors[supplier.id])}
+                                  helperText={paymentErrors[supplier.id] || ''}
+                                  inputProps={{ min: '0', step: '0.01' }}
+                                />
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  disabled={submittingSupplierId === supplier.id}
+                                  onClick={() => submitQuickPayment(supplier.id)}
+                                >
+                                  {t('record_payment')}
+                                </Button>
+                              </Stack>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
+                    {filteredSuppliers.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={can('supplier.payment.create') ? 8 : 7}>
+                          <Box sx={{ py: 2 }}>
+                            <Typography variant="body2">{t('suppliers_empty_state')}</Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Stack>
+        </SectionPanel>
+      </PageShell>
+
+      <Dialog open={supplierDialogOpen} onClose={closeSupplierDialog} fullWidth maxWidth="sm">
+        <DialogTitle>{t('suppliers_add_supplier')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              autoFocus
+              label={t('name')}
+              value={supplierForm.name}
+              onChange={(event) => setSupplierForm((prev) => ({ ...prev, name: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label={t('code')}
+              value={supplierForm.code}
+              onChange={(event) => setSupplierForm((prev) => ({ ...prev, code: event.target.value }))}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSupplierDialog} disabled={isSavingSupplier}>{t('cancel')}</Button>
+          <Button onClick={submitSupplier} variant="contained" disabled={isSavingSupplier}>
+            {t('save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
