@@ -466,6 +466,18 @@ export default function Inventory() {
             <TextField label={t('unit')} value={productForm.unit} onChange={(e) => setProductForm((prev) => ({ ...prev, unit: e.target.value }))} fullWidth />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField
+              select
+              label={t('supplier')}
+              value={productForm.preferred_supplier}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, preferred_supplier: e.target.value }))}
+              fullWidth
+            >
+              <MenuItem value="">{t('none')}</MenuItem>
+              {suppliers.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.name}</MenuItem>)}
+            </TextField>
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField label={t('price')} value={productForm.price} onChange={(e) => setProductForm((prev) => ({ ...prev, price: e.target.value }))} fullWidth />
             <TextField label={t('cost')} value={productForm.cost} onChange={(e) => setProductForm((prev) => ({ ...prev, cost: e.target.value }))} fullWidth />
             <TextField label={t('tax_rate')} value={productForm.tax_rate} onChange={(e) => setProductForm((prev) => ({ ...prev, tax_rate: e.target.value }))} fullWidth />
