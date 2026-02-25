@@ -54,21 +54,23 @@ export default function Register() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'radial-gradient(circle at top, #1f1c2c 0%, #110d1f 45%, #0b0b12 100%)',
+        background: (theme) => theme.palette.mode === 'dark'
+          ? 'radial-gradient(circle at top, rgba(78, 124, 210, 0.35) 0%, #0B1220 46%, #090D16 100%)'
+          : 'radial-gradient(circle at top, rgba(30, 91, 184, 0.18) 0%, #EEF3FF 44%, #E8EEFF 100%)',
         py: 6,
       }}
     >
       <Container component="main" maxWidth="xs">
         <CssBaseline />
         <Paper
-          elevation={10}
+          elevation={0}
           sx={{
             p: 4,
             borderRadius: 3,
-            background: 'rgba(14, 14, 20, 0.88)',
-            border: '1px solid rgba(212, 175, 55, 0.35)',
-            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(8px)',
+            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 26, 43, 0.82)' : 'rgba(255, 255, 255, 0.86)',
+            border: (theme) => `1px solid ${theme.palette.divider}`,
+            boxShadow: (theme) => theme.customElevation.cardShadow,
+            backdropFilter: 'blur(14px)',
           }}
         >
           <Box
@@ -82,13 +84,13 @@ export default function Register() {
               sx={{
                 m: 1,
                 bgcolor: 'transparent',
-                border: '1px solid rgba(212, 175, 55, 0.7)',
-                color: '#f5d88c',
+                border: (theme) => `1px solid ${theme.palette.divider}`,
+                color: 'primary.main',
               }}
             >
               <PersonAddOutlinedIcon />
             </Avatar>
-            <Typography component="h1" variant="h5" sx={{ color: '#f5d88c' }}>
+            <Typography component="h1" variant="h5" sx={{ color: 'text.primary', fontWeight: 700 }}>
               {t('create_account')}
             </Typography>
             <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 3 }}>
@@ -105,9 +107,7 @@ export default function Register() {
                     value={formData.first_name}
                     onChange={handleChange}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: '#f5f5f5',
-                      },
+                      '& .MuiOutlinedInput-root': { color: 'text.primary' },
                     }}
                   />
                 </Grid>
@@ -122,9 +122,7 @@ export default function Register() {
                     value={formData.last_name}
                     onChange={handleChange}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: '#f5f5f5',
-                      },
+                      '& .MuiOutlinedInput-root': { color: 'text.primary' },
                     }}
                   />
                 </Grid>
@@ -139,9 +137,7 @@ export default function Register() {
                     value={formData.username}
                     onChange={handleChange}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: '#f5f5f5',
-                      },
+                      '& .MuiOutlinedInput-root': { color: 'text.primary' },
                     }}
                   />
                 </Grid>
@@ -156,9 +152,7 @@ export default function Register() {
                     value={formData.email}
                     onChange={handleChange}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: '#f5f5f5',
-                      },
+                      '& .MuiOutlinedInput-root': { color: 'text.primary' },
                     }}
                   />
                 </Grid>
@@ -174,9 +168,7 @@ export default function Register() {
                     value={formData.password}
                     onChange={handleChange}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
-                        color: '#f5f5f5',
-                      },
+                      '& .MuiOutlinedInput-root': { color: 'text.primary' },
                     }}
                   />
                 </Grid>
@@ -194,19 +186,14 @@ export default function Register() {
                   mt: 3,
                   mb: 2,
                   py: 1.5,
-                  background: 'linear-gradient(120deg, #d4af37 0%, #f7e29c 100%)',
-                  color: '#1a1a1a',
-                  fontWeight: 600,
-                  '&:hover': {
-                    background: 'linear-gradient(120deg, #c89f2d 0%, #f4d87c 100%)',
-                  },
+                  fontWeight: 700,
                 }}
               >
                 {t('register')}
               </Button>
               <Grid container justifyContent="flex-end">
                 <Grid item>
-                  <Link component={RouterLink} to="/login" variant="body2" sx={{ color: '#f5d88c' }}>
+                  <Link component={RouterLink} to="/login" variant="body2" sx={{ color: 'primary.main' }}>
                     {t('already_have_account')}
                   </Link>
                 </Grid>
