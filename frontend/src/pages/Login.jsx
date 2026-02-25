@@ -84,21 +84,23 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'radial-gradient(circle at top, #1b1b2f 0%, #0f0c29 45%, #09090f 100%)',
+        background: (theme) => theme.palette.mode === 'dark'
+          ? 'radial-gradient(circle at top, rgba(78, 124, 210, 0.35) 0%, #0B1220 46%, #090D16 100%)'
+          : 'radial-gradient(circle at top, rgba(30, 91, 184, 0.18) 0%, #EEF3FF 44%, #E8EEFF 100%)',
         py: 6,
       }}
     >
       <Container component="main" maxWidth="xs">
         <CssBaseline />
         <Paper
-          elevation={10}
+          elevation={0}
           sx={{
             p: 4,
             borderRadius: 3,
-            background: 'rgba(14, 14, 20, 0.88)',
-            border: '1px solid rgba(212, 175, 55, 0.35)',
-            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(8px)',
+            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 26, 43, 0.82)' : 'rgba(255, 255, 255, 0.86)',
+            border: (theme) => `1px solid ${theme.palette.divider}`,
+            boxShadow: (theme) => theme.customElevation.cardShadow,
+            backdropFilter: 'blur(14px)',
           }}
         >
           <Box
@@ -112,13 +114,13 @@ export default function Login() {
               sx={{
                 m: 1,
                 bgcolor: 'transparent',
-                border: '1px solid rgba(212, 175, 55, 0.7)',
-                color: '#f5d88c',
+                border: (theme) => `1px solid ${theme.palette.divider}`,
+                color: 'primary.main',
               }}
             >
               <LockOutlinedIcon />
             </Avatar>
-            <Typography component="h1" variant="h5" sx={{ color: '#f5d88c' }}>
+            <Typography component="h1" variant="h5" sx={{ color: 'text.primary', fontWeight: 700 }}>
               {t('sign_in')}
             </Typography>
             <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 2, width: '100%' }}>
@@ -137,7 +139,7 @@ export default function Login() {
                 helperText={fieldErrors.username || ''}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    color: '#f5f5f5',
+                    color: 'inherit',
                   },
                 }}
               />
@@ -156,7 +158,7 @@ export default function Login() {
                 helperText={fieldErrors.password || ''}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    color: '#f5f5f5',
+                    color: 'inherit',
                   },
                 }}
               />
@@ -173,24 +175,19 @@ export default function Login() {
                   mt: 3,
                   mb: 2,
                   py: 1.5,
-                  background: 'linear-gradient(120deg, #d4af37 0%, #f7e29c 100%)',
-                  color: '#1a1a1a',
-                  fontWeight: 600,
-                  '&:hover': {
-                    background: 'linear-gradient(120deg, #c89f2d 0%, #f4d87c 100%)',
-                  },
+                  fontWeight: 700,
                 }}
               >
                 {t('sign_in')}
               </Button>
               <Grid container>
                 <Grid item xs>
-                  <Link component={RouterLink} to="/forgot-password" variant="body2" sx={{ color: '#f5d88c' }}>
+                  <Link component={RouterLink} to="/forgot-password" variant="body2" sx={{ color: 'primary.main' }}>
                     {t('forgot_password')}
                   </Link>
                 </Grid>
                 <Grid item>
-                  <Link component={RouterLink} to="/register" variant="body2" sx={{ color: '#f5d88c' }}>
+                  <Link component={RouterLink} to="/register" variant="body2" sx={{ color: 'primary.main' }}>
                     {t('dont_have_account')}
                   </Link>
                 </Grid>

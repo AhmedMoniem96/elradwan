@@ -208,6 +208,7 @@ export default function Layout() {
   };
 
   const canManageRuntimeContext = can('device.read') || can('device.manage');
+  const pageTitle = t('app_title');
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -216,8 +217,12 @@ export default function Layout() {
         position="absolute"
         open={open}
         sx={{
-          backdropFilter: 'blur(10px)',
-          background: (theme) => `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+          backdropFilter: 'blur(16px)',
+          borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+          background: (theme) => theme.palette.mode === 'dark'
+            ? 'linear-gradient(120deg, rgba(16, 26, 43, 0.9) 0%, rgba(36, 28, 63, 0.85) 100%)'
+            : 'linear-gradient(120deg, rgba(255, 255, 255, 0.85) 0%, rgba(239, 245, 255, 0.9) 100%)',
+          color: (theme) => theme.palette.text.primary,
         }}
       >
         <Toolbar
@@ -237,21 +242,25 @@ export default function Layout() {
           >
             <MenuIcon />
           </IconButton>
-          <Typography
-            component="h1"
-            variant="h6"
-            color="inherit"
-            noWrap
-            sx={{ flexGrow: 1 }}
-          >
-            {t('app_title')}
-          </Typography>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Typography
+              component="h1"
+              variant="h6"
+              noWrap
+              sx={{ fontWeight: 700 }}
+            >
+              {pageTitle}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', md: 'block' } }}>
+              {user?.branch_name || user?.username || user?.email || ''}
+            </Typography>
+          </Box>
           
-          <IconButton color="inherit" onClick={toggleColorMode}>
+          <IconButton color="inherit" onClick={toggleColorMode} sx={{ border: (theme) => `1px solid ${theme.palette.divider}`, mr: 0.5 }}>
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
 
-          <IconButton color="inherit" onClick={handleLanguageMenu}>
+          <IconButton color="inherit" onClick={handleLanguageMenu} sx={{ border: (theme) => `1px solid ${theme.palette.divider}`, mr: 0.5 }}>
             <TranslateIcon />
           </IconButton>
           <Menu
@@ -265,7 +274,7 @@ export default function Layout() {
 
           {canManageRuntimeContext && (
             <>
-              <IconButton color="inherit" onClick={handleSettingsMenuOpen} title={t('settings')}>
+              <IconButton color="inherit" onClick={handleSettingsMenuOpen} title={t('settings')} sx={{ border: (theme) => `1px solid ${theme.palette.divider}`, mr: 0.5 }}>
                 <SettingsIcon />
               </IconButton>
               <Menu
@@ -320,7 +329,7 @@ export default function Layout() {
             </>
           )}
 
-          <IconButton color="inherit" onClick={handleAlertsMenuOpen} title={t('inventory_unread_alerts')}>
+          <IconButton color="inherit" onClick={handleAlertsMenuOpen} title={t('inventory_unread_alerts')} sx={{ border: (theme) => `1px solid ${theme.palette.divider}`, mr: 0.5 }}>
             <Badge badgeContent={unreadAlerts} color="secondary">
               <NotificationsIcon />
             </Badge>
@@ -387,7 +396,7 @@ export default function Layout() {
             )}
           </Menu>
 
-          <IconButton color="inherit" onClick={handleLogout} title={t('logout')}>
+          <IconButton color="inherit" onClick={handleLogout} title={t('logout')} sx={{ border: (theme) => `1px solid ${theme.palette.divider}` }}>
             <LogoutIcon />
           </IconButton>
         </Toolbar>
@@ -398,7 +407,10 @@ export default function Layout() {
         sx={{
           '& .MuiDrawer-paper': {
             borderRight: (theme) => `1px solid ${theme.palette.divider}`,
-            backgroundImage: (theme) => `linear-gradient(180deg, ${theme.palette.background.paper} 0%, ${theme.palette.action.hover} 100%)`,
+            backgroundImage: (theme) => theme.palette.mode === 'dark'
+              ? 'linear-gradient(180deg, rgba(16, 26, 43, 0.9) 0%, rgba(16, 22, 33, 0.92) 100%)'
+              : 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 248, 255, 0.88) 100%)',
+            backdropFilter: 'blur(14px)',
           },
         }}
       >
@@ -502,7 +514,9 @@ export default function Layout() {
       <Box
         component="main"
         sx={{
-          backgroundColor: (theme) => theme.palette.background.default,
+          background: (theme) => theme.palette.mode === 'dark'
+            ? 'radial-gradient(circle at top right, rgba(78, 124, 210, 0.18), transparent 45%), radial-gradient(circle at 0% 0%, rgba(107, 70, 193, 0.16), transparent 40%), #0B1220'
+            : 'radial-gradient(circle at top right, rgba(30, 91, 184, 0.1), transparent 48%), radial-gradient(circle at 0% 0%, rgba(107, 70, 193, 0.08), transparent 42%), #EEF3FF',
           flexGrow: 1,
           height: '100vh',
           overflow: 'auto',
