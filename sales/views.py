@@ -109,7 +109,11 @@ class CustomerViewSet(OutboxMutationMixin, mixins.ListModelMixin, mixins.Retriev
     audit_entity = "customer"
 
     def get_queryset(self):
-        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+        queryset = scoped_queryset_for_user(super().get_queryset(), self.request.user)
+        pricing_mode = self.request.query_params.get("pricing_mode")
+        if pricing_mode:
+            queryset = queryset.filter(pricing_mode=pricing_mode)
+        return queryset
 
 
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):

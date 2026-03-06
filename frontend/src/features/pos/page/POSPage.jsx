@@ -277,6 +277,7 @@ function CustomerSearchPanel({ t, isRTL, customerQuery, setCustomerQuery, select
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Typography fontWeight={700}>{t('customer')}:</Typography>
         <Chip color={selectedCustomer ? 'success' : 'default'} label={selectedCustomer?.name || t('walk_in_customer')} variant={selectedCustomer ? 'filled' : 'outlined'} />
+        <Chip size="small" variant="outlined" label={selectedCustomer ? t(`pricing_mode_${selectedCustomer?.pricing_mode || 'unit'}`) : t('pricing_mode_unit')} />
         {selectedCustomer && <Button size="small" color="warning" onClick={clearSelectedCustomer}>{t('clear_selected_customer')}</Button>}
       </Stack>
       <Box sx={{ maxHeight: 220, overflowY: 'auto' }}>
@@ -610,7 +611,7 @@ export default function POS() {
   const [heldCartSearch, setHeldCartSearch] = useState('');
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
-  const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '', email: '' });
+  const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '', email: '', pricing_mode: 'unit' });
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -811,6 +812,8 @@ export default function POS() {
   const paidSoFar = useMemo(() => payments.reduce((acc, p) => acc + p.amount, 0), [payments]);
   const remaining = Math.max(parsedInvoiceTotal - paidSoFar, 0);
 
+  const customerPricingMode = selectedCustomer?.pricing_mode || 'unit';
+
   const computedPaymentAmount = useMemo(() => {
     const value = Number(paymentValue) || 0;
     return Math.min(value, remaining);
@@ -827,10 +830,11 @@ export default function POS() {
       lines: cart.map((item) => ({
         product_id: item.id,
         quantity: item.quantity,
+        quantity_mode: item.quantity_mode || customerPricingMode,
         unit_price: Number(item.unitPrice.toFixed(2)),
       })),
     }),
-    [cart, parsedInvoiceTotal, selectedCustomer],
+    [cart, customerPricingMode, parsedInvoiceTotal, selectedCustomer],
   );
 
   const filteredReceipts = useMemo(() => {
@@ -920,6 +924,7 @@ export default function POS() {
           item.id === product.id
             ? {
                 ...item,
+                quantity_mode: customerPricingMode,
                 quantity: item.quantity + 1,
               }
             : item,
@@ -932,6 +937,7 @@ export default function POS() {
             name: product.name,
             sku: product.sku,
             quantity: 1,
+            quantity_mode: customerPricingMode,
             unitPrice: Number(product.price || 0),
           },
         ];
@@ -946,6 +952,10 @@ export default function POS() {
     });
     setActionFeedback({ severity: 'success', message: t('pos_item_added') });
     setSearchQuery('');
+  };
+
+  const applyCustomerPricingModeToCart = (pricingMode) => {
+    setCart((prev) => prev.map((item) => ({ ...item, quantity_mode: pricingMode || 'unit' })));
   };
 
   const updateQuantity = (productId, delta) => {
@@ -1050,11 +1060,13 @@ export default function POS() {
   const handleSelectCustomer = (customer) => {
     setSelectedCustomer(customer);
     setCustomerQuery(customer?.name || '');
+    applyCustomerPricingModeToCart(customer?.pricing_mode || 'unit');
   };
 
   const clearSelectedCustomer = () => {
     setSelectedCustomer(null);
     setCustomerQuery('');
+    applyCustomerPricingModeToCart('unit');
   };
 
   const handleSelectCategory = (category) => {
@@ -1263,7 +1275,7 @@ export default function POS() {
   };
 
   const handleOpenAddCustomer = () => {
-    setNewCustomerForm({ name: '', phone: '', email: '' });
+    setNewCustomerForm({ name: '', phone: '', email: '', pricing_mode: 'unit' });
     setAddCustomerOpen(true);
   };
 
@@ -1272,6 +1284,7 @@ export default function POS() {
       name: newCustomerForm.name.trim(),
       phone: newCustomerForm.phone.trim(),
       email: newCustomerForm.email.trim() || null,
+      pricing_mode: newCustomerForm.pricing_mode || 'unit',
     };
 
     if (!payload.name || !payload.phone) {
@@ -1635,6 +1648,16 @@ export default function POS() {
               value={newCustomerForm.email}
               onChange={(event) => setNewCustomerForm((prev) => ({ ...prev, email: event.target.value }))}
             />
+            <TextField
+              label={t('pricing_mode')}
+              select
+              SelectProps={{ native: true }}
+              value={newCustomerForm.pricing_mode}
+              onChange={(event) => setNewCustomerForm((prev) => ({ ...prev, pricing_mode: event.target.value }))}
+            >
+              <option value="unit">{t('pricing_mode_unit')}</option>
+              <option value="package">{t('pricing_mode_package')}</option>
+            </TextField>
             <Stack direction="row" spacing={1} justifyContent="flex-end">
               <Button onClick={() => setAddCustomerOpen(false)}>{t('cancel')}</Button>
               <Button variant="contained" onClick={handleCreateCustomer} disabled={creatingCustomer}>

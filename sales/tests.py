@@ -130,6 +130,18 @@ class BranchScopedSalesTests(TestCase):
             self.assertEqual(item["reference_number"], "INV-A-1")
             self.assertEqual(item["customer"], self.customer_a.name)
 
+    def test_customer_list_supports_pricing_mode_filter(self):
+        self.customer_a.pricing_mode = Customer.PricingMode.PACKAGE
+        self.customer_a.save(update_fields=["pricing_mode"])
+        self.client.force_authenticate(user=self.admin_a)
+
+        response = self.client.get("/api/v1/customers/?pricing_mode=package")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["id"], str(self.customer_a.id))
+
     def test_pos_create_customer_assigns_authenticated_user_branch(self):
         self.client.force_authenticate(user=self.admin_a)
 
@@ -654,6 +666,7 @@ class ReportingTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         user_model = get_user_model()
+        self.user_model = user_model
 
         self.branch = Branch.objects.create(code="RP", name="Reporting", timezone="UTC")
         self.user = user_model.objects.create_user(
@@ -760,6 +773,7 @@ class PosInvoiceCreateTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         user_model = get_user_model()
+        self.user_model = user_model
 
         self.branch = Branch.objects.create(code="PI", name="POS Invoice")
         self.device = Device.objects.create(branch=self.branch, name="POS Device", identifier="pos-invoice-device")
@@ -835,6 +849,67 @@ class PosInvoiceCreateTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("active cash shift", str(response.json()).lower())
+
+    def test_package_customer_cannot_be_charged_with_unit_mode_without_override_permission(self):
+        self.customer.pricing_mode = Customer.PricingMode.PACKAGE
+        self.customer.allow_unit_override = True
+        self.customer.save(update_fields=["pricing_mode", "allow_unit_override"])
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "25.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "quantity_mode": "unit",
+                        "unit_price": "25.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("quantity_mode", str(response.json()))
+
+    def test_supervisor_can_override_package_customer_to_unit_mode(self):
+        self.customer.pricing_mode = Customer.PricingMode.PACKAGE
+        self.customer.allow_unit_override = True
+        self.customer.save(update_fields=["pricing_mode", "allow_unit_override"])
+        supervisor = self.user_model.objects.create_user(
+            username="pos-supervisor",
+            password="pass1234",
+            branch=self.branch,
+            role="supervisor",
+        )
+        CashShift.objects.create(branch=self.branch, cashier=supervisor, device=self.device, opening_amount=Decimal("20.00"))
+        self.client.force_authenticate(user=supervisor)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "25.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "quantity_mode": "unit",
+                        "unit_price": "25.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        invoice = Invoice.objects.get(id=response.json()["id"])
+        self.assertEqual(invoice.lines.first().quantity_mode, Customer.PricingMode.UNIT)
 
     def test_admin_can_create_pos_invoice_with_sales_pos_access(self):
         CashShift.objects.create(branch=self.branch, cashier=self.admin, device=self.device, opening_amount=Decimal("20.00"))

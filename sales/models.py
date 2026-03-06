@@ -7,11 +7,18 @@ from inventory.models import Product
 
 
 class Customer(models.Model):
+    class PricingMode(models.TextChoices):
+        PACKAGE = "package", "Package"
+        UNIT = "unit", "Unit"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=64, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
+    pricing_mode = models.CharField(max_length=16, choices=PricingMode.choices, default=PricingMode.UNIT)
+    allow_unit_override = models.BooleanField(default=False)
+    allow_package_override = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,6 +71,7 @@ class InvoiceLine(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="lines")
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity_mode = models.CharField(max_length=16, choices=Customer.PricingMode.choices, default=Customer.PricingMode.UNIT)
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
