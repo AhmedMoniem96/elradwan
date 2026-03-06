@@ -20,6 +20,7 @@ from inventory.models import (
     StockTransferLine,
     Supplier,
     SupplierContact,
+    SupplierImportProfile,
     SupplierPayment,
     Warehouse,
 )
@@ -266,6 +267,49 @@ class SupplierSerializer(serializers.ModelSerializer):
         model = Supplier
         fields = ["id", "branch", "name", "code", "is_active", "created_at", "updated_at", "contacts"]
         read_only_fields = ["id", "branch", "created_at", "updated_at"]
+
+
+class SupplierImportProfileSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    default_warehouse_name = serializers.CharField(source="default_warehouse.name", read_only=True)
+
+    class Meta:
+        model = SupplierImportProfile
+        fields = [
+            "id",
+            "branch",
+            "supplier",
+            "supplier_name",
+            "version",
+            "file_type",
+            "detected_columns",
+            "column_mapping",
+            "format_signature",
+            "default_warehouse",
+            "default_warehouse_name",
+            "default_tax_rate",
+            "notes",
+            "is_active",
+            "parse_runs",
+            "parse_total_rows",
+            "parse_error_rows",
+            "parse_error_rate",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "branch",
+            "version",
+            "supplier_name",
+            "default_warehouse_name",
+            "parse_runs",
+            "parse_total_rows",
+            "parse_error_rows",
+            "parse_error_rate",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
@@ -552,6 +596,8 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "branch",
             "uploaded_by",
             "supplier",
+            "supplier_template",
+            "supplier_template_version",
             "source_file",
             "source_filename",
             "file_type",
@@ -574,6 +620,8 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "branch",
             "uploaded_by",
             "supplier",
+            "supplier_template",
+            "supplier_template_version",
             "source_filename",
             "file_type",
             "state",
@@ -593,8 +641,12 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
 class PurchaseImportJobCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseImportJob
-        fields = ["id", "source_file", "supplier", "column_mapping"]
+        fields = ["id", "source_file", "supplier", "column_mapping", "test_parse", "default_warehouse", "default_tax_rate"]
         read_only_fields = ["id"]
+
+    test_parse = serializers.BooleanField(required=False, default=False)
+    default_warehouse = serializers.PrimaryKeyRelatedField(queryset=Warehouse.objects.all(), required=False, allow_null=True)
+    default_tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, required=False)
 
 
 class PurchaseImportJobApplySerializer(serializers.Serializer):

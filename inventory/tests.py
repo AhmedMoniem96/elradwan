@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from core.models import Branch
 from sync.models import SyncOutbox
-from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseImportJob, PurchaseOrder, StockMove, StockTransfer, Supplier, SupplierImportResolvedMapping, Warehouse
+from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseImportJob, PurchaseOrder, StockMove, StockTransfer, Supplier, SupplierImportProfile, SupplierImportResolvedMapping, Warehouse
 
 
 class BranchScopedInventoryTests(TestCase):
@@ -833,3 +833,58 @@ class PurchaseImportMatchingTests(TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(StockMove.objects.filter(import_job_id=job_id).count(), 0)
+
+    def test_supplier_template_auto_applies_and_tracks_preview_error_rate(self):
+        warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+        profile = SupplierImportProfile.objects.create(
+            branch=self.branch,
+            supplier=self.supplier,
+            version=1,
+            file_type=PurchaseImportJob.FileType.CSV,
+            column_mapping={"sku": "vendor_sku", "quantity": "qty"},
+            default_warehouse=warehouse,
+            default_tax_rate=Decimal("0.1500"),
+            is_active=True,
+        )
+
+        lines = ["name,qty,price", "A,invalid,10", "B,2,11"] + [f"P{i},1,1" for i in range(30)]
+        csv_text = "\n".join(lines) + "\n"
+        file = SimpleUploadedFile("supplier.csv", csv_text.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(
+            "/api/v1/purchase-import-jobs/",
+            {"source_file": file, "supplier": str(self.supplier.id), "test_parse": "true"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["supplier_template"], str(profile.id))
+        self.assertEqual(body["supplier_template_version"], 1)
+        self.assertEqual(len(body["parsed_rows"]), 20)
+        self.assertEqual(body["column_mapping"], {"sku": "vendor_sku", "quantity": "qty"})
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.parse_runs, 1)
+        self.assertEqual(profile.parse_total_rows, 20)
+        self.assertEqual(profile.parse_error_rows, 1)
+
+    def test_supplier_template_endpoint_returns_latest_active_version(self):
+        SupplierImportProfile.objects.create(
+            branch=self.branch,
+            supplier=self.supplier,
+            version=1,
+            file_type=PurchaseImportJob.FileType.CSV,
+            column_mapping={"sku": "sku"},
+            is_active=False,
+        )
+        latest = SupplierImportProfile.objects.create(
+            branch=self.branch,
+            supplier=self.supplier,
+            version=2,
+            file_type=PurchaseImportJob.FileType.CSV,
+            column_mapping={"sku": "vendor_sku"},
+            is_active=True,
+        )
+
+        response = self.client.get(f"/api/v1/purchase-import-jobs/supplier-template/?supplier_id={self.supplier.id}&file_type=csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["profile"]["id"], str(latest.id))

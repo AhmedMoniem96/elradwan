@@ -31,6 +31,7 @@ from inventory.models import (
     ProductBundle,
     PurchaseImportJob,
     PurchaseOrder,
+    SupplierImportProfile,
     SupplierImportResolvedMapping,
     StockMove,
     StockTransfer,
@@ -52,6 +53,7 @@ from inventory.serializers import (
     PurchaseOrderSerializer,
     StockTransferSerializer,
     SupplierContactSerializer,
+    SupplierImportProfileSerializer,
     SupplierPaymentSerializer,
     SupplierSerializer,
     WarehouseSerializer,
@@ -287,6 +289,39 @@ class AdminSupplierViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+
+class SupplierImportProfileViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
+    queryset = SupplierImportProfile.objects.select_related("supplier", "default_warehouse").order_by("supplier__name", "-version")
+    serializer_class = SupplierImportProfileSerializer
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "inventory.view" for action in ["list", "retrieve", "create", "update", "partial_update"]}
+    outbox_entity = "supplier_import_profile"
+    audit_entity = "supplier_import_profile"
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        supplier = serializer.validated_data["supplier"]
+        branch_id = self.request.user.branch_id
+        if supplier.branch_id != branch_id:
+            raise ValidationError({"supplier": "Supplier must belong to your branch."})
+
+        warehouse = serializer.validated_data.get("default_warehouse")
+        if warehouse and warehouse.branch_id != branch_id:
+            raise ValidationError({"default_warehouse": "Warehouse must belong to your branch."})
+
+        latest = SupplierImportProfile.objects.filter(branch_id=branch_id, supplier=supplier).order_by("-version").first()
+        instance = serializer.save(branch_id=branch_id, version=(latest.version + 1 if latest else 1))
+        self._emit(instance, "upsert")
+        self._audit(action=f"{self.audit_entity}.create", entity=self.audit_entity, instance=instance, after_snapshot=self.get_serializer(instance).data)
+
+    def perform_update(self, serializer):
+        warehouse = serializer.validated_data.get("default_warehouse")
+        if warehouse and warehouse.branch_id != self.request.user.branch_id:
+            raise ValidationError({"default_warehouse": "Warehouse must belong to your branch."})
+        super().perform_update(serializer)
 
 
 class AdminSupplierContactViewSet(viewsets.ModelViewSet):
@@ -738,6 +773,7 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         "update": "inventory.view",
         "partial_update": "inventory.view",
         "apply": "inventory.view",
+        "supplier_template": "inventory.view",
     }
 
     def get_queryset(self):
@@ -760,22 +796,61 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         if extension not in (PurchaseImportJob.FileType.CSV, PurchaseImportJob.FileType.PDF):
             raise ValidationError({"source_file": "Only CSV or PDF files are supported."})
 
-        supplier_id = serializer.validated_data.get("supplier_id")
+        supplier = serializer.validated_data.get("supplier")
+        supplier_id = str(supplier.id) if supplier else None
         if supplier_id and not Supplier.objects.filter(id=supplier_id, branch_id=request.user.branch_id).exists():
             raise ValidationError({"supplier": "Supplier must belong to your branch."})
+
+        selected_warehouse = serializer.validated_data.get("default_warehouse")
+        if selected_warehouse and selected_warehouse.branch_id != request.user.branch_id:
+            raise ValidationError({"default_warehouse": "Warehouse must belong to your branch."})
+
+        selected_mapping = serializer.validated_data.get("column_mapping") or {}
+        selected_warehouse = serializer.validated_data.get("default_warehouse")
+        selected_tax_rate = serializer.validated_data.get("default_tax_rate")
+        selected_template = None
+
+        if supplier_id:
+            selected_template = (
+                SupplierImportProfile.objects.filter(
+                    branch_id=request.user.branch_id,
+                    supplier_id=supplier_id,
+                    file_type=extension,
+                    is_active=True,
+                )
+                .order_by("-version")
+                .first()
+            )
+            if selected_template:
+                if not selected_mapping:
+                    selected_mapping = selected_template.column_mapping or {}
+                if selected_warehouse is None:
+                    selected_warehouse = selected_template.default_warehouse
+                if selected_tax_rate is None:
+                    selected_tax_rate = selected_template.default_tax_rate
 
         job = PurchaseImportJob.objects.create(
             branch_id=request.user.branch_id,
             uploaded_by_id=getattr(request.user, "device_id", None),
             supplier_id=supplier_id,
+            supplier_template=selected_template,
+            supplier_template_version=selected_template.version if selected_template else None,
             source_file=source_file,
             source_filename=filename,
             file_type=extension,
-            column_mapping=serializer.validated_data.get("column_mapping") or {},
+            column_mapping=selected_mapping,
         )
 
         try:
-            self._parse_job(job)
+            preview_only = serializer.validated_data.get("test_parse", False)
+            self._parse_job(job, preview_only=preview_only)
+            if selected_warehouse or selected_tax_rate is not None:
+                job.apply_summary = {
+                    **(job.apply_summary or {}),
+                    "default_warehouse_id": str(selected_warehouse.id) if selected_warehouse else None,
+                    "default_tax_rate": str(selected_tax_rate if selected_tax_rate is not None else Decimal("0")),
+                }
+                job.save(update_fields=["apply_summary", "updated_at"])
         except Exception as exc:
             job.state = PurchaseImportJob.State.FAILED
             job.error_message = str(exc)
@@ -785,13 +860,15 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(output.data)
         return Response(output.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    def _parse_job(self, job):
+    def _parse_job(self, job, *, preview_only=False):
         if job.file_type == PurchaseImportJob.FileType.CSV:
             content = job.source_file.read().decode("utf-8", errors="ignore")
             reader = csv.DictReader(StringIO(content))
             detected_columns = reader.fieldnames or []
             parsed_rows = []
             for index, row in enumerate(reader):
+                if preview_only and index >= 20:
+                    break
                 parsed_rows.append({
                     "row_index": index + 1,
                     "sku": (row.get("sku") or row.get("SKU") or "").strip(),
@@ -816,12 +893,14 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
             job.state = next_state
             job.error_message = ""
             job.save(update_fields=["detected_columns", "parsed_rows", "format_signature", "parse_confidence", "state", "error_message", "updated_at"])
+            self._record_profile_parse_health(job)
             return
 
         content = job.source_file.read().decode("utf-8", errors="ignore")
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         parsed_rows = []
-        for index, line in enumerate(lines[:200]):
+        max_lines = 20 if preview_only else 200
+        for index, line in enumerate(lines[:max_lines]):
             parts = [part.strip() for part in line.split(",") if part.strip()]
             parsed_rows.append({
                 "row_index": index + 1,
@@ -847,6 +926,7 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         job.state = PurchaseImportJob.State.REVIEW if parsed_rows else PurchaseImportJob.State.PARSED
         job.error_message = ""
         job.save(update_fields=["detected_columns", "parsed_rows", "format_signature", "parse_confidence", "state", "error_message", "updated_at"])
+        self._record_profile_parse_health(job)
 
     @action(detail=True, methods=["post"], url_path="apply")
     def apply(self, request, pk=None):
@@ -863,6 +943,8 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
 
         rows_by_index = {str(row.get("row_index")): row for row in job.parsed_rows or []}
         draft_lines = []
+        default_warehouse_id = (job.apply_summary or {}).get("default_warehouse_id")
+        default_tax_rate = Decimal(str((job.apply_summary or {}).get("default_tax_rate") or "0"))
 
         for row_key, action_payload in row_actions.items():
             row = rows_by_index.get(str(row_key), {})
@@ -919,6 +1001,8 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                 quantity = Decimal(str(row.get("quantity") or "0") or "0")
                 unit_cost = Decimal(str(row.get("price") or "0") or "0")
                 warehouse_id = action_payload.get("warehouse_id") if isinstance(action_payload, dict) else None
+                if not warehouse_id:
+                    warehouse_id = default_warehouse_id
 
                 if quantity <= 0:
                     raise ValidationError({"row_actions": f"Row {row_key} requires a positive quantity."})
@@ -953,6 +1037,7 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                         "conversion_to_base": str(conversion_to_base),
                         "effective_quantity": str(effective_quantity),
                         "unit_cost": str(unit_cost),
+                        "tax_rate": str(default_tax_rate),
                     }
                 )
                 continue
@@ -1010,6 +1095,53 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
             update_fields.append("supplier_invoice_reference")
         job.save(update_fields=update_fields)
         return Response(PurchaseImportJobSerializer(job, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["get"], url_path="supplier-template")
+    def supplier_template(self, request):
+        supplier_id = request.query_params.get("supplier_id")
+        file_type = request.query_params.get("file_type", PurchaseImportJob.FileType.CSV)
+        if not supplier_id:
+            raise ValidationError({"supplier_id": "supplier_id is required."})
+
+        profile = (
+            SupplierImportProfile.objects.filter(
+                branch_id=request.user.branch_id,
+                supplier_id=supplier_id,
+                file_type=file_type,
+                is_active=True,
+            )
+            .select_related("default_warehouse")
+            .order_by("-version")
+            .first()
+        )
+        if not profile:
+            return Response({"profile": None})
+        return Response({"profile": SupplierImportProfileSerializer(profile, context=self.get_serializer_context()).data})
+
+    def _record_profile_parse_health(self, job):
+        profile = job.supplier_template
+        if not profile:
+            return
+
+        rows = job.parsed_rows or []
+        total_rows = len(rows)
+        error_rows = 0
+        for row in rows:
+            quantity_token = str(row.get("quantity") or "").strip()
+            price_token = str(row.get("price") or "").strip()
+            try:
+                Decimal(quantity_token)
+                Decimal(price_token)
+            except Exception:
+                error_rows += 1
+
+        profile.parse_runs += 1
+        profile.parse_total_rows += total_rows
+        profile.parse_error_rows += error_rows
+        if profile.parse_total_rows > 0:
+            profile.parse_error_rate = Decimal(profile.parse_error_rows) / Decimal(profile.parse_total_rows)
+        profile.save(update_fields=["parse_runs", "parse_total_rows", "parse_error_rows", "parse_error_rate", "updated_at"])
+
     @staticmethod
     def _normalize_text(value):
         token = str(value or "").strip().lower()
