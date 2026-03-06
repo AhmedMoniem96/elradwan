@@ -413,6 +413,14 @@ class PurchaseImportJob(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
     supplier = models.ForeignKey("Supplier", on_delete=models.SET_NULL, null=True, blank=True)
+    supplier_template = models.ForeignKey(
+        "SupplierImportProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+    )
+    supplier_template_version = models.PositiveIntegerField(null=True, blank=True)
     uploaded_by = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True)
     source_file = models.FileField(upload_to="purchase-imports/")
     source_filename = models.CharField(max_length=255)
@@ -467,4 +475,35 @@ class SupplierImportResolvedMapping(models.Model):
         indexes = [
             models.Index(fields=["branch", "supplier", "format_signature"]),
             models.Index(fields=["branch", "supplier", "key_type", "key_value"]),
+        ]
+
+
+class SupplierImportProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    supplier = models.ForeignKey("Supplier", on_delete=models.PROTECT, related_name="import_profiles")
+    version = models.PositiveIntegerField()
+    file_type = models.CharField(max_length=8, choices=PurchaseImportJob.FileType.choices, default=PurchaseImportJob.FileType.CSV)
+    detected_columns = models.JSONField(default=list, blank=True)
+    column_mapping = models.JSONField(default=dict, blank=True)
+    format_signature = models.CharField(max_length=128, blank=True, default="")
+    default_warehouse = models.ForeignKey("Warehouse", on_delete=models.SET_NULL, null=True, blank=True)
+    default_tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default=0)
+    notes = models.CharField(max_length=255, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    parse_runs = models.PositiveIntegerField(default=0)
+    parse_total_rows = models.PositiveIntegerField(default=0)
+    parse_error_rows = models.PositiveIntegerField(default=0)
+    parse_error_rate = models.DecimalField(max_digits=6, decimal_places=4, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["branch", "supplier", "version"], name="uniq_supplier_import_profile_version"),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "supplier", "is_active", "version"]),
+            models.Index(fields=["branch", "supplier", "format_signature"]),
+            models.Index(fields=["branch", "supplier", "parse_error_rate"]),
         ]

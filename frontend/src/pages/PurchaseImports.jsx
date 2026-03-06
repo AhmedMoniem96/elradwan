@@ -45,6 +45,7 @@ export default function PurchaseImports() {
   const [columnMapping, setColumnMapping] = useState({});
   const [rowActions, setRowActions] = useState({});
   const [supplierId, setSupplierId] = useState('');
+  const [templateProfile, setTemplateProfile] = useState(null);
 
   const loadJobs = async () => {
     try {
@@ -113,6 +114,50 @@ export default function PurchaseImports() {
     }
   };
 
+  const testParseFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('source_file', file);
+    form.append('test_parse', 'true');
+    if (supplierId) form.append('supplier', supplierId);
+    setUploading(true);
+    try {
+      await axios.post('/api/v1/purchase-import-jobs/', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await loadJobs();
+      setError('');
+    } catch (uploadError) {
+      console.error(uploadError);
+      setError('Test parse failed.');
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  useEffect(() => {
+    const loadTemplate = async () => {
+      if (!supplierId) {
+        setTemplateProfile(null);
+        return;
+      }
+      try {
+        const response = await axios.get('/api/v1/purchase-import-jobs/supplier-template/', { params: { supplier_id: supplierId, file_type: 'csv' } });
+        const profile = response.data?.profile || null;
+        setTemplateProfile(profile);
+        if (profile?.column_mapping) {
+          setColumnMapping(profile.column_mapping);
+        }
+      } catch (templateError) {
+        console.error(templateError);
+        setTemplateProfile(null);
+      }
+    };
+    loadTemplate();
+  }, [supplierId]);
+
   const hasBlockingSelection = useMemo(() => {
     if (!activeJob) return false;
     return (activeJob.parsed_rows || []).some((row) => {
@@ -156,8 +201,17 @@ export default function PurchaseImports() {
               {uploading ? 'Uploading…' : 'Upload CSV/PDF'}
               <input hidden type="file" accept=".csv,.pdf" onChange={uploadFile} />
             </Button>
+            <Button variant="outlined" component="label" disabled={uploading}>
+              Test Parse (first 20 rows)
+              <input hidden type="file" accept=".csv,.pdf" onChange={testParseFile} />
+            </Button>
             <Typography variant="body2" color="text.secondary">Supported: CSV, PDF</Typography>
           </Stack>
+          {templateProfile ? (
+            <Typography variant="body2" color="text.secondary">
+              Using template v{templateProfile.version} · Parse error rate {(Number(templateProfile.parse_error_rate || 0) * 100).toFixed(2)}%
+            </Typography>
+          ) : null}
 
           {activeJob?.file_type === 'csv' ? (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -302,3 +356,9 @@ export default function PurchaseImports() {
     </PageShell>
   );
 }
+    if (templateProfile?.default_warehouse) {
+      form.append('default_warehouse', templateProfile.default_warehouse);
+    }
+    if (templateProfile?.default_tax_rate != null) {
+      form.append('default_tax_rate', templateProfile.default_tax_rate);
+    }

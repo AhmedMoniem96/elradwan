@@ -26,6 +26,7 @@ from inventory.views import (
     StockTransferViewSet,
     SupplierAgingReportView,
     SupplierBalancesReportView,
+    SupplierImportProfileViewSet,
     SupplierPaymentCreateView,
     SupplierViewSet,
     WarehouseViewSet,
@@ -40,6 +41,7 @@ router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
 router.register(r"stock-transfers", StockTransferViewSet, basename="stock-transfer")
 router.register(r"purchase-import-jobs", PurchaseImportJobViewSet, basename="purchase-import-job")
+router.register(r"supplier-import-profiles", SupplierImportProfileViewSet, basename="supplier-import-profile")
 router.register(r"alerts", InventoryAlertViewSet, basename="inventory-alert")
 router.register(r"admin/categories", AdminCategoryViewSet, basename="admin-category")
 router.register(r"admin/products", AdminProductViewSet, basename="admin-product")
