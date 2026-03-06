@@ -580,8 +580,25 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
             created_at=created_at,
         )
 
+        primary_warehouse = Warehouse.objects.filter(branch_id=user.branch_id, is_primary=True, is_active=True).first()
+        if primary_warehouse is None:
+            primary_warehouse = Warehouse.objects.filter(branch_id=user.branch_id, is_active=True).order_by("created_at", "id").first()
+
         for line in validated_data["_line_calculations"]:
-            InvoiceLine.objects.create(invoice=invoice, **line)
+            invoice_line = InvoiceLine.objects.create(invoice=invoice, **line)
+            if primary_warehouse is not None:
+                StockMove.objects.create(
+                    branch_id=user.branch_id,
+                    warehouse=primary_warehouse,
+                    product=line["product"],
+                    quantity=-Decimal(str(line["quantity"])),
+                    unit_cost=line["product"].cost,
+                    reason=StockMove.Reason.SALE,
+                    source_ref_type="invoice",
+                    source_ref_id=invoice.id,
+                    event_id=uuid.uuid4(),
+                    device=shift.device,
+                )
 
         return invoice
 
