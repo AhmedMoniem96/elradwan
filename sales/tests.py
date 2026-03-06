@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import Branch, Device
-from inventory.models import Product, StockMove, Warehouse
+from inventory.models import Product, ProductBundle, ProductBundleLine, StockMove, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Return
 
 
@@ -729,6 +729,33 @@ class ReportingTests(TestCase):
         self.assertEqual(ar.status_code, 200)
         self.assertEqual(Decimal(ar.json()["results"][0]["balance_due"]), Decimal("80.00"))
 
+    def test_bundle_sales_vs_unit_sales_report(self):
+        bundle = ProductBundle.objects.create(
+            branch=self.branch,
+            code="RP-B1",
+            name="Report Bundle",
+            standalone_sku="RP-BUNDLE",
+        )
+        ProductBundleLine.objects.create(bundle=bundle, component_product=self.product, quantity=Decimal("2.00"))
+        InvoiceLine.objects.create(
+            invoice=self.invoice,
+            product=self.product,
+            product_bundle=bundle,
+            quantity_mode="unit",
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("90.00"),
+            discount=Decimal("0.00"),
+            tax_rate=Decimal("0.0000"),
+            line_total=Decimal("90.00"),
+            margin_warning=True,
+        )
+
+        response = self.client.get("/api/v1/reports/bundle-sales-vs-units/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(Decimal(payload["bundle_sales"]["quantity"]), Decimal("1.00"))
+        self.assertEqual(Decimal(payload["unit_sales"]["quantity"]), Decimal("2.00"))
+
     def test_reports_support_csv_export(self):
         response = self.client.get("/api/v1/reports/top-customers/?format=csv")
         self.assertEqual(response.status_code, 200)
@@ -785,6 +812,22 @@ class PosInvoiceCreateTests(TestCase):
             price=Decimal("25.00"),
             cost=Decimal("10.00"),
         )
+        self.component_b = Product.objects.create(
+            branch=self.branch,
+            sku="POS-INV-2",
+            name="POS Product B",
+            price=Decimal("15.00"),
+            cost=Decimal("8.00"),
+        )
+        self.bundle = ProductBundle.objects.create(
+            branch=self.branch,
+            code="B-1",
+            name="Combo",
+            standalone_sku="COMBO-1",
+            custom_price=Decimal("14.00"),
+        )
+        ProductBundleLine.objects.create(bundle=self.bundle, component_product=self.product, quantity=Decimal("1.00"))
+        ProductBundleLine.objects.create(bundle=self.bundle, component_product=self.component_b, quantity=Decimal("1.00"))
 
         self.cashier = user_model.objects.create_user(
             username="pos-cashier",
@@ -910,6 +953,38 @@ class PosInvoiceCreateTests(TestCase):
         self.assertEqual(response.status_code, 201)
         invoice = Invoice.objects.get(id=response.json()["id"])
         self.assertEqual(invoice.lines.first().quantity_mode, Customer.PricingMode.UNIT)
+
+
+    def test_pos_invoice_bundle_decrements_component_stock_and_sets_margin_warning(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "total": "14.00",
+                "lines": [
+                    {
+                        "product_bundle_id": str(self.bundle.id),
+                        "quantity": "1.00",
+                        "unit_price": "14.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        invoice = Invoice.objects.get(id=response.json()["id"])
+        line = invoice.lines.first()
+        self.assertEqual(line.product_bundle_id, self.bundle.id)
+        self.assertTrue(line.margin_warning)
+        self.assertTrue(response.json()["has_margin_warning"])
+
+        component_moves = StockMove.objects.filter(source_ref_id=invoice.id, source_ref_type="invoice.bundle")
+        self.assertEqual(component_moves.count(), 2)
+        self.assertEqual(component_moves.get(product=self.product).quantity, Decimal("-1.00"))
+        self.assertEqual(component_moves.get(product=self.component_b).quantity, Decimal("-1.00"))
 
     def test_admin_can_create_pos_invoice_with_sales_pos_access(self):
         CashShift.objects.create(branch=self.branch, cashier=self.admin, device=self.device, opening_amount=Decimal("20.00"))

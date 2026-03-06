@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from common.permissions import user_has_capability
-from inventory.models import StockMove, Warehouse
+from inventory.models import ProductBundle, StockMove, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Refund, Return, ReturnLine
 
 MONEY_QUANT = Decimal("0.01")
@@ -129,6 +129,8 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             "discount",
             "tax_rate",
             "line_total",
+            "product_bundle",
+            "margin_warning",
         ]
         read_only_fields = ["id"]
 
@@ -375,6 +377,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     returned_subtotal = serializers.SerializerMethodField()
     returned_tax_total = serializers.SerializerMethodField()
     returned_total = serializers.SerializerMethodField()
+    has_margin_warning = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -400,6 +403,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "returned_subtotal",
             "returned_tax_total",
             "returned_total",
+            "has_margin_warning",
             "lines",
             "payments",
             "returns",
@@ -438,14 +442,26 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def get_returned_total(self, obj):
         return obj.returns.aggregate(total=Sum("total"))["total"] or 0
 
+    def get_has_margin_warning(self, obj):
+        return obj.lines.filter(margin_warning=True).exists()
+
 
 class PosInvoiceLineInputSerializer(serializers.Serializer):
-    product_id = serializers.UUIDField()
+    product_id = serializers.UUIDField(required=False)
+    product_bundle_id = serializers.UUIDField(required=False)
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
     discount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False, default=Decimal("0.00"))
     tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
     quantity_mode = serializers.ChoiceField(choices=Customer.PricingMode.choices, required=False)
+
+
+    def validate(self, attrs):
+        if not attrs.get("product_id") and not attrs.get("product_bundle_id"):
+            raise serializers.ValidationError("Either product_id or product_bundle_id is required.")
+        if attrs.get("product_id") and attrs.get("product_bundle_id"):
+            raise serializers.ValidationError("Use product_id or product_bundle_id, not both.")
+        return attrs
 
 
 class PosInvoiceCreateSerializer(serializers.Serializer):
@@ -490,17 +506,24 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         if not lines:
             raise serializers.ValidationError({"lines": "At least one line item is required."})
 
-        product_ids = [line["product_id"] for line in lines]
+        product_ids = [line.get("product_id") for line in lines if line.get("product_id")]
+        bundle_ids = [line.get("product_bundle_id") for line in lines if line.get("product_bundle_id")]
         products = Product.objects.filter(branch_id=user.branch_id, id__in=product_ids)
         products_by_id = {product.id: product for product in products}
+        bundles = ProductBundle.objects.filter(branch_id=user.branch_id, id__in=bundle_ids).prefetch_related("lines__component_product")
+        bundles_by_id = {bundle.id: bundle for bundle in bundles}
 
         line_calculations = []
         subtotal = Decimal("0.00")
         tax_total = Decimal("0.00")
+        has_margin_warning = False
         for idx, line in enumerate(lines):
-            product = products_by_id.get(line["product_id"])
-            if product is None:
+            product = products_by_id.get(line.get("product_id")) if line.get("product_id") else None
+            bundle = bundles_by_id.get(line.get("product_bundle_id")) if line.get("product_bundle_id") else None
+            if line.get("product_id") and product is None:
                 raise serializers.ValidationError({"lines": {idx: {"product_id": "Unknown product for your branch."}}})
+            if line.get("product_bundle_id") and bundle is None:
+                raise serializers.ValidationError({"lines": {idx: {"product_bundle_id": "Unknown bundle for your branch."}}})
 
             quantity = _to_money(line["quantity"])
             unit_price = _to_money(line["unit_price"])
@@ -523,17 +546,32 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"lines": {idx: {"discount": "Discount cannot exceed line subtotal."}}})
             line_tax = _to_money(line_subtotal * tax_rate)
 
+            component_cost_total = Decimal("0.00")
+            if bundle is not None:
+                if not bundle.lines.exists():
+                    raise serializers.ValidationError({"lines": {idx: {"product_bundle_id": "Bundle must have at least one component line."}}})
+                for bundle_line in bundle.lines.all():
+                    component_cost_total += Decimal(str(bundle_line.quantity)) * Decimal(str(bundle_line.component_product.cost or Decimal("0.00")))
+                component_cost_total = _to_money(component_cost_total * quantity)
+                margin_warning = line_subtotal < component_cost_total
+            else:
+                component_cost_total = _to_money(quantity * Decimal(str(product.cost or Decimal("0.00"))) if product else Decimal("0.00"))
+                margin_warning = False
+
+            has_margin_warning = has_margin_warning or margin_warning
             subtotal += line_subtotal
             tax_total += line_tax
             line_calculations.append(
                 {
-                    "product": product,
+                    "product": product or bundle.parent_product,
+                    "product_bundle": bundle,
                     "quantity": quantity,
                     "unit_price": unit_price,
                     "discount": discount,
                     "tax_rate": tax_rate,
                     "line_total": line_subtotal,
                     "quantity_mode": line_quantity_mode,
+                    "margin_warning": margin_warning,
                 }
             )
 
@@ -550,6 +588,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         attrs["_discount_total"] = _to_money(computed_total - requested_total)
         attrs["_pricing_mode"] = pricing_mode
         attrs["_can_override_pricing_mode"] = can_override_pricing_mode
+        attrs["_has_margin_warning"] = has_margin_warning
         return attrs
 
     @transaction.atomic
@@ -587,18 +626,34 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         for line in validated_data["_line_calculations"]:
             invoice_line = InvoiceLine.objects.create(invoice=invoice, **line)
             if primary_warehouse is not None:
-                StockMove.objects.create(
-                    branch_id=user.branch_id,
-                    warehouse=primary_warehouse,
-                    product=line["product"],
-                    quantity=-Decimal(str(line["quantity"])),
-                    unit_cost=line["product"].cost,
-                    reason=StockMove.Reason.SALE,
-                    source_ref_type="invoice",
-                    source_ref_id=invoice.id,
-                    event_id=uuid.uuid4(),
-                    device=shift.device,
-                )
+                if line.get("product_bundle") is not None:
+                    for bundle_line in line["product_bundle"].lines.all():
+                        move_qty = -(Decimal(str(line["quantity"])) * Decimal(str(bundle_line.quantity)))
+                        StockMove.objects.create(
+                            branch_id=user.branch_id,
+                            warehouse=primary_warehouse,
+                            product=bundle_line.component_product,
+                            quantity=move_qty,
+                            unit_cost=bundle_line.component_product.cost,
+                            reason=StockMove.Reason.SALE,
+                            source_ref_type="invoice.bundle",
+                            source_ref_id=invoice.id,
+                            event_id=uuid.uuid4(),
+                            device=shift.device,
+                        )
+                else:
+                    StockMove.objects.create(
+                        branch_id=user.branch_id,
+                        warehouse=primary_warehouse,
+                        product=line["product"],
+                        quantity=-Decimal(str(line["quantity"])),
+                        unit_cost=line["product"].cost,
+                        reason=StockMove.Reason.SALE,
+                        source_ref_type="invoice",
+                        source_ref_id=invoice.id,
+                        event_id=uuid.uuid4(),
+                        device=shift.device,
+                    )
 
         return invoice
 

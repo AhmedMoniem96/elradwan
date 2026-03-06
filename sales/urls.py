@@ -2,6 +2,7 @@ from rest_framework.routers import DefaultRouter
 
 from sales.reports import (
     AccountsReceivableReportView,
+    BundleSalesVsUnitsReportView,
     DailySalesReportView,
     DashboardMetricsReportView,
     GrossMarginReportView,
@@ -49,4 +50,5 @@ urlpatterns += [
     path("reports/payment-method-split/", PaymentMethodSplitReportView.as_view(), name="report-payment-method-split"),
     path("reports/gross-margin/", GrossMarginReportView.as_view(), name="report-gross-margin"),
     path("reports/accounts-receivable/", AccountsReceivableReportView.as_view(), name="report-accounts-receivable"),
+    path("reports/bundle-sales-vs-units/", BundleSalesVsUnitsReportView.as_view(), name="report-bundle-sales-vs-units"),
 ]

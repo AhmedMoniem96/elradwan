@@ -294,6 +294,44 @@ class AccountsReceivableReportView(BaseReportView):
         return Response({"timezone": tz_name, "results": rows})
 
 
+
+
+class BundleSalesVsUnitsReportView(BaseReportView):
+    def get(self, request):
+        branch_ids = self._branch_ids(request)
+        tz_name = self._tz_name(request, branch_ids)
+        tz = self._parse_timezone(tz_name)
+        start, end = self._date_range(request, tz)
+
+        def run():
+            qs = InvoiceLine.objects.exclude(invoice__status=Invoice.Status.VOID).filter(invoice__branch_id__in=branch_ids)
+            if start and end:
+                qs = qs.filter(invoice__created_at__gte=start, invoice__created_at__lte=end)
+
+            bundle_totals = qs.filter(product_bundle__isnull=False).aggregate(
+                qty=Coalesce(Sum("quantity"), Decimal("0.00")),
+                sales=Coalesce(Sum("line_total"), Decimal("0.00")),
+            )
+            unit_totals = qs.filter(product_bundle__isnull=True).aggregate(
+                qty=Coalesce(Sum("quantity"), Decimal("0.00")),
+                sales=Coalesce(Sum("line_total"), Decimal("0.00")),
+            )
+
+            return {
+                "bundle_sales": {"quantity": bundle_totals["qty"], "revenue": bundle_totals["sales"]},
+                "unit_sales": {"quantity": unit_totals["qty"], "revenue": unit_totals["sales"]},
+            }
+
+        payload = self._cached(request, "bundle-sales-vs-units", run)
+        if request.query_params.get("format") == "csv":
+            rows = [
+                {"type": "bundle", **payload["bundle_sales"]},
+                {"type": "unit", **payload["unit_sales"]},
+            ]
+            return self._csv_response("bundle_sales_vs_units.csv", rows)
+        return Response(payload)
+
+
 class DashboardMetricsReportView(BaseReportView):
     def get(self, request):
         branch_ids = self._branch_ids(request)

@@ -24,6 +24,7 @@ from inventory.models import (
     DemandForecast,
     InventoryAlert,
     Product,
+    ProductBundle,
     PurchaseOrder,
     StockMove,
     StockTransfer,
@@ -37,6 +38,7 @@ from inventory.serializers import (
     CategorySerializer,
     GoodsReceiptSerializer,
     InventoryAlertSerializer,
+    ProductBundleSerializer,
     ProductSerializer,
     PurchaseOrderSerializer,
     StockTransferSerializer,
@@ -126,6 +128,18 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Product.objects.select_related("preferred_supplier").prefetch_related("units").order_by("created_at", "id")
     serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+
+
+
+class ProductBundleViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ProductBundle.objects.select_related("parent_product").prefetch_related("lines__component_product").order_by("created_at", "id")
+    serializer_class = ProductBundleSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
 
@@ -224,6 +238,20 @@ class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
         if sku and Product.objects.filter(branch_id=user.branch_id, sku=sku).exists():
             raise ValidationError({"sku": ["A product with this SKU already exists in your branch."]})
         super().perform_create(serializer)
+
+
+
+
+class AdminProductBundleViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
+    queryset = ProductBundle.objects.select_related("parent_product").prefetch_related("lines__component_product").order_by("created_at", "id")
+    serializer_class = ProductBundleSerializer
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
+    outbox_entity = "product_bundle"
+    audit_entity = "product_bundle"
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
 
 
 class AdminWarehouseViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
