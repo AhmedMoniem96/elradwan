@@ -14,6 +14,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPasswordConfirm from './pages/ResetPasswordConfirm';
+import UIBlocksPreview from './pages/UIBlocksPreview';
 import { ThemeContextProvider } from './ThemeContext';
 import { AuthProvider, useAuth } from './AuthContext';
 import { SyncProvider } from './sync/SyncContext';
@@ -47,6 +48,8 @@ function RoutedApp() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPasswordConfirm />} />
           <Route path="/reset-password/:uid/:token" element={<ResetPasswordConfirm />} />
+
+          <Route path="/ui-preview" element={<UIBlocksPreview />} />
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Layout />}>
