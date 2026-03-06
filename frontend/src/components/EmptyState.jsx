@@ -11,13 +11,13 @@ export default function EmptyState({
 }) {
   return (
     <Stack
-      spacing={1}
+      spacing={(theme) => theme.customSpacing?.control || 1}
       alignItems="center"
       justifyContent="center"
       sx={{
-        py: 3,
-        px: 2,
-        borderRadius: 2,
+        py: (theme) => theme.customSpacing?.section || 2,
+        px: (theme) => theme.customSpacing?.card || 2,
+        borderRadius: (theme) => theme.shape.cardRadius || 12,
         border: '1px dashed',
         borderColor: 'divider',
         color: 'text.secondary',

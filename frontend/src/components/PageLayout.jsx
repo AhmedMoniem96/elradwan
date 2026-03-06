@@ -5,8 +5,8 @@ export function PageShell({ children, sx }) {
   return (
     <Box
       sx={{
-        px: (theme) => theme.customSpacing?.pageX || { xs: 2, md: 3 },
-        py: (theme) => theme.customSpacing?.pageY || { xs: 2, md: 3 },
+        px: (theme) => theme.customSpacing?.page?.x || { xs: 2, md: 3 },
+        py: (theme) => theme.customSpacing?.page?.y || { xs: 2, md: 3 },
         ...sx,
       }}
     >
@@ -21,8 +21,8 @@ export function PageHeader({ title, subtitle, action }) {
       direction={{ xs: 'column', sm: 'row' }}
       justifyContent="space-between"
       alignItems={{ xs: 'flex-start', sm: 'center' }}
-      spacing={1.5}
-      sx={{ mb: 2.5 }}
+      spacing={(theme) => theme.customSpacing?.control || 1}
+      sx={{ mb: (theme) => theme.customSpacing?.section || 2 }}
     >
       <Box>
         <Typography sx={(theme) => theme.typography.pageTitle}>{title}</Typography>
@@ -35,11 +35,11 @@ export function PageHeader({ title, subtitle, action }) {
 
 export function SectionPanel({ title, subtitle, children, action, contentSx }) {
   return (
-    <Card variant="panel" sx={{ mb: (theme) => theme.customSpacing?.sectionGap || 2 }}>
+    <Card variant="panel" sx={{ mb: (theme) => theme.customSpacing?.section || 2 }}>
       <CardContent
         sx={{
-          p: (theme) => theme.customSpacing?.panelPadding || 2.5,
-          '&:last-child': { pb: (theme) => theme.customSpacing?.panelPadding || 2.5 },
+          p: (theme) => theme.customSpacing?.card || 2,
+          '&:last-child': { pb: (theme) => theme.customSpacing?.card || 2 },
           ...contentSx,
         }}
       >
@@ -48,8 +48,8 @@ export function SectionPanel({ title, subtitle, children, action, contentSx }) {
             direction={{ xs: 'column', sm: 'row' }}
             justifyContent="space-between"
             alignItems={{ xs: 'flex-start', sm: 'center' }}
-            spacing={1.25}
-            sx={{ mb: 2 }}
+            spacing={(theme) => theme.customSpacing?.control || 1}
+            sx={{ mb: (theme) => theme.customSpacing?.control || 1 }}
           >
             <Box>
               {title ? <Typography sx={(theme) => theme.typography.sectionTitle}>{title}</Typography> : null}

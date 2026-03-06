@@ -64,7 +64,7 @@ export default function Register() {
           elevation={0}
           sx={{
             p: 4,
-            borderRadius: (theme) => theme.shape.cardRadius || 16,
+            borderRadius: (theme) => theme.shape.cardRadius || 12,
             backgroundColor: 'background.paper',
             border: (theme) => `1px solid ${theme.palette.divider}`,
             boxShadow: (theme) => theme.customElevation.cardShadow,

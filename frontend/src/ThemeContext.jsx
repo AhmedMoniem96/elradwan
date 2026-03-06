@@ -39,21 +39,24 @@ export const ThemeContextProvider = ({ children }) => {
       const isDark = mode === 'dark';
       const tokens = {
         spacing: {
-          pageX: { xs: 2, md: 3 },
-          pageY: { xs: 2, md: 3 },
-          sectionGap: 2,
-          panelPadding: 2.5,
-          panelPaddingDense: 2,
+          page: { x: { xs: 2, md: 3 }, y: { xs: 2, md: 3 } },
+          section: 2,
+          card: 2,
+          control: 1,
         },
         radius: {
-          panel: 16,
+          card: 12,
           control: 10,
           chip: 999,
         },
         elevation: {
-          panel: isDark
+          none: 'none',
+          card: isDark
             ? '0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.3)'
             : '0 1px 2px rgba(24, 39, 75, 0.08), 0 8px 20px rgba(24, 39, 75, 0.08)',
+          hover: isDark
+            ? '0 2px 4px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.34)'
+            : '0 2px 4px rgba(24, 39, 75, 0.1), 0 10px 24px rgba(24, 39, 75, 0.12)',
         },
       };
 
@@ -63,7 +66,7 @@ export const ThemeContextProvider = ({ children }) => {
         shadows: Array(25).fill('none'),
         shape: {
           borderRadius: tokens.radius.control,
-          cardRadius: tokens.radius.panel,
+          cardRadius: tokens.radius.card,
           inputRadius: tokens.radius.control,
           chipRadius: tokens.radius.chip,
         },
@@ -114,14 +117,15 @@ export const ThemeContextProvider = ({ children }) => {
           },
         },
         customSpacing: {
-          ...tokens.spacing,
-          cardPadding: tokens.spacing.panelPadding,
-          compactGap: 1,
-          compactGapTight: 0.75,
-          compactRowPaddingY: 0.75,
+          page: tokens.spacing.page,
+          section: tokens.spacing.section,
+          card: tokens.spacing.card,
+          control: tokens.spacing.control,
         },
         customElevation: {
-          cardShadow: tokens.elevation.panel,
+          none: tokens.elevation.none,
+          cardShadow: tokens.elevation.card,
+          hoverShadow: tokens.elevation.hover,
           panelBorder: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
         },
         customTokens: {
@@ -136,7 +140,7 @@ export const ThemeContextProvider = ({ children }) => {
             styleOverrides: {
               root: {
                 textTransform: 'none',
-                borderRadius: 12,
+                borderRadius: tokens.radius.control,
                 fontWeight: 600,
               },
               contained: {
@@ -144,7 +148,7 @@ export const ThemeContextProvider = ({ children }) => {
                 backgroundImage: 'none',
                 backgroundColor: isDark ? '#7EA9FF' : '#1E5BB8',
                 '&:hover': {
-                  boxShadow: 'none',
+                  boxShadow: tokens.elevation.none,
                   filter: 'brightness(1.06)',
                 },
               },
@@ -160,7 +164,7 @@ export const ThemeContextProvider = ({ children }) => {
               root: {
                 borderColor: isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)',
                 backgroundImage: 'none',
-                boxShadow: 'none',
+                boxShadow: tokens.elevation.none,
               },
             },
           },
@@ -183,10 +187,14 @@ export const ThemeContextProvider = ({ children }) => {
               {
                 props: { variant: 'panel' },
                 style: {
-                  borderRadius: tokens.radius.panel,
+                  borderRadius: tokens.radius.card,
                   border: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
-                  boxShadow: tokens.elevation.panel,
+                  boxShadow: tokens.elevation.card,
+                  transition: 'box-shadow 160ms ease',
                   background: isDark ? '#131D2F' : '#FFFFFF',
+                  '&:hover': {
+                    boxShadow: tokens.elevation.hover,
+                  },
                 },
               },
             ],
@@ -194,11 +202,20 @@ export const ThemeContextProvider = ({ children }) => {
           MuiTableContainer: {
             styleOverrides: {
               root: {
-                borderRadius: tokens.radius.panel,
+                borderRadius: tokens.radius.card,
                 border: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
-                boxShadow: tokens.elevation.panel,
+                boxShadow: tokens.elevation.card,
                 background: isDark ? '#131D2F' : '#FFFFFF',
                 overflow: 'hidden',
+              },
+            },
+          },
+          MuiPopover: {
+            styleOverrides: {
+              paper: {
+                borderRadius: tokens.radius.card,
+                border: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.22)' : 'rgba(52, 79, 132, 0.18)'}`,
+                boxShadow: tokens.elevation.card,
               },
             },
           },
@@ -221,8 +238,9 @@ export const ThemeContextProvider = ({ children }) => {
           MuiDialog: {
             styleOverrides: {
               paper: {
-                borderRadius: 14,
+                borderRadius: tokens.radius.card,
                 border: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.24)' : 'rgba(52, 79, 132, 0.16)'}`,
+                boxShadow: tokens.elevation.card,
               },
             },
           },
@@ -233,8 +251,8 @@ export const ThemeContextProvider = ({ children }) => {
             styleOverrides: {
               root: {
                 borderRadius: 10,
-                paddingTop: 6,
-                paddingBottom: 6,
+                paddingTop: tokens.spacing.control * 8,
+                paddingBottom: tokens.spacing.control * 8,
                 '&.Mui-selected': {
                   backgroundColor: isDark ? 'rgba(126, 169, 255, 0.2)' : 'rgba(30, 91, 184, 0.14)',
                 },
@@ -244,8 +262,8 @@ export const ThemeContextProvider = ({ children }) => {
           MuiListItem: {
             styleOverrides: {
               root: {
-                paddingTop: 6,
-                paddingBottom: 6,
+                paddingTop: tokens.spacing.control * 8,
+                paddingBottom: tokens.spacing.control * 8,
               },
             },
           },
@@ -257,8 +275,8 @@ export const ThemeContextProvider = ({ children }) => {
           MuiTableCell: {
             styleOverrides: {
               root: {
-                paddingTop: 8,
-                paddingBottom: 8,
+                paddingTop: tokens.spacing.control * 8,
+                paddingBottom: tokens.spacing.control * 8,
               },
               head: {
                 fontWeight: 600,
