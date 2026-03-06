@@ -28,7 +28,7 @@ export default function KpiCard({
   return (
     <Paper
       sx={{
-        p: 2,
+        p: (theme) => theme.customSpacing?.card || 2,
         height: '100%',
         width: '100%',
         borderRadius: (theme) => theme.shape.cardRadius || 2,

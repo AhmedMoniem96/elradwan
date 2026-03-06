@@ -621,7 +621,7 @@ export default function Layout() {
         }}
       >
         <Toolbar />
-        <Container maxWidth="xl" sx={{ mt: (theme) => theme.customSpacing?.pageY || 3, mb: (theme) => theme.customSpacing?.pageY || 3 }}>
+        <Container maxWidth="xl" sx={{ mt: (theme) => theme.customSpacing?.page?.y || { xs: 2, md: 3 }, mb: (theme) => theme.customSpacing?.page?.y || { xs: 2, md: 3 } }}>
           <Outlet />
         </Container>
       </Box>

@@ -65,7 +65,7 @@ export default function ForgotPassword() {
     >
       <Container component="main" maxWidth="xs">
       <CssBaseline />
-      <Paper elevation={0} sx={{ p: 4, mt: 1, borderRadius: 3, border: (theme) => `1px solid ${theme.palette.divider}`, boxShadow: (theme) => theme.customElevation.cardShadow, backdropFilter: 'blur(14px)', background: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 26, 43, 0.82)' : 'rgba(255,255,255,0.86)' }}>
+      <Paper elevation={0} sx={{ p: 4, mt: 1, borderRadius: (theme) => theme.shape.cardRadius || 12, border: (theme) => `1px solid ${theme.palette.divider}`, boxShadow: (theme) => theme.customElevation.cardShadow, backdropFilter: 'blur(14px)', background: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 26, 43, 0.82)' : 'rgba(255,255,255,0.86)' }}>
         <Box
           sx={{
             display: 'flex',

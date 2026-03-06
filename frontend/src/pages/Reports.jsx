@@ -27,7 +27,7 @@ import { formatCurrency, formatDate, formatNumber } from '../utils/formatters';
 import { normalizeCollectionResponse } from '../utils/api';
 
 const TableCard = ({ title, columns, rows }) => (
-  <SectionPanel title={title} contentSx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2, '&:last-child': { pb: (theme) => theme.customSpacing?.panelPaddingDense || 2 } }}>
+  <SectionPanel title={title} contentSx={{ p: (theme) => theme.customSpacing?.card || 2, '&:last-child': { pb: (theme) => theme.customSpacing?.card || 2 } }}>
     <Table>
       <TableHead>
         <TableRow>
@@ -257,7 +257,7 @@ export default function Reports() {
         ].map(([label, value]) => (
           <Grid item xs={12} md={3} key={label}>
             <Card variant="panel">
-              <CardContent sx={{ p: (theme) => theme.customSpacing?.panelPadding || 2.5 }}>
+              <CardContent sx={{ p: (theme) => theme.customSpacing?.card || 2 }}>
                 <Typography variant="overline">{label}</Typography>
                 <Typography variant="h5">{value}</Typography>
               </CardContent>

@@ -1330,7 +1330,7 @@ export default function Dashboard() {
 
       {canViewBranchComparison && userRole === 'admin' && (
         <Grid item xs={12}>
-          <Panel sx={{ p: (theme) => theme.customSpacing?.panelPaddingDense || 2 }}>
+          <Panel sx={{ p: (theme) => theme.customSpacing?.card || 2 }}>
             <Stack spacing={2}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('dashboard_admin_branch_analytics')}</Typography>
