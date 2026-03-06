@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { styled } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import CssBaseline from '@mui/material/CssBaseline';
 import MuiDrawer from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
@@ -48,7 +50,8 @@ import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
 
-const drawerWidth = 240;
+const expandedDrawerWidth = 240;
+const collapsedDrawerWidth = 72;
 
 const AppBar = styled(MuiAppBar, {
   shouldForwardProp: (prop) => prop !== 'open',
@@ -59,8 +62,8 @@ const AppBar = styled(MuiAppBar, {
     duration: theme.transitions.duration.leavingScreen,
   }),
   ...(open && {
-    marginLeft: drawerWidth,
-    width: `calc(100% - ${drawerWidth}px)`,
+    marginLeft: expandedDrawerWidth,
+    width: `calc(100% - ${expandedDrawerWidth}px)`,
     transition: theme.transitions.create(['width', 'margin'], {
       easing: theme.transitions.easing.sharp,
       duration: theme.transitions.duration.enteringScreen,
@@ -73,7 +76,7 @@ const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' 
     '& .MuiDrawer-paper': {
       position: 'relative',
       whiteSpace: 'nowrap',
-      width: drawerWidth,
+      width: expandedDrawerWidth,
       transition: theme.transitions.create('width', {
         easing: theme.transitions.easing.sharp,
         duration: theme.transitions.duration.enteringScreen,
@@ -85,17 +88,17 @@ const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' 
           easing: theme.transitions.easing.sharp,
           duration: theme.transitions.duration.leavingScreen,
         }),
-        width: theme.spacing(7),
-        [theme.breakpoints.up('sm')]: {
-          width: theme.spacing(9),
-        },
+        width: collapsedDrawerWidth,
       }),
     },
   }),
 );
 
 export default function Layout() {
-  const [open, setOpen] = React.useState(true);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  const [desktopOpen, setDesktopOpen] = React.useState(true);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { t, i18n } = useTranslation();
@@ -132,8 +135,19 @@ export default function Layout() {
   }, [refreshUnreadAlerts]);
 
   const toggleDrawer = () => {
-    setOpen(!open);
+    if (isDesktop) {
+      setDesktopOpen((prevOpen) => !prevOpen);
+      return;
+    }
+
+    setMobileOpen((prevOpen) => !prevOpen);
   };
+
+  const closeTemporaryDrawer = React.useCallback(() => {
+    if (!isDesktop) {
+      setMobileOpen(false);
+    }
+  }, [isDesktop]);
 
   const handleLanguageMenu = (event) => {
     setLanguageMenuAnchor(event.currentTarget);
@@ -209,13 +223,148 @@ export default function Layout() {
 
   const canManageRuntimeContext = can('device.read') || can('device.manage');
   const pageTitle = t('app_title');
+  const isDesktopDrawerExpanded = isDesktop && desktopOpen;
+
+  const navItems = React.useMemo(() => {
+    const items = [
+      {
+        key: 'dashboard',
+        icon: <DashboardIcon />,
+        label: t('dashboard'),
+        selected: location.pathname === '/',
+        visible: true,
+        onClick: () => navigate('/'),
+      },
+      {
+        key: 'pos',
+        icon: <ShoppingCartIcon />,
+        label: t('pos'),
+        selected: location.pathname.startsWith('/pos'),
+        visible: can('sales.pos.access'),
+        onClick: () => navigate('/pos'),
+      },
+      {
+        key: 'customers',
+        icon: <PeopleIcon />,
+        label: t('customers'),
+        selected: location.pathname.startsWith('/customers'),
+        visible: can('sales.customers.view'),
+        onClick: () => navigate('/customers'),
+      },
+      {
+        key: 'inventory',
+        icon: <BarChartIcon />,
+        label: t('inventory'),
+        selected: location.pathname.startsWith('/inventory'),
+        visible: can('inventory.view'),
+        onClick: () => navigate('/inventory'),
+      },
+      {
+        key: 'suppliers',
+        icon: <LocalShippingIcon />,
+        label: t('suppliers'),
+        selected: location.pathname.startsWith('/suppliers'),
+        visible: can('inventory.view'),
+        onClick: () => navigate('/suppliers'),
+      },
+      {
+        key: 'reports',
+        icon: <AssessmentIcon />,
+        label: t('reports'),
+        selected: location.pathname.startsWith('/reports'),
+        visible: can('sales.dashboard.view'),
+        onClick: () => navigate('/reports'),
+      },
+      {
+        key: 'branches',
+        icon: <AccountTreeIcon />,
+        label: t('branches'),
+        selected: location.pathname.startsWith('/branches'),
+        visible: can('admin.records.manage'),
+        onClick: () => navigate('/branches'),
+      },
+      {
+        key: 'warehouses',
+        icon: <WarehouseIcon />,
+        label: t('warehouses'),
+        selected: location.pathname.startsWith('/warehouses'),
+        visible: can('admin.records.manage'),
+        onClick: () => navigate('/warehouses'),
+      },
+      {
+        key: 'audit-logs',
+        icon: <ManageSearchIcon />,
+        label: t('audit_logs'),
+        selected: location.pathname.startsWith('/audit-logs'),
+        visible: can('admin.records.manage'),
+        onClick: () => navigate('/audit-logs'),
+      },
+      {
+        key: 'sync',
+        icon: (
+          <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
+            <LayersIcon />
+          </Badge>
+        ),
+        label: t('sync_status'),
+        secondary: failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running'),
+        selected: location.pathname.startsWith('/sync'),
+        visible: can('sync.view'),
+        onClick: () => navigate('/sync'),
+      },
+    ];
+
+    return items.filter((item) => item.visible);
+  }, [
+    can,
+    failedEvents.length,
+    location.pathname,
+    navigate,
+    outbox.length,
+    t,
+  ]);
+
+  const renderNavList = (expanded) => (
+    <List component="nav" aria-label={t('app_title')}>
+      {navItems.map((item) => (
+        <ListItemButton
+          key={item.key}
+          selected={item.selected}
+          onClick={() => {
+            item.onClick();
+            closeTemporaryDrawer();
+          }}
+          sx={{
+            minHeight: 48,
+            justifyContent: expanded ? 'initial' : 'center',
+            px: 2.5,
+          }}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 0,
+              mr: expanded ? 3 : 'auto',
+              justifyContent: 'center',
+            }}
+          >
+            {item.icon}
+          </ListItemIcon>
+          <ListItemText
+            primary={item.label}
+            secondary={item.secondary}
+            sx={{ opacity: expanded ? 1 : 0 }}
+          />
+        </ListItemButton>
+      ))}
+    </List>
+  );
 
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
       <AppBar
         position="absolute"
-        open={open}
+        open={isDesktopDrawerExpanded}
         sx={{
           borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
           backgroundColor: (theme) => theme.palette.background.paper,
@@ -230,11 +379,13 @@ export default function Layout() {
           <IconButton
             edge="start"
             color="inherit"
-            aria-label="open drawer"
+            aria-label={t('open_navigation') || 'Open navigation'}
             onClick={toggleDrawer}
             sx={{
               marginRight: 4.5,
-              ...(open && { display: 'none' }),
+              display: isDesktop
+                ? (isDesktopDrawerExpanded ? 'none' : 'inline-flex')
+                : 'inline-flex',
             }}
           >
             <MenuIcon />
@@ -398,113 +549,68 @@ export default function Layout() {
           </IconButton>
         </Toolbar>
       </AppBar>
-      <Drawer
-        variant="permanent"
-        open={open}
-        sx={{
-          '& .MuiDrawer-paper': {
-            borderRight: (theme) => `1px solid ${theme.palette.divider}`,
-            backgroundColor: (theme) => theme.palette.background.paper,
-          },
-        }}
-      >
-        <Toolbar
+      {isDesktop ? (
+        <Drawer
+          variant="permanent"
+          open={desktopOpen}
           sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            px: [1],
+            width: desktopOpen ? expandedDrawerWidth : collapsedDrawerWidth,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              borderRight: (theme) => `1px solid ${theme.palette.divider}`,
+              backgroundColor: (theme) => theme.palette.background.paper,
+            },
           }}
         >
-          <IconButton onClick={toggleDrawer}>
-            <ChevronLeftIcon />
-          </IconButton>
-        </Toolbar>
-        <Divider />
-        <List component="nav">
-          <ListItemButton selected={location.pathname === '/'} onClick={() => navigate('/')}>
-            <ListItemIcon>
-              <DashboardIcon />
-            </ListItemIcon>
-            <ListItemText primary={t('dashboard')} />
-          </ListItemButton>
-          {can('sales.pos.access') && (
-            <ListItemButton selected={location.pathname.startsWith('/pos')} onClick={() => navigate('/pos')}>
-              <ListItemIcon>
-                <ShoppingCartIcon />
-              </ListItemIcon>
-              <ListItemText primary={t('pos')} />
-            </ListItemButton>
-          )}
-          {can('sales.customers.view') && (
-            <ListItemButton selected={location.pathname.startsWith('/customers')} onClick={() => navigate('/customers')}>
-              <ListItemIcon>
-                <PeopleIcon />
-              </ListItemIcon>
-              <ListItemText primary={t('customers')} />
-            </ListItemButton>
-          )}
-          {can('inventory.view') && (
-            <>
-              <ListItemButton selected={location.pathname.startsWith('/inventory')} onClick={() => navigate('/inventory')}>
-                <ListItemIcon>
-                  <BarChartIcon />
-                </ListItemIcon>
-                <ListItemText primary={t('inventory')} />
-              </ListItemButton>
-              <ListItemButton selected={location.pathname.startsWith('/suppliers')} onClick={() => navigate('/suppliers')}>
-                <ListItemIcon>
-                  <LocalShippingIcon />
-                </ListItemIcon>
-                <ListItemText primary={t('suppliers')} />
-              </ListItemButton>
-            </>
-          )}
-          {can('sales.dashboard.view') && (
-            <ListItemButton selected={location.pathname.startsWith('/reports')} onClick={() => navigate('/reports')}>
-              <ListItemIcon>
-                <AssessmentIcon />
-              </ListItemIcon>
-              <ListItemText primary={t('reports')} />
-            </ListItemButton>
-          )}
-          {can('admin.records.manage') && (
-            <>
-              <ListItemButton selected={location.pathname.startsWith('/branches')} onClick={() => navigate('/branches')}>
-                <ListItemIcon>
-                  <AccountTreeIcon />
-                </ListItemIcon>
-                <ListItemText primary={t('branches')} />
-              </ListItemButton>
-              <ListItemButton selected={location.pathname.startsWith('/warehouses')} onClick={() => navigate('/warehouses')}>
-                <ListItemIcon>
-                  <WarehouseIcon />
-                </ListItemIcon>
-                <ListItemText primary={t('warehouses')} />
-              </ListItemButton>
-              <ListItemButton selected={location.pathname.startsWith('/audit-logs')} onClick={() => navigate('/audit-logs')}>
-                <ListItemIcon>
-                  <ManageSearchIcon />
-                </ListItemIcon>
-                <ListItemText primary={t('audit_logs')} />
-              </ListItemButton>
-            </>
-          )}
-          {can('sync.view') && (
-            <ListItemButton selected={location.pathname.startsWith('/sync')} onClick={() => navigate('/sync')}>
-              <ListItemIcon>
-                <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
-                  <LayersIcon />
-                </Badge>
-              </ListItemIcon>
-              <ListItemText
-                primary={t('sync_status')}
-                secondary={failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running')}
-              />
-            </ListItemButton>
-          )}
-        </List>
-      </Drawer>
+          <Toolbar
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: desktopOpen ? 'flex-end' : 'center',
+              px: [1],
+            }}
+          >
+            <IconButton onClick={toggleDrawer} aria-label={t('collapse_navigation') || 'Collapse navigation'}>
+              <ChevronLeftIcon />
+            </IconButton>
+          </Toolbar>
+          <Divider />
+          {renderNavList(desktopOpen)}
+        </Drawer>
+      ) : (
+        <MuiDrawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={closeTemporaryDrawer}
+          ModalProps={{
+            keepMounted: true,
+          }}
+          sx={{
+            display: { xs: 'block', md: 'none' },
+            '& .MuiDrawer-paper': {
+              width: expandedDrawerWidth,
+              boxSizing: 'border-box',
+              borderRight: (theme) => `1px solid ${theme.palette.divider}`,
+              backgroundColor: (theme) => theme.palette.background.paper,
+            },
+          }}
+        >
+          <Toolbar
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              px: [1],
+            }}
+          >
+            <IconButton onClick={closeTemporaryDrawer} aria-label={t('close_navigation') || 'Close navigation'}>
+              <ChevronLeftIcon />
+            </IconButton>
+          </Toolbar>
+          <Divider />
+          {renderNavList(true)}
+        </MuiDrawer>
+      )}
       <Box
         component="main"
         sx={{
