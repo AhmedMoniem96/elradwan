@@ -26,7 +26,7 @@ import { useTheme } from '@mui/material/styles';
 import { useSync } from '../sync/SyncContext';
 import EmptyState from '../components/EmptyState';
 import LoadingState from '../components/LoadingState';
-import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { DataTableCard, FormCard, PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 import { normalizeCollectionResponse } from '../utils/api';
 
@@ -523,7 +523,7 @@ export default function Inventory() {
         />
       )}
 
-      <SectionPanel title={t('product_details')}>
+      <FormCard title={t('product_details')}>
         
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -679,9 +679,9 @@ export default function Inventory() {
             <Button variant="outlined" onClick={clearProductForm}>{t('clear')}</Button>
           </Stack>
         </Stack>
-      </SectionPanel>
+      </FormCard>
 
-      <SectionPanel title={t('inventory_low_critical_stock')}>
+      <DataTableCard title={t('inventory_low_critical_stock')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip color="error" label={`${t('inventory_critical_label')}: ${filteredCriticalCount}`} sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder }} />
@@ -789,9 +789,9 @@ export default function Inventory() {
             ))}
           </Box>
         )}
-      </SectionPanel>
+      </DataTableCard>
 
-      <SectionPanel title={t('stockout_risk_30d')}>
+      <DataTableCard title={t('stockout_risk_30d')}>
         
         <TableContainer>
           <Table size="small">
@@ -819,7 +819,7 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </SectionPanel>
+      </DataTableCard>
 
       <SectionPanel title={t('inventory_unread_alerts')}>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 2 }}>
@@ -844,7 +844,7 @@ export default function Inventory() {
         )}
       </SectionPanel>
 
-      <SectionPanel title={t('inventory_product_stock_status')}>
+      <DataTableCard title={t('inventory_product_stock_status')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
           <Typography variant="body2" color="text.secondary">
             {t('inventory_stock_status_helper')}
@@ -961,10 +961,10 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </SectionPanel>
+      </DataTableCard>
 
 
-      <SectionPanel title={t('supplier_ledger')}>
+      <DataTableCard title={t('supplier_ledger')}>
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">{t('supplier_ledger')}</Typography>
           <Button size="small" variant="outlined" onClick={exportSupplierAging}>{t('export_csv')}</Button>
@@ -1021,7 +1021,7 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </SectionPanel>
+      </DataTableCard>
 
       <SectionPanel title={t('inventory_create_stock_transfer')}>
         
@@ -1057,7 +1057,7 @@ export default function Inventory() {
         </Stack>
       </SectionPanel>
 
-      <SectionPanel title={t('inventory_stock_transfers')} contentSx={{ mb: 0 }}>
+      <DataTableCard title={t('inventory_stock_transfers')}>
         
         <TableContainer>
           <Table>
@@ -1103,7 +1103,7 @@ export default function Inventory() {
             </TableBody>
           </Table>
         </TableContainer>
-      </SectionPanel>
+      </DataTableCard>
       <Divider sx={{ mt: 2 }} />
     </PageShell>
   );
