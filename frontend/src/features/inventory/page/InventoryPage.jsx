@@ -1,0 +1,1082 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Divider,
+  FormControlLabel,
+  MenuItem,
+  Stack,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from '@mui/material';
+import axios from 'axios';
+import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
+import { useSync } from '../../../sync/SyncContext';
+import EmptyState from '../../../components/EmptyState';
+import LoadingState from '../../../components/LoadingState';
+import { DataTableCard, FormCard, PageHeader, PageShell, SectionPanel } from '../../../components/PageLayout';
+import { formatCurrency, formatDateTime, formatNumber } from '../../../utils/formatters';
+import { normalizeCollectionResponse } from '../../../utils/api';
+import usePurchaseOrderFilters from '../hooks/usePurchaseOrderFilters';
+
+const emptyLine = { product: '', quantity: '1.00' };
+
+const STOCK_STATUS_OPTIONS = [
+  { value: 'in_stock', labelKey: 'inventory_status_in_stock', color: 'success.main' },
+  { value: 'low_stock', labelKey: 'inventory_status_low_stock', color: 'warning.main' },
+  { value: 'out_of_stock', labelKey: 'inventory_status_out_of_stock', color: 'error.main' },
+  { value: 'backorder', labelKey: 'inventory_status_backorder', color: 'info.main' },
+  { value: 'discontinued', labelKey: 'inventory_status_discontinued', color: 'text.disabled' },
+];
+
+const PO_SEVERITY_OPTIONS = [
+  { value: 'low', labelKey: 'inventory_po_severity_low' },
+  { value: 'critical', labelKey: 'inventory_po_severity_critical' },
+];
+
+const TRANSFER_STATUS_OPTIONS = [
+  { value: 'draft', labelKey: 'inventory_transfer_status_draft' },
+  { value: 'approved', labelKey: 'inventory_transfer_status_approved' },
+  { value: 'completed', labelKey: 'inventory_transfer_status_completed' },
+  { value: 'cancelled', labelKey: 'inventory_transfer_status_cancelled' },
+  { value: 'rejected', labelKey: 'inventory_transfer_status_rejected' },
+];
+
+const getStockStatusMeta = (status) => STOCK_STATUS_OPTIONS.find((option) => option.value === status);
+const getTransferStatusMeta = (status) => TRANSFER_STATUS_OPTIONS.find((option) => option.value === status);
+
+
+const initialProductForm = {
+  id: '',
+  category: '',
+  sku: '',
+  barcode: '',
+  name: '',
+  description: '',
+  brand: '',
+  unit: 'pcs',
+  slug: '',
+  price: '0.00',
+  cost: '',
+  tax_rate: '0.0000',
+  minimum_quantity: '0.00',
+  reorder_quantity: '0.00',
+  preferred_supplier: '',
+  stock_status: '',
+  is_sellable_online: false,
+  is_active: true,
+  image: null,
+};
+
+const initialProductErrors = {
+  name: '',
+  price: '',
+  cost: '',
+  tax_rate: '',
+  minimum_quantity: '',
+  reorder_quantity: '',
+};
+
+export default function Inventory() {
+  const { t } = useTranslation();
+  const theme = useTheme();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { enqueueEvent, pushNow, pullNow } = useSync();
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [transfers, setTransfers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierAging, setSupplierAging] = useState([]);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ supplier_id: '', amount: '0.00', method: 'bank_transfer', paid_at: new Date().toISOString().slice(0, 16), reference: '', notes: '' });
+  const [stockIntel, setStockIntel] = useState({ rows: [], low_count: 0, critical_count: 0 });
+  const [stockoutRisk, setStockoutRisk] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [poPreview, setPoPreview] = useState(null);
+  const { poFilters, setPoFilters, clearPoFilters } = usePurchaseOrderFilters(searchParams, setSearchParams);
+  const [isCreatingPO, setIsCreatingPO] = useState(false);
+  const [draftStatus, setDraftStatus] = useState({});
+  const [error, setError] = useState('');
+  const [productForm, setProductForm] = useState(initialProductForm);
+  const [productErrors, setProductErrors] = useState(initialProductErrors);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [stockStatusFilter, setStockStatusFilter] = useState('');
+  const [activeProductId, setActiveProductId] = useState('');
+  const [transferForm, setTransferForm] = useState({
+    source_warehouse_id: '',
+    destination_warehouse_id: '',
+    reference: '',
+    requires_supervisor_approval: false,
+    notes: '',
+    lines: [emptyLine],
+  });
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [productsRes, categoriesRes, warehousesRes, transferRes, stockRes, stockoutRiskRes, unreadAlertsRes, suppliersRes, agingRes] = await Promise.all([
+        axios.get('/api/v1/products/'),
+        axios.get('/api/v1/categories/'),
+        axios.get('/api/v1/warehouses/'),
+        axios.get('/api/v1/stock-transfers/'),
+        axios.get('/api/v1/stock-intelligence/'),
+        axios.get('/api/v1/stock-intelligence/stockout-risk/?days=30'),
+        axios.get('/api/v1/alerts/unread/'),
+        axios.get('/api/v1/suppliers/'),
+        axios.get('/api/v1/reports/supplier-aging/'),
+      ]);
+      setProducts(normalizeCollectionResponse(productsRes.data));
+      setCategories(normalizeCollectionResponse(categoriesRes.data));
+      setWarehouses(normalizeCollectionResponse(warehousesRes.data));
+      setTransfers(normalizeCollectionResponse(transferRes.data));
+      setStockIntel(stockRes.data || { rows: [] });
+      setStockoutRisk(normalizeCollectionResponse(stockoutRiskRes.data));
+      setAlerts(normalizeCollectionResponse(unreadAlertsRes.data));
+      setSuppliers(normalizeCollectionResponse(suppliersRes.data));
+      setSupplierAging(normalizeCollectionResponse(agingRes.data));
+      setDraftStatus(
+        normalizeCollectionResponse(productsRes.data).reduce((acc, p) => {
+          acc[p.id] = p.stock_status || '';
+          return acc;
+        }, {}),
+      );
+      setError('');
+    } catch (err) {
+      console.error('Failed to load inventory data', err);
+      setError(t('inventory_load_error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [t]);
+
+
+  const saveStatus = async (product) => {
+    try {
+      enqueueEvent({
+        eventType: 'product.stock_status.set',
+        payload: {
+          product_id: product.id,
+          stock_status: draftStatus[product.id] || '',
+        },
+      });
+      await pushNow();
+      await pullNow();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save status', err);
+      setError(t('inventory_save_stock_status_error'));
+    }
+  };
+
+  const markAlertsRead = async () => {
+    if (!alerts.length) return;
+    try {
+      await axios.post('/api/v1/alerts/mark-read/', { alert_ids: alerts.map((a) => a.id) });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to mark alerts read', err);
+      setError(t('inventory_mark_alerts_read_error'));
+    }
+  };
+
+  const createPOFromSuggestions = async () => {
+    setIsCreatingPO(true);
+    try {
+      const payload = {
+        branch_id: poFilters.branch_id || undefined,
+        warehouse_id: poFilters.warehouse_id || undefined,
+        severity: poFilters.severity || undefined,
+        min_stockout_days: poFilters.min_stockout_days === '' ? undefined : Number(poFilters.min_stockout_days),
+      };
+      const response = await axios.post('/api/v1/reorder-suggestions/create-po/', payload);
+      setPoPreview(response.data);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to create purchase order from suggestions', err);
+      setError(t('inventory_create_po_from_suggestions_error'));
+    } finally {
+      setIsCreatingPO(false);
+    }
+  };
+
+  const canCreateTransfer = useMemo(
+    () => transferForm.source_warehouse_id && transferForm.destination_warehouse_id && transferForm.reference,
+    [transferForm],
+  );
+
+  const createTransfer = async () => {
+    try {
+      enqueueEvent({
+        eventType: 'stock.transfer.create',
+        payload: {
+          source_warehouse_id: transferForm.source_warehouse_id,
+          destination_warehouse_id: transferForm.destination_warehouse_id,
+          reference: transferForm.reference,
+          requires_supervisor_approval: transferForm.requires_supervisor_approval,
+          notes: transferForm.notes,
+          lines: transferForm.lines
+            .filter((line) => line.product)
+            .map((line) => ({ product_id: line.product, quantity: line.quantity })),
+        },
+      });
+      await pushNow();
+      await pullNow();
+      setTransferForm({
+        source_warehouse_id: '',
+        destination_warehouse_id: '',
+        reference: '',
+        requires_supervisor_approval: false,
+        notes: '',
+        lines: [emptyLine],
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to create transfer', err);
+      setError(t('inventory_create_transfer_error'));
+    }
+  };
+
+  const startEditProduct = (product) => {
+    setProductErrors(initialProductErrors);
+    setProductForm({
+      id: product.id,
+      category: product.category || '',
+      sku: product.sku || '',
+      barcode: product.barcode || '',
+      name: product.name || '',
+      description: product.description || '',
+      brand: product.brand || '',
+      unit: product.unit || 'pcs',
+      slug: product.slug || '',
+      price: product.price || '0.00',
+      cost: product.cost || '',
+      tax_rate: product.tax_rate || '0.0000',
+      minimum_quantity: product.minimum_quantity || '0.00',
+      reorder_quantity: product.reorder_quantity || '0.00',
+      preferred_supplier: product.preferred_supplier || '',
+      stock_status: product.stock_status || '',
+      is_sellable_online: !!product.is_sellable_online,
+      is_active: product.is_active !== false,
+      image: null,
+    });
+  };
+
+  const clearProductForm = () => {
+    setProductForm(initialProductForm);
+    setProductErrors(initialProductErrors);
+    setActiveProductId('');
+  };
+
+  const validateProductForm = () => {
+    const errors = { ...initialProductErrors };
+
+    if (!String(productForm.name || '').trim()) {
+      errors.name = t('inventory_product_validation_name_required');
+    }
+
+    const validateNumber = (field, { optional = false } = {}) => {
+      const rawValue = productForm[field];
+      if (optional && (rawValue === '' || rawValue === null || rawValue === undefined)) {
+        return;
+      }
+      const numericValue = Number(rawValue);
+      if (!Number.isFinite(numericValue)) {
+        errors[field] = t('inventory_product_validation_number_invalid');
+        return;
+      }
+      if (numericValue < 0) {
+        errors[field] = t('inventory_product_validation_number_non_negative');
+      }
+    };
+
+    validateNumber('price');
+    validateNumber('cost', { optional: true });
+    validateNumber('tax_rate');
+    validateNumber('minimum_quantity');
+    validateNumber('reorder_quantity');
+
+    setProductErrors(errors);
+    return !Object.values(errors).some(Boolean);
+  };
+
+  const saveProduct = async () => {
+    if (!validateProductForm()) {
+      return;
+    }
+
+    setIsSavingProduct(true);
+    try {
+      const payload = new FormData();
+      [
+        'category', 'name', 'description', 'brand', 'unit', 'slug', 'price', 'cost',
+        'tax_rate', 'minimum_quantity', 'reorder_quantity', 'preferred_supplier', 'stock_status',
+      ].forEach((key) => {
+        const value = productForm[key];
+        if (value !== null && value !== undefined) {
+          payload.append(key, value);
+        }
+      });
+
+      const trimmedSku = String(productForm.sku || '').trim();
+      if (trimmedSku) {
+        payload.append('sku', trimmedSku);
+      }
+
+      const trimmedBarcode = String(productForm.barcode || '').trim();
+      if (trimmedBarcode) {
+        payload.append('barcode', trimmedBarcode);
+      }
+      payload.append('is_sellable_online', productForm.is_sellable_online ? 'true' : 'false');
+      payload.append('is_active', productForm.is_active ? 'true' : 'false');
+      if (productForm.image instanceof File) {
+        payload.append('image', productForm.image);
+      }
+
+      if (productForm.id) {
+        await axios.patch(`/api/v1/admin/products/${productForm.id}/`, payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await axios.post('/api/v1/admin/products/', payload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      clearProductForm();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save product', err);
+      setError(t('inventory_save_product_error'));
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
+
+  const approveTransfer = async (transferId) => {
+    try {
+      enqueueEvent({ eventType: 'stock.transfer.approve', payload: { transfer_id: transferId } });
+      await pushNow();
+      await pullNow();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to approve transfer', err);
+      setError(t('inventory_approve_transfer_error'));
+    }
+  };
+
+  const completeTransfer = async (transferId) => {
+    try {
+      enqueueEvent({ eventType: 'stock.transfer.complete', payload: { transfer_id: transferId } });
+      await pushNow();
+      await pullNow();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to complete transfer', err);
+      setError(t('inventory_complete_transfer_error'));
+    }
+  };
+
+  const submitSupplierPayment = async () => {
+    if (!paymentForm.supplier_id) return;
+    setIsSavingPayment(true);
+    try {
+      await axios.post(`/api/v1/suppliers/${paymentForm.supplier_id}/payments/`, {
+        amount: paymentForm.amount,
+        method: paymentForm.method,
+        paid_at: new Date(paymentForm.paid_at).toISOString(),
+        reference: paymentForm.reference,
+        notes: paymentForm.notes,
+      });
+      setPaymentForm((prev) => ({ ...prev, amount: '0.00', reference: '', notes: '' }));
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save supplier payment', err);
+      setError(t('inventory_supplier_payment_error'));
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  const exportSupplierAging = () => {
+    const header = [t('supplier'), t('total'), t('amount_paid'), t('balance_due'), t('current'), t('days_30'), t('days_60'), t('days_90')];
+    const rows = supplierAging.map((row) => [
+      row.supplier_name,
+      row.total_purchased,
+      row.amount_paid,
+      row.balance_due,
+      row.aging?.current || 0,
+      row.aging?.['30'] || 0,
+      row.aging?.['60'] || 0,
+      row.aging?.['90_plus'] || 0,
+    ]);
+    const csv = [header, ...rows].map((line) => line.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', t('supplier_aging_export_filename'));
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+  const filteredStockIntelRows = useMemo(() => {
+    return (stockIntel.rows || []).filter((row) => {
+      if (poFilters.warehouse_id && String(row.warehouse_id) !== String(poFilters.warehouse_id)) return false;
+      if (poFilters.severity && row.severity !== poFilters.severity) return false;
+      if (poFilters.min_stockout_days !== '') {
+        const minDays = Number(poFilters.min_stockout_days);
+        if (Number.isFinite(minDays) && Number(row.days_of_cover ?? 0) < minDays) return false;
+      }
+      return true;
+    });
+  }, [poFilters.min_stockout_days, poFilters.severity, poFilters.warehouse_id, stockIntel.rows]);
+
+  const filteredCriticalCount = useMemo(
+    () => filteredStockIntelRows.filter((row) => row.severity === 'critical').length,
+    [filteredStockIntelRows],
+  );
+
+  const filteredLowCount = useMemo(
+    () => filteredStockIntelRows.filter((row) => row.severity === 'low').length,
+    [filteredStockIntelRows],
+  );
+
+  const filteredProducts = useMemo(() => {
+    const filterValue = stockStatusFilter.trim().toLowerCase();
+    if (!filterValue) return products;
+    return products.filter((product) => {
+      const statusMeta = getStockStatusMeta(product.stock_status);
+      const statusLabel = statusMeta ? t(statusMeta.labelKey) : (product.stock_status || '');
+      return [product.name, product.sku, product.stock_status, statusLabel]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(filterValue));
+    });
+  }, [products, stockStatusFilter, t]);
+
+  useEffect(() => {
+    const requestedProductId = searchParams.get('product_id');
+    if (!requestedProductId || !products.length) return;
+
+    const product = products.find((item) => String(item.id) === String(requestedProductId));
+    if (!product) return;
+
+    startEditProduct(product);
+    setActiveProductId(String(product.id));
+    setStockStatusFilter(product.name || product.sku || '');
+  }, [products, searchParams]);
+
+  return (
+    <PageShell>
+      <PageHeader title={t('inventory')} />
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {isLoading && (
+        <LoadingState
+          title={t('inventory_loading_title')}
+          helperText={t('inventory_loading_helper_text')}
+        />
+      )}
+
+      <FormCard title={t('product_details')}>
+        
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField
+              label={t('name')}
+              value={productForm.name}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, name: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, name: '' }));
+              }}
+              placeholder={t('inventory_product_name_placeholder')}
+              error={!!productErrors.name}
+              helperText={productErrors.name}
+              fullWidth
+            />
+            <TextField label={`${t('sku')} (optional)`} value={productForm.sku} onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))} placeholder={`${t('inventory_product_sku_placeholder')} (optional)`} fullWidth />
+            <TextField label={`${t('barcode')} (optional)`} value={productForm.barcode} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder={`${t('inventory_product_barcode_placeholder')} (optional)`} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField select label={t('category')} value={productForm.category} onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))} fullWidth>
+              <MenuItem value="">{t('none')}</MenuItem>
+              {categories.map((category) => <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>)}
+            </TextField>
+            <TextField label={t('brand')} value={productForm.brand} onChange={(e) => setProductForm((prev) => ({ ...prev, brand: e.target.value }))} fullWidth />
+            <TextField label={t('unit')} value={productForm.unit} onChange={(e) => setProductForm((prev) => ({ ...prev, unit: e.target.value }))} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField
+              select
+              label={t('supplier')}
+              value={productForm.preferred_supplier}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, preferred_supplier: e.target.value }))}
+              fullWidth
+            >
+              <MenuItem value="">{t('none')}</MenuItem>
+              {suppliers.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.name}</MenuItem>)}
+            </TextField>
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField
+              label={t('price')}
+              type="number"
+              value={productForm.price}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, price: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, price: '' }));
+              }}
+              placeholder={t('inventory_product_price_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.price}
+              helperText={productErrors.price}
+              fullWidth
+            />
+            <TextField
+              label={t('cost')}
+              type="number"
+              value={productForm.cost}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, cost: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, cost: '' }));
+              }}
+              placeholder={t('inventory_product_cost_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.cost}
+              helperText={productErrors.cost}
+              fullWidth
+            />
+            <TextField
+              label={t('tax_rate')}
+              type="number"
+              value={productForm.tax_rate}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, tax_rate: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, tax_rate: '' }));
+              }}
+              placeholder={t('inventory_product_tax_rate_placeholder')}
+              inputProps={{ min: 0, step: '0.0001' }}
+              error={!!productErrors.tax_rate}
+              helperText={productErrors.tax_rate}
+              fullWidth
+            />
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField
+              label={t('minimum_quantity')}
+              type="number"
+              value={productForm.minimum_quantity}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, minimum_quantity: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, minimum_quantity: '' }));
+              }}
+              placeholder={t('inventory_product_minimum_quantity_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.minimum_quantity}
+              helperText={productErrors.minimum_quantity}
+              fullWidth
+            />
+            <TextField
+              label={t('reorder_quantity')}
+              type="number"
+              value={productForm.reorder_quantity}
+              onChange={(e) => {
+                setProductForm((prev) => ({ ...prev, reorder_quantity: e.target.value }));
+                setProductErrors((prev) => ({ ...prev, reorder_quantity: '' }));
+              }}
+              placeholder={t('inventory_product_reorder_quantity_placeholder')}
+              inputProps={{ min: 0, step: '0.01' }}
+              error={!!productErrors.reorder_quantity}
+              helperText={productErrors.reorder_quantity}
+              fullWidth
+            />
+            <TextField
+              select
+              label={t('stock_status')}
+              value={productForm.stock_status}
+              onChange={(e) => setProductForm((prev) => ({ ...prev, stock_status: e.target.value }))}
+              fullWidth
+            >
+              <MenuItem value="">{t('none')}</MenuItem>
+              {STOCK_STATUS_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
+                    <span>{t(option.labelKey)}</span>
+                  </Stack>
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+          <TextField label={t('slug')} value={productForm.slug} onChange={(e) => setProductForm((prev) => ({ ...prev, slug: e.target.value }))} placeholder={t('inventory_product_slug_placeholder')} fullWidth />
+          <TextField label={t('description')} value={productForm.description} onChange={(e) => setProductForm((prev) => ({ ...prev, description: e.target.value }))} placeholder={t('inventory_product_description_placeholder')} fullWidth multiline minRows={2} />
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+            <Button variant="outlined" component="label">
+              {t('upload_image')}
+              <input hidden type="file" accept="image/*" onChange={(e) => setProductForm((prev) => ({ ...prev, image: e.target.files?.[0] || null }))} />
+            </Button>
+            <Typography color="text.secondary">{productForm.image?.name || t('no_file_selected')}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={2}>
+            <FormControlLabel
+              control={<Switch checked={productForm.is_sellable_online} onChange={(e) => setProductForm((prev) => ({ ...prev, is_sellable_online: e.target.checked }))} />}
+              label={t('is_sellable_online')}
+            />
+            <FormControlLabel
+              control={<Switch checked={productForm.is_active} onChange={(e) => setProductForm((prev) => ({ ...prev, is_active: e.target.checked }))} />}
+              label={t('active')}
+            />
+          </Stack>
+          <Stack direction="row" spacing={2}>
+            <Button variant="contained" onClick={saveProduct} disabled={isSavingProduct}>
+              {productForm.id ? t('save') : t('create')}
+            </Button>
+            <Button variant="outlined" onClick={clearProductForm}>{t('clear')}</Button>
+          </Stack>
+        </Stack>
+      </FormCard>
+
+      <DataTableCard title={t('inventory_low_critical_stock')}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Chip color="error" label={`${t('inventory_critical_label')}: ${filteredCriticalCount}`} sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder }} />
+            <Chip color="warning" label={`${t('inventory_low_label')}: ${filteredLowCount}`} sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder }} />
+            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=csv">{t('export_csv')}</Button>
+            <Button size="small" variant="outlined" href="/api/v1/reorder-suggestions/export/?format=pdf">{t('export_pdf')}</Button>
+            <TextField
+              size="small"
+              label={t('warehouse')}
+              select
+              value={poFilters.warehouse_id}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, warehouse_id: e.target.value }))}
+              sx={{ minWidth: 150 }}
+            >
+              <MenuItem value="">{t('all')}</MenuItem>
+              {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
+            </TextField>
+            <TextField
+              size="small"
+              label={t('severity')}
+              select
+              value={poFilters.severity}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, severity: e.target.value }))}
+              sx={{ minWidth: 130 }}
+            >
+              <MenuItem value="">{t('all')}</MenuItem>
+              {PO_SEVERITY_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{t(option.labelKey)}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              label={t('min_stockout_days')}
+              type="number"
+              value={poFilters.min_stockout_days}
+              onChange={(e) => setPoFilters((prev) => ({ ...prev, min_stockout_days: e.target.value }))}
+              sx={{ width: 170 }}
+            />
+            <Button size="small" variant="contained" onClick={createPOFromSuggestions} disabled={isCreatingPO}>
+              {t('create_po_from_alerts')}
+            </Button>
+            <Button size="small" variant="text" onClick={clearPoFilters}>
+              {t('clear_filters')}
+            </Button>
+          </Stack>
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('warehouse')}</TableCell>
+                <TableCell>{t('product')}</TableCell>
+                <TableCell>{t('supplier')}</TableCell>
+                <TableCell>{t('on_hand')}</TableCell>
+                <TableCell>{t('minimum')}</TableCell>
+                <TableCell>{t('reorder')}</TableCell>
+                <TableCell>{t('days_of_cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty')}</TableCell>
+                <TableCell>{t('severity')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredStockIntelRows.map((row) => (
+                <TableRow key={`${row.warehouse_id}-${row.product_id}`}>
+                  <TableCell>{row.warehouse_name}</TableCell>
+                  <TableCell>{row.product_name}</TableCell>
+                  <TableCell>{row.preferred_supplier_name || t('none')}</TableCell>
+                  <TableCell>{formatNumber(row.on_hand)}</TableCell>
+                  <TableCell>{row.minimum_quantity}</TableCell>
+                  <TableCell>{row.suggested_reorder_quantity}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{row.recommended_reorder_quantity || row.suggested_reorder_quantity}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      color={row.severity === 'critical' ? 'error' : 'warning'}
+                      label={t(`inventory_po_severity_${row.severity}`)}
+                      sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {poPreview && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              {t('po_creation_result', {
+                created: poPreview.created_count || 0,
+                skipped: poPreview.skipped_count || 0,
+              })}
+            </Typography>
+            {(poPreview.created_purchase_orders || []).map((po) => (
+              <Alert key={po.purchase_order_id} severity="success" sx={{ mb: 1 }}>
+                {po.po_number} - {po.lines.map((line) => `${line.product_name} (${line.quantity})`).join(', ')}
+              </Alert>
+            ))}
+            {(poPreview.skipped_groups || []).map((group) => (
+              <Alert key={group.grouping_token} severity="info" sx={{ mb: 1 }}>
+                {t('po_skipped_existing')}: {group.existing_po_id}
+              </Alert>
+            ))}
+          </Box>
+        )}
+      </DataTableCard>
+
+      <DataTableCard title={t('stockout_risk_30d')}>
+        
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('warehouse')}</TableCell>
+                <TableCell>{t('product')}</TableCell>
+                <TableCell>{t('on_hand')}</TableCell>
+                <TableCell>{t('days_of_cover')}</TableCell>
+                <TableCell>{t('projected_stockout_date')}</TableCell>
+                <TableCell>{t('recommended_reorder_qty')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(stockoutRisk || []).map((row) => (
+                <TableRow key={`risk-${row.warehouse_id}-${row.product_id}`}>
+                  <TableCell>{row.warehouse_name}</TableCell>
+                  <TableCell>{row.product_name}</TableCell>
+                  <TableCell>{formatNumber(row.on_hand)}</TableCell>
+                  <TableCell>{row.days_of_cover ? formatNumber(row.days_of_cover) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{row.projected_stockout_date ? formatDateTime(row.projected_stockout_date) : t('not_available_symbol')}</TableCell>
+                  <TableCell>{formatNumber(row.recommended_reorder_quantity)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DataTableCard>
+
+      <SectionPanel title={t('inventory_unread_alerts')}>
+        <Stack direction="row" justifyContent="space-between" sx={{ mb: 2 }}>
+          <Typography variant="h6">{t('inventory_unread_alerts')}</Typography>
+          <Button size="small" variant="contained" disabled={!alerts.length} onClick={markAlertsRead}>{t('inventory_mark_all_read')}</Button>
+        </Stack>
+        {(alerts || []).map((alert) => (
+          <Alert key={alert.id} severity={alert.severity === 'critical' ? 'error' : 'warning'} sx={{ mb: 1 }}>
+            {t('inventory_alert_message', {
+              product: alert.product_name,
+              warehouse: alert.warehouse_name,
+              current: alert.current_quantity,
+              threshold: alert.threshold_quantity,
+            })}
+          </Alert>
+        ))}
+        {!alerts.length && (
+          <EmptyState
+            title={t('inventory_no_unread_alerts_title')}
+            helperText={t('inventory_no_unread_alerts')}
+          />
+        )}
+      </SectionPanel>
+
+      <DataTableCard title={t('inventory_product_stock_status')}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {t('inventory_stock_status_helper')}
+          </Typography>
+          <TextField
+            size="small"
+            label={t('search')}
+            value={stockStatusFilter}
+            onChange={(e) => setStockStatusFilter(e.target.value)}
+            sx={{ minWidth: { xs: '100%', md: 280 } }}
+            placeholder={t('inventory_stock_status_search_placeholder')}
+          />
+        </Stack>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('image')}</TableCell>
+                <TableCell>{t('name')}</TableCell>
+                <TableCell>{t('sku')}</TableCell>
+                <TableCell>{t('price')}</TableCell>
+                <TableCell>{t('stock_status')}</TableCell>
+                <TableCell align="right">{t('actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {!filteredProducts.length && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyState title={t('inventory_products_empty_title')} helperText={t('inventory_products_empty_helper_text')} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {filteredProducts.map((product) => {
+                const statusMeta = getStockStatusMeta(draftStatus[product.id] || product.stock_status);
+                return (
+                <TableRow
+                  key={product.id}
+                  selected={activeProductId && String(activeProductId) === String(product.id)}
+                  sx={activeProductId && String(activeProductId) === String(product.id) ? { '& td': { backgroundColor: 'action.selected' } } : undefined}
+                >
+                  <TableCell>
+                    <Avatar variant="rounded" src={product.image_url || ''} alt={product.name} sx={{ width: 40, height: 40 }} />
+                  </TableCell>
+                  <TableCell>{product.name}</TableCell>
+                  <TableCell>{product.sku}</TableCell>
+                  <TableCell>{formatCurrency(product.price)}</TableCell>
+                  <TableCell width="35%">
+                    <TextField
+                      fullWidth
+                      select
+                      size="small"
+                      value={draftStatus[product.id] || ''}
+                      onChange={(e) => setDraftStatus((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (value) => {
+                          if (!value) return t('inventory_stock_status_placeholder');
+                          const meta = getStockStatusMeta(value);
+                          if (!meta) return value;
+                          return (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: meta.color }} />
+                              <span>{t(meta.labelKey)}</span>
+                            </Stack>
+                          );
+                        },
+                      }}
+                    >
+                      <MenuItem value="">{t('none')}</MenuItem>
+                      {STOCK_STATUS_OPTIONS.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: option.color }} />
+                            <span>{t(option.labelKey)}</span>
+                          </Stack>
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center">
+                      {statusMeta && (
+                        <Chip
+                          size="small"
+                          label={t(statusMeta.labelKey)}
+                          sx={{
+                            '& .MuiChip-label': { px: 1 },
+                            backgroundColor: 'transparent',
+                            border: '1px solid',
+                            borderColor: statusMeta.color,
+                            color: statusMeta.color,
+                          }}
+                        />
+                      )}
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                          startEditProduct(product);
+                          setActiveProductId(String(product.id));
+                        }}
+                      >
+                        {t('edit')}
+                      </Button>
+                      <Button variant="contained" size="small" onClick={() => saveStatus(product)}>
+                        {t('save')}
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DataTableCard>
+
+
+      <DataTableCard title={t('supplier_ledger')}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" sx={{ mb: 2 }}>
+          <Typography variant="h6">{t('supplier_ledger')}</Typography>
+          <Button size="small" variant="outlined" onClick={exportSupplierAging}>{t('export_csv')}</Button>
+        </Stack>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
+          <TextField
+            select
+            label={t('supplier')}
+            value={paymentForm.supplier_id}
+            onChange={(e) => setPaymentForm((prev) => ({ ...prev, supplier_id: e.target.value }))}
+            fullWidth
+          >
+            <MenuItem value="">{t('select_supplier')}</MenuItem>
+            {suppliers.map((supplier) => <MenuItem key={supplier.id} value={supplier.id}>{supplier.name}</MenuItem>)}
+          </TextField>
+          <TextField label={t('amount_paid')} value={paymentForm.amount} onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))} fullWidth />
+          <TextField select label={t('method')} value={paymentForm.method} onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))} fullWidth>
+            <MenuItem value="cash">{t('payment_method_cash')}</MenuItem>
+            <MenuItem value="bank_transfer">{t('payment_method_bank_transfer')}</MenuItem>
+            <MenuItem value="card">{t('payment_method_card')}</MenuItem>
+            <MenuItem value="cheque">{t('payment_method_cheque')}</MenuItem>
+            <MenuItem value="other">{t('payment_method_other')}</MenuItem>
+          </TextField>
+          <TextField type="datetime-local" label={t('paid_at')} value={paymentForm.paid_at} onChange={(e) => setPaymentForm((prev) => ({ ...prev, paid_at: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} />
+          <Button variant="contained" disabled={isSavingPayment || !paymentForm.supplier_id} onClick={submitSupplierPayment}>{t('save')}</Button>
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('supplier')}</TableCell>
+                <TableCell>{t('total')}</TableCell>
+                <TableCell>{t('amount_paid')}</TableCell>
+                <TableCell>{t('balance_due')}</TableCell>
+                <TableCell>{t('current')}</TableCell>
+                <TableCell>{t('days_30')}</TableCell>
+                <TableCell>{t('days_60')}</TableCell>
+                <TableCell>{t('days_90')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {supplierAging.map((row) => (
+                <TableRow key={row.supplier_id}>
+                  <TableCell>{row.supplier_name}</TableCell>
+                  <TableCell>{formatCurrency(row.total_purchased)}</TableCell>
+                  <TableCell>{formatCurrency(row.amount_paid)}</TableCell>
+                  <TableCell>{formatCurrency(row.balance_due)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.current || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['30'] || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['60'] || 0)}</TableCell>
+                  <TableCell>{formatCurrency(row.aging?.['90_plus'] || 0)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DataTableCard>
+
+      <SectionPanel title={t('inventory_create_stock_transfer')}>
+        
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField select label={t('inventory_source_warehouse')} value={transferForm.source_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, source_warehouse_id: e.target.value }))} fullWidth>
+              {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
+            </TextField>
+            <TextField select label={t('inventory_destination_warehouse')} value={transferForm.destination_warehouse_id} onChange={(e) => setTransferForm((prev) => ({ ...prev, destination_warehouse_id: e.target.value }))} fullWidth>
+              {warehouses.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</MenuItem>)}
+            </TextField>
+          </Stack>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label={t('reference')} value={transferForm.reference} onChange={(e) => setTransferForm((prev) => ({ ...prev, reference: e.target.value }))} fullWidth />
+            <TextField label={t('notes')} value={transferForm.notes} onChange={(e) => setTransferForm((prev) => ({ ...prev, notes: e.target.value }))} fullWidth />
+          </Stack>
+          <FormControlLabel
+            control={<Switch checked={transferForm.requires_supervisor_approval} onChange={(e) => setTransferForm((prev) => ({ ...prev, requires_supervisor_approval: e.target.checked }))} />}
+            label={t('inventory_requires_supervisor_approval')}
+          />
+          {transferForm.lines.map((line, index) => (
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} key={`line-${index}`}>
+              <TextField select label={t('product')} value={line.product} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, product: e.target.value } : entry)) }))} fullWidth>
+                {products.map((product) => <MenuItem key={product.id} value={product.id}>{product.name}</MenuItem>)}
+              </TextField>
+              <TextField label={t('quantity')} value={line.quantity} onChange={(e) => setTransferForm((prev) => ({ ...prev, lines: prev.lines.map((entry, i) => (i === index ? { ...entry, quantity: e.target.value } : entry)) }))} fullWidth />
+            </Stack>
+          ))}
+          <Stack direction="row" spacing={2}>
+            <Button variant="outlined" onClick={() => setTransferForm((prev) => ({ ...prev, lines: [...prev.lines, emptyLine] }))}>{t('inventory_add_line')}</Button>
+            <Button variant="contained" disabled={!canCreateTransfer} onClick={createTransfer}>{t('inventory_create_transfer')}</Button>
+          </Stack>
+        </Stack>
+      </SectionPanel>
+
+      <DataTableCard title={t('inventory_stock_transfers')}>
+        
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('reference')}</TableCell>
+                <TableCell>{t('source')}</TableCell>
+                <TableCell>{t('destination')}</TableCell>
+                <TableCell>{t('status')}</TableCell>
+                <TableCell>{t('lines')}</TableCell>
+                <TableCell align="right">{t('actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {!transfers.length && (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyState title={t('inventory_transfers_empty_title')} helperText={t('inventory_transfers_empty_helper_text')} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {transfers.map((transfer) => (
+                <TableRow key={transfer.id}>
+                  <TableCell>{transfer.reference}</TableCell>
+                  <TableCell>{warehouses.find((w) => w.id === transfer.source_warehouse)?.name || t('none')}</TableCell>
+                  <TableCell>{warehouses.find((w) => w.id === transfer.destination_warehouse)?.name || t('none')}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={t(getTransferStatusMeta(transfer.status)?.labelKey || `inventory_transfer_status_${transfer.status}`)}
+                      size="small"
+                      sx={{ borderColor: theme.customTokens?.contrast?.statusChipBorder, textTransform: 'capitalize' }}
+                    />
+                  </TableCell>
+                  <TableCell>{(transfer.lines || []).map((line) => `${line.product_name || line.product} (${line.quantity})`).join(', ')}</TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                      {transfer.status === 'draft' && <Button size="small" variant="outlined" onClick={() => approveTransfer(transfer.id)}>{t('approve')}</Button>}
+                      {transfer.status === 'approved' && <Button size="small" variant="contained" onClick={() => completeTransfer(transfer.id)}>{t('complete')}</Button>}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DataTableCard>
+      <Divider sx={{ mt: 2 }} />
+    </PageShell>
+  );
+}
