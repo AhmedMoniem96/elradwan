@@ -312,19 +312,19 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
         ) : (
           <Stack spacing={1}>
             {cart.map((item) => (
-              <Paper key={item.id} variant="outlined" sx={{ p: 1.2 }}>
+              <Paper key={item.cartKey || item.id} variant="outlined" sx={{ p: 1.2 }}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" fontWeight={700} noWrap>{item.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{t('pos_sku_label')}: {item.sku || t('none')}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t('pos_sku_label')}: {item.sku || t('none')} • {item.selectedUnitName || t('unit')}</Typography>
                   </Box>
-                  <Typography variant="caption" color="text.secondary">{formatCurrency(item.unitPrice)}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatCurrency(item.displayUnitPrice)}</Typography>
                   <ButtonGroup size="small" sx={{ direction: isRTL ? 'rtl' : 'ltr', '& .MuiButton-root': { minWidth: 28 } }}>
-                    <Button color="warning" onClick={() => updateQuantity(item.id, -1)}>-</Button>
-                    <Button disabled>{item.quantity}</Button>
-                    <Button color="primary" onClick={() => updateQuantity(item.id, 1)}>+</Button>
+                    <Button color="warning" onClick={() => updateQuantity(item.cartKey || item.id, -1)}>-</Button>
+                    <Button disabled>{item.displayQuantity}</Button>
+                    <Button color="primary" onClick={() => updateQuantity(item.cartKey || item.id, 1)}>+</Button>
                   </ButtonGroup>
-                  <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatCurrency(item.quantity * item.unitPrice)}</Typography>
+                  <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatCurrency(item.displayQuantity * item.displayUnitPrice)}</Typography>
                 </Stack>
               </Paper>
             ))}
@@ -693,7 +693,7 @@ export default function POS() {
           ...product,
           categoryId,
           categoryName,
-          searchIndex: [product.name, product.sku, product.barcode, categoryName]
+          searchIndex: [product.name, product.sku, product.barcode, ...(product.units || []).map((unit) => unit.barcode), categoryName]
             .map(normalize)
             .filter(Boolean)
             .join(' '),
@@ -725,7 +725,10 @@ export default function POS() {
       : indexedProducts;
 
     const matchedProducts = filteredProducts
-      .map((product) => ({ product, score: scoreProductMatch(product, queryTokens) }))
+      .map((product) => {
+        const matchedUnit = (product.units || []).find((unit) => normalize(unit.barcode) === query);
+        return { product: { ...product, _matchedUnit: matchedUnit || null }, score: scoreProductMatch(product, queryTokens) + (matchedUnit ? 500 : 0) };
+      })
       .filter((item) => item.score > 0)
       .map((item) => ({
         ...item,
@@ -789,7 +792,7 @@ export default function POS() {
   }, [customerQuery, indexedCustomers]);
 
   const cartSubtotal = useMemo(
-    () => cart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0),
+    () => cart.reduce((acc, item) => acc + item.displayQuantity * item.displayUnitPrice, 0),
     [cart],
   );
 
@@ -829,9 +832,9 @@ export default function POS() {
       customer_id: selectedCustomer?.id,
       lines: cart.map((item) => ({
         product_id: item.id,
-        quantity: item.quantity,
+        quantity: item.baseQuantity,
         quantity_mode: item.quantity_mode || customerPricingMode,
-        unit_price: Number(item.unitPrice.toFixed(2)),
+        unit_price: Number(item.baseUnitPrice.toFixed(2)),
       })),
     }),
     [cart, customerPricingMode, parsedInvoiceTotal, selectedCustomer],
@@ -915,17 +918,33 @@ export default function POS() {
     [returnRefundPreview],
   );
 
-  const addToCart = (product) => {
+  const resolveSellUnit = (product, selectedUnit = null) => {
+    const conversion = Number(selectedUnit?.conversion_to_base || 1);
+    const safeConversion = conversion > 0 ? conversion : 1;
+    const displayUnitPrice = Number(selectedUnit?.sell_price ?? product.price ?? 0);
+    return {
+      unitKey: selectedUnit?.id || `base-${product.id}`,
+      unitName: selectedUnit?.unit_name || product.unit || 'unit',
+      conversionToBase: safeConversion,
+      displayUnitPrice,
+      baseUnitPrice: displayUnitPrice / safeConversion,
+    };
+  };
+
+  const addToCart = (product, selectedUnit = null) => {
+    const unitMeta = resolveSellUnit(product, selectedUnit);
+    const cartKey = `${product.id}:${unitMeta.unitKey}`;
     setCart((prev) => {
       let nextCart;
-      const existing = prev.find((item) => item.id === product.id);
+      const existing = prev.find((item) => item.cartKey === cartKey);
       if (existing) {
         nextCart = prev.map((item) =>
-          item.id === product.id
+          item.cartKey === cartKey
             ? {
                 ...item,
                 quantity_mode: customerPricingMode,
-                quantity: item.quantity + 1,
+                displayQuantity: item.displayQuantity + 1,
+                baseQuantity: Number((item.baseQuantity + unitMeta.conversionToBase).toFixed(2)),
               }
             : item,
         );
@@ -933,18 +952,23 @@ export default function POS() {
         nextCart = [
           ...prev,
           {
+            cartKey,
             id: product.id,
             name: product.name,
             sku: product.sku,
-            quantity: 1,
             quantity_mode: customerPricingMode,
-            unitPrice: Number(product.price || 0),
+            selectedUnitName: unitMeta.unitName,
+            conversionToBase: unitMeta.conversionToBase,
+            displayQuantity: 1,
+            baseQuantity: unitMeta.conversionToBase,
+            displayUnitPrice: Number(unitMeta.displayUnitPrice || 0),
+            baseUnitPrice: Number(unitMeta.baseUnitPrice || 0),
           },
         ];
       }
 
       if (!isTotalManuallyOverridden) {
-        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.displayQuantity * item.displayUnitPrice, 0);
         setInvoiceTotal(nextSubtotal.toFixed(2));
       }
 
@@ -958,21 +982,22 @@ export default function POS() {
     setCart((prev) => prev.map((item) => ({ ...item, quantity_mode: pricingMode || 'unit' })));
   };
 
-  const updateQuantity = (productId, delta) => {
+  const updateQuantity = (cartKey, delta) => {
     setCart((prev) => {
       const nextCart = prev
         .map((item) =>
-          item.id === productId
+          item.cartKey === cartKey
             ? {
                 ...item,
-                quantity: Math.max(0, item.quantity + delta),
+                displayQuantity: Math.max(0, item.displayQuantity + delta),
+                baseQuantity: Number(Math.max(0, item.baseQuantity + (item.conversionToBase * delta)).toFixed(2)),
               }
             : item,
         )
-        .filter((item) => item.quantity > 0);
+        .filter((item) => item.displayQuantity > 0);
 
       if (!isTotalManuallyOverridden) {
-        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+        const nextSubtotal = nextCart.reduce((acc, item) => acc + item.displayQuantity * item.displayUnitPrice, 0);
         setInvoiceTotal(nextSubtotal.toFixed(2));
       }
 
@@ -1086,7 +1111,7 @@ export default function POS() {
 
   const activateResult = (result) => {
     if (!result) return;
-    if (result.type === 'product') return addToCart(result.item);
+    if (result.type === 'product') return addToCart(result.item, result.item._matchedUnit || null);
     if (result.type === 'category') return handleSelectCategory(result.item);
     if (result.type === 'customer') return handleSelectCustomer(result.item);
     return null;

@@ -9,6 +9,7 @@ from inventory.models import (
     Category,
     InventoryAlert,
     Product,
+    ProductUnit,
     PurchaseOrder,
     PurchaseOrderLine,
     StockMove,
@@ -35,9 +36,32 @@ class CategorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
+
+
+class ProductUnitSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
+
+    class Meta:
+        model = ProductUnit
+        fields = [
+            "id",
+            "unit_name",
+            "conversion_to_base",
+            "barcode",
+            "is_sellable",
+            "cost_price",
+            "sell_price",
+            "min_sell_price",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
 class ProductSerializer(serializers.ModelSerializer):
     preferred_supplier_name = serializers.CharField(source="preferred_supplier.name", read_only=True)
     image_url = serializers.SerializerMethodField()
+    units = ProductUnitSerializer(many=True, required=False)
 
     class Meta:
         model = Product
@@ -51,6 +75,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "image",
             "image_url",
+            "units",
             "brand",
             "unit",
             "is_sellable_online",
@@ -87,7 +112,66 @@ class ProductSerializer(serializers.ModelSerializer):
                 attrs[field_name] = None
             elif value is not serializers.empty:
                 attrs[field_name] = value
+
+        units_payload = attrs.get("units", serializers.empty)
+        if units_payload is serializers.empty and hasattr(self, "initial_data"):
+            raw_units = self.initial_data.get("units")
+            if isinstance(raw_units, str):
+                import json
+
+                try:
+                    parsed_units = json.loads(raw_units)
+                except json.JSONDecodeError as exc:
+                    raise serializers.ValidationError({"units": f"Invalid units payload: {exc.msg}"})
+                attrs["units"] = parsed_units
         return attrs
+
+    def _sync_units(self, product, units_payload):
+        if units_payload is None:
+            return
+
+        existing_by_id = {str(unit.id): unit for unit in product.units.all()}
+        keep_ids = set()
+
+        for unit_payload in units_payload:
+            unit_id = unit_payload.get("id")
+            if unit_id and str(unit_id) in existing_by_id:
+                unit = existing_by_id[str(unit_id)]
+                for field in ["unit_name", "conversion_to_base", "barcode", "is_sellable", "cost_price", "sell_price", "min_sell_price"]:
+                    if field in unit_payload:
+                        setattr(unit, field, unit_payload[field])
+                unit.save()
+                keep_ids.add(str(unit.id))
+                continue
+
+            created = ProductUnit.objects.create(
+                product=product,
+                unit_name=unit_payload["unit_name"],
+                conversion_to_base=unit_payload["conversion_to_base"],
+                barcode=unit_payload.get("barcode") or None,
+                is_sellable=unit_payload.get("is_sellable", True),
+                cost_price=unit_payload.get("cost_price"),
+                sell_price=unit_payload["sell_price"],
+                min_sell_price=unit_payload.get("min_sell_price"),
+            )
+            keep_ids.add(str(created.id))
+
+        product.units.exclude(id__in=keep_ids).delete()
+
+    @transaction.atomic
+    def create(self, validated_data):
+        units_payload = validated_data.pop("units", None)
+        product = super().create(validated_data)
+        self._sync_units(product, units_payload or [])
+        return product
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        units_payload = validated_data.pop("units", None)
+        product = super().update(instance, validated_data)
+        if units_payload is not None:
+            self._sync_units(product, units_payload)
+        return product
 
 
 class WarehouseSerializer(serializers.ModelSerializer):

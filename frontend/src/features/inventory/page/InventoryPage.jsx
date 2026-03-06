@@ -78,6 +78,7 @@ const initialProductForm = {
   is_sellable_online: false,
   is_active: true,
   image: null,
+  units: [],
 };
 
 const initialProductErrors = {
@@ -276,6 +277,16 @@ export default function Inventory() {
       is_sellable_online: !!product.is_sellable_online,
       is_active: product.is_active !== false,
       image: null,
+      units: Array.isArray(product.units) ? product.units.map((unit) => ({
+        id: unit.id,
+        unit_name: unit.unit_name || '',
+        conversion_to_base: unit.conversion_to_base || '1',
+        barcode: unit.barcode || '',
+        is_sellable: unit.is_sellable !== false,
+        cost_price: unit.cost_price ?? '',
+        sell_price: unit.sell_price || '0.00',
+        min_sell_price: unit.min_sell_price ?? '',
+      })) : [],
     });
   };
 
@@ -283,6 +294,39 @@ export default function Inventory() {
     setProductForm(initialProductForm);
     setProductErrors(initialProductErrors);
     setActiveProductId('');
+  };
+
+  const addUnitRow = () => {
+    setProductForm((prev) => ({
+      ...prev,
+      units: [
+        ...(prev.units || []),
+        {
+          id: '',
+          unit_name: '',
+          conversion_to_base: '1',
+          barcode: '',
+          is_sellable: true,
+          cost_price: '',
+          sell_price: prev.price || '0.00',
+          min_sell_price: '',
+        },
+      ],
+    }));
+  };
+
+  const updateUnitRow = (index, key, value) => {
+    setProductForm((prev) => ({
+      ...prev,
+      units: (prev.units || []).map((unit, unitIndex) => (unitIndex === index ? { ...unit, [key]: value } : unit)),
+    }));
+  };
+
+  const removeUnitRow = (index) => {
+    setProductForm((prev) => ({
+      ...prev,
+      units: (prev.units || []).filter((_, unitIndex) => unitIndex !== index),
+    }));
   };
 
   const validateProductForm = () => {
@@ -313,6 +357,15 @@ export default function Inventory() {
     validateNumber('minimum_quantity');
     validateNumber('reorder_quantity');
 
+    const unitErrors = (productForm.units || []).map((unit) => {
+      const conversion = Number(unit.conversion_to_base);
+      const sellPrice = Number(unit.sell_price);
+      return !unit.unit_name || !Number.isFinite(conversion) || conversion <= 0 || !Number.isFinite(sellPrice) || sellPrice < 0;
+    });
+    if (unitErrors.some(Boolean)) {
+      errors.price = errors.price || t('inventory_product_validation_number_invalid');
+    }
+
     setProductErrors(errors);
     return !Object.values(errors).some(Boolean);
   };
@@ -324,40 +377,64 @@ export default function Inventory() {
 
     setIsSavingProduct(true);
     try {
-      const payload = new FormData();
-      [
-        'category', 'name', 'description', 'brand', 'unit', 'slug', 'price', 'cost',
-        'tax_rate', 'minimum_quantity', 'reorder_quantity', 'preferred_supplier', 'stock_status',
-      ].forEach((key) => {
-        const value = productForm[key];
-        if (value !== null && value !== undefined) {
-          payload.append(key, value);
-        }
-      });
+      const unitsPayload = (productForm.units || []).map((unit) => ({
+        id: unit.id || undefined,
+        unit_name: String(unit.unit_name || '').trim(),
+        conversion_to_base: unit.conversion_to_base,
+        barcode: String(unit.barcode || '').trim() || null,
+        is_sellable: !!unit.is_sellable,
+        cost_price: unit.cost_price === '' ? null : unit.cost_price,
+        sell_price: unit.sell_price,
+        min_sell_price: unit.min_sell_price === '' ? null : unit.min_sell_price,
+      }));
+
+      const basePayload = {
+        category: productForm.category || null,
+        name: productForm.name,
+        description: productForm.description,
+        brand: productForm.brand,
+        unit: productForm.unit,
+        slug: productForm.slug || null,
+        price: productForm.price,
+        cost: productForm.cost || null,
+        tax_rate: productForm.tax_rate,
+        minimum_quantity: productForm.minimum_quantity,
+        reorder_quantity: productForm.reorder_quantity,
+        preferred_supplier: productForm.preferred_supplier || null,
+        stock_status: productForm.stock_status,
+        is_sellable_online: productForm.is_sellable_online,
+        is_active: productForm.is_active,
+        units: unitsPayload,
+      };
 
       const trimmedSku = String(productForm.sku || '').trim();
       if (trimmedSku) {
-        payload.append('sku', trimmedSku);
+        basePayload.sku = trimmedSku;
       }
 
       const trimmedBarcode = String(productForm.barcode || '').trim();
       if (trimmedBarcode) {
-        payload.append('barcode', trimmedBarcode);
+        basePayload.barcode = trimmedBarcode;
       }
-      payload.append('is_sellable_online', productForm.is_sellable_online ? 'true' : 'false');
-      payload.append('is_active', productForm.is_active ? 'true' : 'false');
+
+      let payload = basePayload;
+      let requestConfig = undefined;
       if (productForm.image instanceof File) {
-        payload.append('image', productForm.image);
+        const multipart = new FormData();
+        Object.entries(basePayload).forEach(([key, value]) => {
+          if (value === null || value === undefined) return;
+          if (key === 'units') return;
+          multipart.append(key, value);
+        });
+        multipart.append('image', productForm.image);
+        payload = multipart;
+        requestConfig = { headers: { 'Content-Type': 'multipart/form-data' } };
       }
 
       if (productForm.id) {
-        await axios.patch(`/api/v1/admin/products/${productForm.id}/`, payload, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await axios.patch(`/api/v1/admin/products/${productForm.id}/`, payload, requestConfig);
       } else {
-        await axios.post('/api/v1/admin/products/', payload, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await axios.post('/api/v1/admin/products/', payload, requestConfig);
       }
       clearProductForm();
       await loadData();
@@ -578,6 +655,28 @@ export default function Inventory() {
               fullWidth
             />
           </Stack>
+          <Stack spacing={1} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Typography variant="subtitle2" fontWeight={700}>Unit conversions & pricing</Typography>
+              <Button size="small" variant="outlined" onClick={addUnitRow}>Add unit</Button>
+            </Stack>
+            {(productForm.units || []).length === 0 && (
+              <Typography variant="body2" color="text.secondary">No package units configured.</Typography>
+            )}
+            {(productForm.units || []).map((unit, unitIndex) => (
+              <Stack key={unit.id || `unit-${unitIndex}`} direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ md: 'center' }}>
+                <TextField label="Unit name" value={unit.unit_name} onChange={(e) => updateUnitRow(unitIndex, 'unit_name', e.target.value)} />
+                <TextField label="Conversion to base" type="number" value={unit.conversion_to_base} inputProps={{ min: 0.0001, step: '0.0001' }} onChange={(e) => updateUnitRow(unitIndex, 'conversion_to_base', e.target.value)} />
+                <TextField label="Barcode" value={unit.barcode} onChange={(e) => updateUnitRow(unitIndex, 'barcode', e.target.value)} />
+                <TextField label="Cost price" type="number" value={unit.cost_price} inputProps={{ min: 0, step: '0.01' }} onChange={(e) => updateUnitRow(unitIndex, 'cost_price', e.target.value)} />
+                <TextField label="Sell price" type="number" value={unit.sell_price} inputProps={{ min: 0, step: '0.01' }} onChange={(e) => updateUnitRow(unitIndex, 'sell_price', e.target.value)} />
+                <TextField label="Min sell price" type="number" value={unit.min_sell_price} inputProps={{ min: 0, step: '0.01' }} onChange={(e) => updateUnitRow(unitIndex, 'min_sell_price', e.target.value)} />
+                <FormControlLabel control={<Switch checked={unit.is_sellable !== false} onChange={(e) => updateUnitRow(unitIndex, 'is_sellable', e.target.checked)} />} label="Sellable" />
+                <Button color="error" onClick={() => removeUnitRow(unitIndex)}>Remove</Button>
+              </Stack>
+            ))}
+          </Stack>
+
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField
               label={t('minimum_quantity')}
