@@ -4,7 +4,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.core.cache import cache
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum, Value
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse
 from django.utils.dateparse import parse_date
@@ -112,6 +112,7 @@ class DailySalesReportView(BaseReportView):
         tz_name = self._tz_name(request, branch_ids)
         tz = self._parse_timezone(tz_name)
         start, end = self._date_range(request, tz)
+
 
         def run():
             qs = Invoice.objects.exclude(status=Invoice.Status.VOID).filter(branch_id__in=branch_ids)
@@ -366,6 +367,28 @@ class DashboardMetricsReportView(BaseReportView):
                 created_at__lte=range_end,
             ).aggregate(total=Coalesce(Sum("balance_due"), Decimal("0.00")))["total"]
 
+        def aggregate_override_stats(range_start, range_end):
+            base_qs = InvoiceLine.objects.filter(
+                invoice__branch_id__in=branch_ids,
+                invoice__created_at__gte=range_start,
+                invoice__created_at__lte=range_end,
+            )
+            totals = base_qs.aggregate(
+                total_lines=Coalesce(Count("id"), 0),
+                override_lines=Coalesce(Count("id", filter=Q(override_applied=True)), 0),
+                risk_lines=Coalesce(Count("id", filter=Q(risk_flag=True)), 0),
+            )
+            total_lines = int(totals.get("total_lines") or 0)
+            override_lines = int(totals.get("override_lines") or 0)
+            risk_lines = int(totals.get("risk_lines") or 0)
+            override_frequency_pct = Decimal("0.00") if total_lines == 0 else round((Decimal(override_lines) / Decimal(total_lines)) * Decimal("100"), 2)
+            return OrderedDict(
+                total_lines=total_lines,
+                override_lines=override_lines,
+                risk_lines=risk_lines,
+                override_frequency_pct=override_frequency_pct,
+            )
+
         def run():
             return OrderedDict(
                 timezone=tz_name,
@@ -381,6 +404,10 @@ class DashboardMetricsReportView(BaseReportView):
                 accounts_receivable_totals=OrderedDict(
                     current=aggregate_receivables(start, end),
                     previous=aggregate_receivables(previous_start, previous_end),
+                ),
+                override_risk=OrderedDict(
+                    current=aggregate_override_stats(start, end),
+                    previous=aggregate_override_stats(previous_start, previous_end),
                 ),
             )
 

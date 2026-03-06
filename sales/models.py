@@ -93,6 +93,14 @@ class InvoiceLine(models.Model):
     product_bundle = models.ForeignKey(ProductBundle, on_delete=models.PROTECT, null=True, blank=True)
     margin_warning = models.BooleanField(default=False)
     price_source = models.CharField(max_length=32, choices=PriceSource.choices, default=PriceSource.DEFAULT)
+    min_margin_pct_applied = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    max_discount_pct_allowed = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    discount_pct = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    risk_flag = models.BooleanField(default=False)
+    override_applied = models.BooleanField(default=False)
+    override_reason = models.CharField(max_length=255, null=True, blank=True)
+    override_approver = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="approved_invoice_line_overrides")
+    override_approved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [

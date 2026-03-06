@@ -389,6 +389,7 @@ export default function Dashboard() {
 
   const [salesTotals, setSalesTotals] = useState({ current: 0, previous: 0 });
   const [accountsReceivableTotals, setAccountsReceivableTotals] = useState({ current: 0, previous: 0 });
+  const [overrideRiskTotals, setOverrideRiskTotals] = useState({ current: { override_frequency_pct: 0, risk_lines: 0 }, previous: { override_frequency_pct: 0, risk_lines: 0 } });
   const [branches, setBranches] = useState([]);
   const [adminBranchRows, setAdminBranchRows] = useState([]);
   const [adminBranchLoading, setAdminBranchLoading] = useState(false);
@@ -501,10 +502,15 @@ export default function Dashboard() {
             current: Number(metricsRes.value?.accounts_receivable_totals?.current || 0),
             previous: Number(metricsRes.value?.accounts_receivable_totals?.previous || 0),
           });
+          setOverrideRiskTotals({
+            current: metricsRes.value?.override_risk?.current || { override_frequency_pct: 0, risk_lines: 0 },
+            previous: metricsRes.value?.override_risk?.previous || { override_frequency_pct: 0, risk_lines: 0 },
+          });
         } else {
           failedRequests.push('dashboardMetrics');
           setSalesTotals({ current: 0, previous: 0 });
           setAccountsReceivableTotals({ current: 0, previous: 0 });
+          setOverrideRiskTotals({ current: { override_frequency_pct: 0, risk_lines: 0 }, previous: { override_frequency_pct: 0, risk_lines: 0 } });
           reportWidgetFailure('kpis.dashboardMetrics', metricsRes.reason, { activeRange: debouncedActiveRange });
         }
 
@@ -933,6 +939,7 @@ export default function Dashboard() {
 
   const salesDeltaPct = computeDeltaPct(salesTotals.current, salesTotals.previous);
   const receivablesDeltaPct = computeDeltaPct(accountsReceivableTotals.current, accountsReceivableTotals.previous);
+  const overrideDeltaPct = computeDeltaPct(Number(overrideRiskTotals.current?.override_frequency_pct || 0), Number(overrideRiskTotals.previous?.override_frequency_pct || 0));
 
   const dashboardKpiCards = [
     {
@@ -956,6 +963,12 @@ export default function Dashboard() {
       value: formatNumber(shiftSummary.active_shift_count || 0),
       caption: t('dashboard_current_shift_status'),
       helper: t('dashboard_active_shifts'),
+    },
+    {
+      id: 'override-frequency',
+      value: `${formatNumber(Number(overrideRiskTotals.current?.override_frequency_pct || 0))}%`,
+      caption: t('dashboard_override_frequency'),
+      helper: `${t('dashboard_risk_lines')}: ${formatNumber(Number(overrideRiskTotals.current?.risk_lines || 0))} • ${Number.isFinite(overrideDeltaPct) ? `${trendFromDelta(overrideDeltaPct) === 'down' ? '↓' : trendFromDelta(overrideDeltaPct) === 'up' ? '↑' : '→'} ${formatNumber(Math.abs(overrideDeltaPct))}%` : '—'}`,
     },
     {
       id: 'critical-stock',
