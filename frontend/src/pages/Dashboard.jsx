@@ -26,7 +26,7 @@ import EmptyState from '../components/EmptyState';
 import Panel from '../components/ui/Panel';
 import { useAuth } from '../AuthContext';
 import { useSync } from '../sync/SyncContext';
-import { PageHeader, PageShell } from '../components/PageLayout';
+import { DataTableCard, MetricCard, PageHeader, PageShell } from '../components/PageLayout';
 import {
   formatCurrency,
   formatDate,
@@ -1254,20 +1254,13 @@ export default function Dashboard() {
         <Grid container spacing={2}>
           {dashboardKpiCards.map((card) => (
             <Grid key={card.id} item xs={12} sm={6} lg={3}>
-              <Panel compact sx={{ height: '100%' }}>
-                <Typography
-                  variant="h5"
-                  sx={{
-                    fontWeight: 700,
-                    textAlign: 'end',
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {card.value}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">{card.caption}</Typography>
-                <Typography variant="body2" color="text.secondary">{card.helper}</Typography>
-              </Panel>
+              <MetricCard
+                dense
+                title={card.caption}
+                value={card.value}
+                helperText={card.helper}
+                trend={card.helper?.includes('↓') ? 'down' : card.helper?.includes('↑') ? 'up' : 'flat'}
+              />
             </Grid>
           ))}
         </Grid>
@@ -1388,7 +1381,7 @@ export default function Dashboard() {
                     </Grid>
                   </Grid>
 
-                  <TableContainer sx={{ overflowX: 'auto', border: '1px solid', borderColor: 'divider' }}>
+                  <DataTableCard tableSx={{ border: '1px solid', borderColor: 'divider' }}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
@@ -1453,7 +1446,7 @@ export default function Dashboard() {
                         ))}
                       </TableBody>
                     </Table>
-                  </TableContainer>
+                  </DataTableCard>
                 </>
               )}
 

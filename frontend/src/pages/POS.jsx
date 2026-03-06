@@ -35,7 +35,7 @@ import { useAuth } from '../AuthContext';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
-import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { CardSection, PageHeader, PageShell } from '../components/PageLayout';
 import { formatCurrency, formatDateTime, formatNumber } from '../utils/formatters';
 
 const PAYMENT_METHODS = ['cash', 'card', 'transfer', 'wallet', 'other'];
@@ -146,7 +146,7 @@ const scoreCustomerMatch = (customer, query) => {
 
 function SectionCard({ title, subtitle, children, accent }) {
   return (
-    <SectionPanel
+    <CardSection
       title={title}
       subtitle={subtitle}
       contentSx={{
@@ -160,7 +160,7 @@ function SectionCard({ title, subtitle, children, accent }) {
       <Stack spacing={2}>
         {children}
       </Stack>
-    </SectionPanel>
+    </CardSection>
   );
 }
 
@@ -1335,7 +1335,7 @@ export default function POS() {
   const discountTotal = Math.max(cartSubtotal - parsedInvoiceTotal + taxTotal, 0);
 
   return (
-    <PageShell>
+    <PageShell dense>
       <Stack spacing={2.5} sx={{ pb: { xs: 14, md: 0 } }}>
         <PageHeader title={t('pos')} subtitle={t('pos_intro_text')} />
 

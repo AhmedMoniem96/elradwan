@@ -26,7 +26,7 @@ import { useSync } from '../sync/SyncContext';
 import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
-import { PageHeader, PageShell, SectionPanel } from '../components/PageLayout';
+import { DataTableCard, PageHeader, PageShell } from '../components/PageLayout';
 import { normalizeCollectionResponse } from '../utils/api';
 
 export default function Customers() {
@@ -132,7 +132,7 @@ export default function Customers() {
         )}
       />
 
-      <SectionPanel contentSx={{ p: 0, '&:last-child': { pb: 0 } }}>
+      <DataTableCard>
         {error && (
           <Box sx={{ p: 2 }}>
             <ErrorState
@@ -195,7 +195,7 @@ export default function Customers() {
         </Table>
         </TableContainer>
         )}
-      </SectionPanel>
+      </DataTableCard>
 
       <Dialog open={open} onClose={handleClose}>
         <DialogTitle>{isEditing ? t('edit') : t('add_customer')}</DialogTitle>
