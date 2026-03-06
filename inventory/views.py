@@ -124,7 +124,7 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Product.objects.select_related("preferred_supplier").order_by("created_at", "id")
+    queryset = Product.objects.select_related("preferred_supplier").prefetch_related("units").order_by("created_at", "id")
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"list": "inventory.view", "retrieve": "inventory.view"}
@@ -208,7 +208,7 @@ class AdminCategoryViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
 
 
 class AdminProductViewSet(OutboxMutationMixin, viewsets.ModelViewSet):
-    queryset = Product.objects.select_related("preferred_supplier").order_by("created_at", "id")
+    queryset = Product.objects.select_related("preferred_supplier").prefetch_related("units").order_by("created_at", "id")
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {action: "admin.records.manage" for action in ["list", "retrieve", "create", "update", "partial_update", "destroy"]}
