@@ -1,12 +1,18 @@
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 from core.models import Branch, Device, User
 from inventory.models import Product, ProductBundle
 
 
 class Customer(models.Model):
+    class Segment(models.TextChoices):
+        PACKAGE = "package", "Package"
+        RETAIL = "retail", "Retail"
+        VIP = "vip", "VIP"
+
     class PricingMode(models.TextChoices):
         PACKAGE = "package", "Package"
         UNIT = "unit", "Unit"
@@ -17,6 +23,8 @@ class Customer(models.Model):
     phone = models.CharField(max_length=64, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     pricing_mode = models.CharField(max_length=16, choices=PricingMode.choices, default=PricingMode.UNIT)
+    segment = models.CharField(max_length=16, choices=Segment.choices, default=Segment.RETAIL)
+    price_list = models.ForeignKey("PriceList", on_delete=models.SET_NULL, null=True, blank=True, related_name="customers")
     allow_unit_override = models.BooleanField(default=False)
     allow_package_override = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -68,6 +76,11 @@ class Invoice(models.Model):
 
 
 class InvoiceLine(models.Model):
+    class PriceSource(models.TextChoices):
+        CUSTOMER_SPECIFIC = "customer_specific", "Customer specific"
+        PRICE_LIST = "price_list", "Price list"
+        DEFAULT = "default", "Default"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="lines")
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
@@ -79,11 +92,88 @@ class InvoiceLine(models.Model):
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
     product_bundle = models.ForeignKey(ProductBundle, on_delete=models.PROTECT, null=True, blank=True)
     margin_warning = models.BooleanField(default=False)
+    price_source = models.CharField(max_length=32, choices=PriceSource.choices, default=PriceSource.DEFAULT)
 
     class Meta:
         indexes = [
             models.Index(fields=["invoice"]),
             models.Index(fields=["product"]),
+        ]
+
+
+class PriceList(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    name = models.CharField(max_length=255)
+    segment = models.CharField(max_length=16, choices=Customer.Segment.choices, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["branch", "name"], name="uniq_price_list_branch_name")]
+        indexes = [models.Index(fields=["branch", "segment", "is_active"])]
+
+
+class PriceListItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="price_list_items")
+    unit_type = models.CharField(max_length=16, choices=Customer.PricingMode.choices, default=Customer.PricingMode.UNIT)
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    effective_from = models.DateTimeField(default=timezone.now)
+    effective_to = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        previous_price = None
+        if self.pk:
+            previous_price = PriceListItem.objects.filter(pk=self.pk).values_list("price", flat=True).first()
+
+        super().save(*args, **kwargs)
+
+        if previous_price is None:
+            PriceChangeAudit.objects.create(
+                price_list_item=self,
+                branch=self.price_list.branch,
+                action=PriceChangeAudit.Action.CREATED,
+                old_price=None,
+                new_price=self.price,
+            )
+        elif previous_price != self.price:
+            PriceChangeAudit.objects.create(
+                price_list_item=self,
+                branch=self.price_list.branch,
+                action=PriceChangeAudit.Action.UPDATED,
+                old_price=previous_price,
+                new_price=self.price,
+            )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["price_list", "product", "unit_type"]),
+            models.Index(fields=["effective_from", "effective_to"]),
+        ]
+
+
+class PriceChangeAudit(models.Model):
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        UPDATED = "updated", "Updated"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    price_list_item = models.ForeignKey(PriceListItem, on_delete=models.CASCADE, related_name="change_logs")
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    action = models.CharField(max_length=16, choices=Action.choices)
+    old_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    new_price = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "created_at"]),
+            models.Index(fields=["price_list_item", "created_at"]),
         ]
 
 

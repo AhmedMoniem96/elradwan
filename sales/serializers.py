@@ -1,14 +1,14 @@
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
 
 from common.permissions import user_has_capability
 from inventory.models import ProductBundle, StockMove, Warehouse
-from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Refund, Return, ReturnLine
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, PriceList, PriceListItem, Refund, Return, ReturnLine
 
 MONEY_QUANT = Decimal("0.01")
 
@@ -20,6 +20,39 @@ def _to_money(value):
 def _get_active_shift(cashier_id, device_id):
     return CashShift.objects.filter(cashier_id=cashier_id, device_id=device_id, closed_at__isnull=True).first()
 
+
+
+
+def _resolve_price_for_line(*, customer, product, quantity_mode, requested_unit_price=None, at_time=None):
+    if requested_unit_price is not None:
+        return _to_money(requested_unit_price), InvoiceLine.PriceSource.CUSTOMER_SPECIFIC
+
+    at_time = at_time or timezone.now()
+
+    candidate_lists = []
+    if customer and customer.price_list_id:
+        candidate_lists.append((customer.price_list_id, InvoiceLine.PriceSource.CUSTOMER_SPECIFIC))
+
+    if customer and customer.segment:
+        segment_price_list = (
+            PriceList.objects.filter(branch_id=product.branch_id, segment=customer.segment, is_active=True)
+            .order_by("created_at", "id")
+            .first()
+        )
+        if segment_price_list:
+            candidate_lists.append((segment_price_list.id, InvoiceLine.PriceSource.PRICE_LIST))
+
+    for price_list_id, source in candidate_lists:
+        item = (
+            PriceListItem.objects.filter(price_list_id=price_list_id, product=product, unit_type=quantity_mode, effective_from__lte=at_time)
+            .filter(models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=at_time))
+            .order_by("-effective_from", "-created_at")
+            .first()
+        )
+        if item:
+            return _to_money(item.price), source
+
+    return _to_money(product.price), InvoiceLine.PriceSource.DEFAULT
 
 def refresh_invoice_payment_status(invoice):
     total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0")
@@ -108,6 +141,8 @@ class CustomerSerializer(serializers.ModelSerializer):
             "phone",
             "email",
             "pricing_mode",
+            "segment",
+            "price_list",
             "allow_unit_override",
             "allow_package_override",
             "created_at",
@@ -131,6 +166,7 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             "line_total",
             "product_bundle",
             "margin_warning",
+            "price_source",
         ]
         read_only_fields = ["id"]
 
@@ -450,7 +486,7 @@ class PosInvoiceLineInputSerializer(serializers.Serializer):
     product_id = serializers.UUIDField(required=False)
     product_bundle_id = serializers.UUIDField(required=False)
     quantity = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
-    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False)
     discount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False, default=Decimal("0.00"))
     tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
     quantity_mode = serializers.ChoiceField(choices=Customer.PricingMode.choices, required=False)
@@ -526,10 +562,21 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"lines": {idx: {"product_bundle_id": "Unknown bundle for your branch."}}})
 
             quantity = _to_money(line["quantity"])
-            unit_price = _to_money(line["unit_price"])
+            line_quantity_mode = line.get("quantity_mode") or pricing_mode
+            pricing_product = product or bundle.parent_product
+            if pricing_product is None and line.get("unit_price") is None:
+                raise serializers.ValidationError(
+                    {"lines": {idx: {"unit_price": "unit_price is required when bundle has no parent product for price lookup."}}}
+                )
+            resolved_unit_price, price_source = _resolve_price_for_line(
+                customer=customer,
+                product=pricing_product,
+                quantity_mode=line_quantity_mode,
+                requested_unit_price=line.get("unit_price"),
+            )
+            unit_price = resolved_unit_price
             discount = _to_money(line.get("discount") or Decimal("0.00"))
             tax_rate = Decimal(str(line.get("tax_rate") or Decimal("0.0000")))
-            line_quantity_mode = line.get("quantity_mode") or pricing_mode
 
             if customer and line_quantity_mode != pricing_mode:
                 if line_quantity_mode == Customer.PricingMode.UNIT and not can_override_pricing_mode:
@@ -563,7 +610,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
             tax_total += line_tax
             line_calculations.append(
                 {
-                    "product": product or bundle.parent_product,
+                    "product": pricing_product,
                     "product_bundle": bundle,
                     "quantity": quantity,
                     "unit_price": unit_price,
@@ -572,6 +619,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                     "line_total": line_subtotal,
                     "quantity_mode": line_quantity_mode,
                     "margin_warning": margin_warning,
+                    "price_source": price_source,
                 }
             )
 

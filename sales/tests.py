@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -8,7 +9,7 @@ from rest_framework.test import APIClient
 
 from core.models import Branch, Device
 from inventory.models import Product, ProductBundle, ProductBundleLine, StockMove, Warehouse
-from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Return
+from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, PriceChangeAudit, PriceList, PriceListItem, Return
 
 
 class BranchScopedSalesTests(TestCase):
@@ -985,6 +986,125 @@ class PosInvoiceCreateTests(TestCase):
         self.assertEqual(component_moves.count(), 2)
         self.assertEqual(component_moves.get(product=self.product).quantity, Decimal("-1.00"))
         self.assertEqual(component_moves.get(product=self.component_b).quantity, Decimal("-1.00"))
+
+
+    def test_pos_invoice_uses_direct_customer_price_list_before_segment_fallback(self):
+        fallback_list = PriceList.objects.create(branch=self.branch, name="Retail fallback", segment=Customer.Segment.RETAIL)
+        PriceListItem.objects.create(
+            price_list=fallback_list,
+            product=self.product,
+            unit_type=Customer.PricingMode.UNIT,
+            price=Decimal("21.00"),
+            effective_from=timezone.now() - timedelta(days=1),
+        )
+        direct_list = PriceList.objects.create(branch=self.branch, name="Customer direct")
+        PriceListItem.objects.create(
+            price_list=direct_list,
+            product=self.product,
+            unit_type=Customer.PricingMode.UNIT,
+            price=Decimal("18.00"),
+            effective_from=timezone.now() - timedelta(days=1),
+        )
+        self.customer.segment = Customer.Segment.RETAIL
+        self.customer.price_list = direct_list
+        self.customer.save(update_fields=["segment", "price_list"])
+
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "18.00",
+                "lines": [{"product_id": str(self.product.id), "quantity": "1.00"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        line = InvoiceLine.objects.get(invoice_id=response.json()["id"])
+        self.assertEqual(line.unit_price, Decimal("18.00"))
+        self.assertEqual(line.price_source, InvoiceLine.PriceSource.CUSTOMER_SPECIFIC)
+
+    def test_pos_invoice_uses_segment_price_list_when_customer_has_no_direct_price_list(self):
+        segment_list = PriceList.objects.create(branch=self.branch, name="VIP list", segment=Customer.Segment.VIP)
+        PriceListItem.objects.create(
+            price_list=segment_list,
+            product=self.product,
+            unit_type=Customer.PricingMode.UNIT,
+            price=Decimal("22.00"),
+            effective_from=timezone.now() - timedelta(days=1),
+        )
+        self.customer.segment = Customer.Segment.VIP
+        self.customer.price_list = None
+        self.customer.save(update_fields=["segment", "price_list"])
+
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "22.00",
+                "lines": [{"product_id": str(self.product.id), "quantity": "1.00"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        line = InvoiceLine.objects.get(invoice_id=response.json()["id"])
+        self.assertEqual(line.unit_price, Decimal("22.00"))
+        self.assertEqual(line.price_source, InvoiceLine.PriceSource.PRICE_LIST)
+
+    def test_pos_invoice_ignores_expired_promo_price(self):
+        direct_list = PriceList.objects.create(branch=self.branch, name="Expired promo")
+        PriceListItem.objects.create(
+            price_list=direct_list,
+            product=self.product,
+            unit_type=Customer.PricingMode.UNIT,
+            price=Decimal("9.00"),
+            effective_from=timezone.now() - timedelta(days=5),
+            effective_to=timezone.now() - timedelta(days=1),
+        )
+        self.customer.price_list = direct_list
+        self.customer.save(update_fields=["price_list"])
+
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "customer_id": str(self.customer.id),
+                "total": "25.00",
+                "lines": [{"product_id": str(self.product.id), "quantity": "1.00"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        line = InvoiceLine.objects.get(invoice_id=response.json()["id"])
+        self.assertEqual(line.unit_price, Decimal("25.00"))
+        self.assertEqual(line.price_source, InvoiceLine.PriceSource.DEFAULT)
+
+    def test_price_list_item_change_creates_price_change_audit_log(self):
+        price_list = PriceList.objects.create(branch=self.branch, name="Audit list")
+        item = PriceListItem.objects.create(
+            price_list=price_list,
+            product=self.product,
+            unit_type=Customer.PricingMode.UNIT,
+            price=Decimal("20.00"),
+            effective_from=timezone.now(),
+        )
+        item.price = Decimal("19.50")
+        item.save(update_fields=["price", "updated_at"])
+
+        self.assertEqual(PriceChangeAudit.objects.filter(price_list_item=item).count(), 2)
+        latest = PriceChangeAudit.objects.filter(price_list_item=item).order_by("-created_at").first()
+        self.assertEqual(latest.old_price, Decimal("20.00"))
+        self.assertEqual(latest.new_price, Decimal("19.50"))
 
     def test_admin_can_create_pos_invoice_with_sales_pos_access(self):
         CashShift.objects.create(branch=self.branch, cashier=self.admin, device=self.device, opening_amount=Decimal("20.00"))
