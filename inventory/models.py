@@ -59,6 +59,34 @@ class Product(models.Model):
         ]
 
 
+class ProductUnit(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="units")
+    unit_name = models.CharField(max_length=64)
+    conversion_to_base = models.DecimalField(max_digits=12, decimal_places=4)
+    barcode = models.CharField(max_length=128, null=True, blank=True)
+    is_sellable = models.BooleanField(default=True)
+    cost_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    sell_price = models.DecimalField(max_digits=12, decimal_places=2)
+    min_sell_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["product", "unit_name"], name="uniq_product_unit_name"),
+            models.UniqueConstraint(
+                fields=["barcode"],
+                condition=models.Q(barcode__isnull=False) & ~models.Q(barcode=""),
+                name="uniq_product_unit_barcode_non_empty",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "is_sellable"]),
+            models.Index(fields=["barcode"]),
+        ]
+
+
 class Warehouse(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
