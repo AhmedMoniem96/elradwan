@@ -97,6 +97,7 @@ export default function PurchaseImports() {
     if (supplierId) {
       form.append('supplier', supplierId);
     }
+    appendTemplateDefaults(form);
 
     setUploading(true);
     try {
@@ -121,6 +122,7 @@ export default function PurchaseImports() {
     form.append('source_file', file);
     form.append('test_parse', 'true');
     if (supplierId) form.append('supplier', supplierId);
+    appendTemplateDefaults(form);
     setUploading(true);
     try {
       await axios.post('/api/v1/purchase-import-jobs/', form, {
@@ -157,6 +159,16 @@ export default function PurchaseImports() {
     };
     loadTemplate();
   }, [supplierId]);
+
+
+  const appendTemplateDefaults = (form) => {
+    if (templateProfile?.default_warehouse) {
+      form.append('default_warehouse', templateProfile.default_warehouse);
+    }
+    if (templateProfile?.default_tax_rate != null) {
+      form.append('default_tax_rate', templateProfile.default_tax_rate);
+    }
+  };
 
   const hasBlockingSelection = useMemo(() => {
     if (!activeJob) return false;
@@ -356,9 +368,3 @@ export default function PurchaseImports() {
     </PageShell>
   );
 }
-    if (templateProfile?.default_warehouse) {
-      form.append('default_warehouse', templateProfile.default_warehouse);
-    }
-    if (templateProfile?.default_tax_rate != null) {
-      form.append('default_tax_rate', templateProfile.default_tax_rate);
-    }
