@@ -2,11 +2,13 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from core.views import EmailOrUsernameTokenObtainPairView, healthz, readyz
 
 urlpatterns = [
+    path("", RedirectView.as_view(url="/admin/", permanent=False), name="root"),
     path("healthz", healthz, name="healthz"),
     path("readyz", readyz, name="readyz"),
     path("admin/", admin.site.urls),

@@ -303,6 +303,17 @@ class PasswordResetTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class RootRouteTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_root_redirects_to_admin(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/admin/")
+
+
 class UserRegistrationSerializerTests(TestCase):
     def setUp(self):
         self.client = APIClient()
