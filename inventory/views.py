@@ -63,6 +63,8 @@ from inventory.services import (
     export_reorder_pdf_text,
     refresh_inventory_alerts,
     create_purchase_orders_from_alerts,
+    get_stock_balance,
+    update_product_cost,
 )
 
 
@@ -852,12 +854,16 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         row_actions = serializer.validated_data.get("row_actions") or {}
+        confirm = serializer.validated_data.get("confirm", False)
+        supplier_invoice_reference = (serializer.validated_data.get("supplier_invoice_reference") or "").strip()
 
         created = 0
         matched = 0
         skipped = 0
 
         rows_by_index = {str(row.get("row_index")): row for row in job.parsed_rows or []}
+        draft_lines = []
+
         for row_key, action_payload in row_actions.items():
             row = rows_by_index.get(str(row_key), {})
             action_name = action_payload.get("action") if isinstance(action_payload, dict) else action_payload
@@ -876,14 +882,19 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                     price=Decimal(str(row.get("price") or "0") or "0"),
                 )
                 created += 1
-            elif action_name == "match_existing":
+                continue
+
+            if action_name == "match_existing":
                 selected = selected_product_id or row.get("suggested_product_id")
                 if row.get("requires_selection") and not selected:
                     raise ValidationError({"row_actions": f"Row {row_key} requires selecting a product before apply."})
                 if not selected:
                     skipped += 1
                     continue
-                matched += 1
+
+                product = Product.objects.filter(branch_id=job.branch_id, id=selected).first()
+                if not product:
+                    raise ValidationError({"row_actions": f"Row {row_key} selected product does not exist in this branch."})
 
                 if job.supplier_id and job.format_signature:
                     mapping_keys = [
@@ -904,13 +915,100 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                             key_value=token,
                             defaults={"product_id": selected, "confidence": Decimal(str(row.get("match_confidence") or 0)) * 100},
                         )
-            else:
-                skipped += 1
+
+                quantity = Decimal(str(row.get("quantity") or "0") or "0")
+                unit_cost = Decimal(str(row.get("price") or "0") or "0")
+                warehouse_id = action_payload.get("warehouse_id") if isinstance(action_payload, dict) else None
+
+                if quantity <= 0:
+                    raise ValidationError({"row_actions": f"Row {row_key} requires a positive quantity."})
+                if unit_cost <= 0:
+                    raise ValidationError({"row_actions": f"Row {row_key} requires a positive unit cost."})
+                if not warehouse_id:
+                    raise ValidationError({"row_actions": f"Row {row_key} requires a warehouse."})
+
+                warehouse = Warehouse.objects.filter(branch_id=job.branch_id, id=warehouse_id).first()
+                if not warehouse:
+                    raise ValidationError({"row_actions": f"Row {row_key} warehouse does not exist in this branch."})
+
+                unit_name = (action_payload.get("unit") if isinstance(action_payload, dict) else "") or product.unit
+                conversion_to_base = Decimal("1")
+                if unit_name and unit_name != product.unit:
+                    product_unit = product.units.filter(unit_name=unit_name).first()
+                    if not product_unit:
+                        raise ValidationError({"row_actions": f"Row {row_key} unit '{unit_name}' is not mapped for this product."})
+                    conversion_to_base = Decimal(str(product_unit.conversion_to_base or "1"))
+
+                effective_quantity = quantity * conversion_to_base
+                matched += 1
+                draft_lines.append(
+                    {
+                        "row_index": int(row_key),
+                        "product_id": str(product.id),
+                        "product_name": product.name,
+                        "warehouse_id": str(warehouse.id),
+                        "warehouse_name": warehouse.name,
+                        "quantity": str(quantity),
+                        "unit": unit_name,
+                        "conversion_to_base": str(conversion_to_base),
+                        "effective_quantity": str(effective_quantity),
+                        "unit_cost": str(unit_cost),
+                    }
+                )
+                continue
+
+            skipped += 1
+
+        draft_receipt = {
+            "type": "PurchaseReceipt",
+            "job_id": str(job.id),
+            "supplier_id": str(job.supplier_id) if job.supplier_id else None,
+            "supplier_invoice_reference": supplier_invoice_reference,
+            "lines": draft_lines,
+        }
 
         job.row_actions = row_actions
-        job.apply_summary = {"created_products": created, "matched_existing": matched, "skipped": skipped}
-        job.state = PurchaseImportJob.State.APPLIED
-        job.save(update_fields=["row_actions", "apply_summary", "state", "updated_at"])
+        job.draft_receipt = draft_receipt
+        job.apply_summary = {"created_products": created, "matched_existing": matched, "skipped": skipped, "draft_lines": len(draft_lines)}
+        if supplier_invoice_reference:
+            job.supplier_invoice_reference = supplier_invoice_reference
+
+        if confirm:
+            with transaction.atomic():
+                for line in draft_lines:
+                    product = Product.objects.select_for_update().get(id=line["product_id"], branch_id=job.branch_id)
+                    warehouse = Warehouse.objects.get(id=line["warehouse_id"], branch_id=job.branch_id)
+                    incoming_qty = Decimal(line["effective_quantity"])
+                    unit_cost = Decimal(line["unit_cost"])
+
+                    current_stock_qty = get_stock_balance(job.branch_id, warehouse.id, product.id)
+                    StockMove.objects.create(
+                        branch_id=job.branch_id,
+                        warehouse=warehouse,
+                        product=product,
+                        quantity=incoming_qty,
+                        unit_cost=unit_cost,
+                        reason=StockMove.Reason.PURCHASE,
+                        source_ref_type="purchase_import_job",
+                        source_ref_id=job.id,
+                        import_job=job,
+                        event_id=uuid.uuid4(),
+                        device_id=getattr(request.user, "device_id", None),
+                    )
+                    update_product_cost(
+                        product,
+                        incoming_qty=incoming_qty,
+                        incoming_unit_cost=unit_cost,
+                        current_stock_qty=current_stock_qty,
+                    )
+            job.state = PurchaseImportJob.State.APPLIED
+        else:
+            job.state = PurchaseImportJob.State.REVIEW
+
+        update_fields = ["row_actions", "draft_receipt", "apply_summary", "state", "updated_at"]
+        if supplier_invoice_reference:
+            update_fields.append("supplier_invoice_reference")
+        job.save(update_fields=update_fields)
         return Response(PurchaseImportJobSerializer(job, context=self.get_serializer_context()).data)
     @staticmethod
     def _normalize_text(value):

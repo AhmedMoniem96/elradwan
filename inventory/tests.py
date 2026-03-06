@@ -740,3 +740,96 @@ class PurchaseImportMatchingTests(TestCase):
                 product=first,
             ).exists()
         )
+
+    def test_apply_builds_draft_purchase_receipt_without_posting(self):
+        product = Product.objects.create(branch=self.branch, name="Widget", sku="W-1", price=Decimal("10.00"))
+        warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+
+        payload = self._upload_csv("name,sku,quantity,price\nWidget,W-1,2,4.5\n")
+        job_id = payload["id"]
+
+        response = self.client.post(
+            f"/api/v1/purchase-import-jobs/{job_id}/apply/",
+            {
+                "row_actions": {
+                    "1": {
+                        "action": "match_existing",
+                        "product_id": str(product.id),
+                        "warehouse_id": str(warehouse.id),
+                    }
+                },
+                "supplier_invoice_reference": "INV-1001",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["state"], PurchaseImportJob.State.REVIEW)
+        self.assertEqual(body["supplier_invoice_reference"], "INV-1001")
+        self.assertEqual(body["draft_receipt"]["type"], "PurchaseReceipt")
+        self.assertEqual(len(body["draft_receipt"]["lines"]), 1)
+        self.assertEqual(StockMove.objects.filter(import_job_id=job_id).count(), 0)
+
+
+    def test_confirm_posts_stockmove_and_links_to_job(self):
+        product = Product.objects.create(branch=self.branch, name="Posted", sku="P-1", price=Decimal("10.00"), cost=Decimal("1.00"))
+        warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+
+        payload = self._upload_csv("name,sku,quantity,price\nPosted,P-1,2,4.5\n")
+        job_id = payload["id"]
+
+        response = self.client.post(
+            f"/api/v1/purchase-import-jobs/{job_id}/apply/",
+            {
+                "confirm": True,
+                "supplier_invoice_reference": "INV-CONFIRM",
+                "row_actions": {
+                    "1": {"action": "match_existing", "product_id": str(product.id), "warehouse_id": str(warehouse.id)}
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["state"], PurchaseImportJob.State.APPLIED)
+        self.assertEqual(body["supplier_invoice_reference"], "INV-CONFIRM")
+        move = StockMove.objects.get(import_job_id=job_id)
+        self.assertEqual(move.quantity, Decimal("2.00"))
+        self.assertEqual(move.reason, StockMove.Reason.PURCHASE)
+    def test_confirm_posts_stockmove_and_rolls_back_on_midway_failure(self):
+        first = Product.objects.create(branch=self.branch, name="First", sku="F-1", price=Decimal("10.00"))
+        second = Product.objects.create(branch=self.branch, name="Second", sku="S-1", price=Decimal("10.00"))
+        warehouse = Warehouse.objects.create(branch=self.branch, name="Main", is_primary=True)
+
+        payload = self._upload_csv("name,sku,quantity,price\nFirst,F-1,2,4.5\nSecond,S-1,3,5.0\n")
+        job_id = payload["id"]
+
+        from unittest.mock import patch
+        from inventory import views as inventory_views
+
+        original_update = inventory_views.update_product_cost
+        calls = {"count": 0}
+
+        def flaky(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise RuntimeError("boom")
+            return original_update(*args, **kwargs)
+
+        with patch("inventory.views.update_product_cost", side_effect=flaky):
+            response = self.client.post(
+                f"/api/v1/purchase-import-jobs/{job_id}/apply/",
+                {
+                    "confirm": True,
+                    "supplier_invoice_reference": "INV-ROLLBACK",
+                    "row_actions": {
+                        "1": {"action": "match_existing", "product_id": str(first.id), "warehouse_id": str(warehouse.id)},
+                        "2": {"action": "match_existing", "product_id": str(second.id), "warehouse_id": str(warehouse.id)},
+                    },
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(StockMove.objects.filter(import_job_id=job_id).count(), 0)

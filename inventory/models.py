@@ -165,6 +165,7 @@ class StockMove(models.Model):
     reason = models.CharField(max_length=32, choices=Reason.choices)
     source_ref_type = models.CharField(max_length=64, null=True, blank=True)
     source_ref_id = models.UUIDField(null=True, blank=True)
+    import_job = models.ForeignKey("PurchaseImportJob", on_delete=models.SET_NULL, null=True, blank=True, related_name="stock_moves")
     event_id = models.UUIDField()
     device = models.ForeignKey(Device, on_delete=models.PROTECT, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -174,6 +175,7 @@ class StockMove(models.Model):
             models.Index(fields=["warehouse", "product", "created_at"]),
             models.Index(fields=["branch", "created_at"]),
             models.Index(fields=["source_ref_id", "source_ref_type"]),
+            models.Index(fields=["import_job", "created_at"]),
         ]
         constraints = [
             models.UniqueConstraint(fields=["event_id", "device"], name="uniq_stockmove_event_device"),
@@ -421,8 +423,10 @@ class PurchaseImportJob(models.Model):
     column_mapping = models.JSONField(default=dict, blank=True)
     format_signature = models.CharField(max_length=128, blank=True, default="")
     parsed_rows = models.JSONField(default=list, blank=True)
+    draft_receipt = models.JSONField(default=dict, blank=True)
     row_actions = models.JSONField(default=dict, blank=True)
     apply_summary = models.JSONField(default=dict, blank=True)
+    supplier_invoice_reference = models.CharField(max_length=128, blank=True, default="")
     error_message = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
