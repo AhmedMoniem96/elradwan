@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from inventory.views import (
     AdminCategoryViewSet,
+    AdminProductBundleViewSet,
     AdminProductViewSet,
     AdminPurchaseOrderViewSet,
     AdminStockTransferViewSet,
@@ -12,6 +13,7 @@ from inventory.views import (
     AlertMarkReadView,
     CategoryViewSet,
     InventoryAlertViewSet,
+    ProductBundleViewSet,
     ProductViewSet,
     PurchaseOrderViewSet,
     PurchaseReceiveHistoryView,
@@ -31,6 +33,7 @@ from inventory.views import (
 router = DefaultRouter()
 router.register(r"categories", CategoryViewSet, basename="category")
 router.register(r"products", ProductViewSet, basename="product")
+router.register(r"product-bundles", ProductBundleViewSet, basename="product-bundle")
 router.register(r"warehouses", WarehouseViewSet, basename="warehouse")
 router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
@@ -38,6 +41,7 @@ router.register(r"stock-transfers", StockTransferViewSet, basename="stock-transf
 router.register(r"alerts", InventoryAlertViewSet, basename="inventory-alert")
 router.register(r"admin/categories", AdminCategoryViewSet, basename="admin-category")
 router.register(r"admin/products", AdminProductViewSet, basename="admin-product")
+router.register(r"admin/product-bundles", AdminProductBundleViewSet, basename="admin-product-bundle")
 router.register(r"admin/warehouses", AdminWarehouseViewSet, basename="admin-warehouse")
 router.register(r"admin/suppliers", AdminSupplierViewSet, basename="admin-supplier")
 router.register(r"admin/supplier-contacts", AdminSupplierContactViewSet, basename="admin-supplier-contact")

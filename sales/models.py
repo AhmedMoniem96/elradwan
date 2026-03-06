@@ -3,7 +3,7 @@ import uuid
 from django.db import models
 
 from core.models import Branch, Device, User
-from inventory.models import Product
+from inventory.models import Product, ProductBundle
 
 
 class Customer(models.Model):
@@ -77,6 +77,8 @@ class InvoiceLine(models.Model):
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default=0)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
+    product_bundle = models.ForeignKey(ProductBundle, on_delete=models.PROTECT, null=True, blank=True)
+    margin_warning = models.BooleanField(default=False)
 
     class Meta:
         indexes = [

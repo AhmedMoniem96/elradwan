@@ -9,6 +9,8 @@ from inventory.models import (
     Category,
     InventoryAlert,
     Product,
+    ProductBundle,
+    ProductBundleLine,
     ProductUnit,
     PurchaseOrder,
     PurchaseOrderLine,
@@ -172,6 +174,74 @@ class ProductSerializer(serializers.ModelSerializer):
         if units_payload is not None:
             self._sync_units(product, units_payload)
         return product
+
+
+class ProductBundleLineSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
+
+    class Meta:
+        model = ProductBundleLine
+        fields = ["id", "component_product", "quantity", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ProductBundleSerializer(serializers.ModelSerializer):
+    lines = ProductBundleLineSerializer(many=True)
+
+    class Meta:
+        model = ProductBundle
+        fields = [
+            "id",
+            "branch",
+            "code",
+            "name",
+            "parent_product",
+            "standalone_sku",
+            "custom_price",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "lines",
+        ]
+        read_only_fields = ["id", "branch", "created_at", "updated_at"]
+
+    def _sync_lines(self, bundle, lines_payload):
+        existing_by_id = {str(line.id): line for line in bundle.lines.all()}
+        keep_ids = set()
+
+        for line_payload in lines_payload:
+            line_id = line_payload.get("id")
+            if line_id and str(line_id) in existing_by_id:
+                line = existing_by_id[str(line_id)]
+                line.component_product = line_payload.get("component_product", line.component_product)
+                line.quantity = line_payload.get("quantity", line.quantity)
+                line.save()
+                keep_ids.add(str(line.id))
+                continue
+
+            created = ProductBundleLine.objects.create(
+                bundle=bundle,
+                component_product=line_payload["component_product"],
+                quantity=line_payload["quantity"],
+            )
+            keep_ids.add(str(created.id))
+
+        bundle.lines.exclude(id__in=keep_ids).delete()
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines = validated_data.pop("lines", [])
+        bundle = super().create(validated_data)
+        self._sync_lines(bundle, lines)
+        return bundle
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+        bundle = super().update(instance, validated_data)
+        if lines is not None:
+            self._sync_lines(bundle, lines)
+        return bundle
 
 
 class WarehouseSerializer(serializers.ModelSerializer):

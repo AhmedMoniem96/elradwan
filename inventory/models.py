@@ -87,6 +87,51 @@ class ProductUnit(models.Model):
         ]
 
 
+class ProductBundle(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    code = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    parent_product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="bundles", null=True, blank=True)
+    standalone_sku = models.CharField(max_length=64, null=True, blank=True)
+    custom_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["branch", "code"], name="uniq_bundle_branch_code"),
+            models.UniqueConstraint(
+                fields=["branch", "standalone_sku"],
+                condition=models.Q(standalone_sku__isnull=False) & ~models.Q(standalone_sku=""),
+                name="uniq_bundle_branch_standalone_sku_non_empty",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "is_active"]),
+            models.Index(fields=["branch", "parent_product"]),
+        ]
+
+
+class ProductBundleLine(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bundle = models.ForeignKey(ProductBundle, on_delete=models.CASCADE, related_name="lines")
+    component_product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="bundle_components")
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["bundle", "component_product"], name="uniq_bundle_component_product"),
+        ]
+        indexes = [
+            models.Index(fields=["bundle"]),
+            models.Index(fields=["component_product"]),
+        ]
+
+
 class Warehouse(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
