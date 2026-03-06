@@ -12,6 +12,7 @@ from inventory.models import (
     ProductBundle,
     ProductBundleLine,
     ProductUnit,
+    PurchaseImportJob,
     PurchaseOrder,
     PurchaseOrderLine,
     StockMove,
@@ -541,3 +542,52 @@ class InventoryAlertSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "branch", "resolved_at", "created_at", "updated_at"]
+
+
+class PurchaseImportJobSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseImportJob
+        fields = [
+            "id",
+            "branch",
+            "uploaded_by",
+            "source_file",
+            "source_filename",
+            "file_type",
+            "state",
+            "parse_confidence",
+            "detected_columns",
+            "column_mapping",
+            "parsed_rows",
+            "row_actions",
+            "apply_summary",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "branch",
+            "uploaded_by",
+            "source_filename",
+            "file_type",
+            "state",
+            "parse_confidence",
+            "detected_columns",
+            "parsed_rows",
+            "apply_summary",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class PurchaseImportJobCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseImportJob
+        fields = ["id", "source_file", "column_mapping"]
+        read_only_fields = ["id"]
+
+
+class PurchaseImportJobApplySerializer(serializers.Serializer):
+    row_actions = serializers.DictField(child=serializers.ChoiceField(choices=["create_product", "match_sku", "skip"]))

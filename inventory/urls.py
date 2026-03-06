@@ -15,6 +15,7 @@ from inventory.views import (
     InventoryAlertViewSet,
     ProductBundleViewSet,
     ProductViewSet,
+    PurchaseImportJobViewSet,
     PurchaseOrderViewSet,
     PurchaseReceiveHistoryView,
     ReorderSuggestionCreatePOView,
@@ -38,6 +39,7 @@ router.register(r"warehouses", WarehouseViewSet, basename="warehouse")
 router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"purchase-orders", PurchaseOrderViewSet, basename="purchase-order")
 router.register(r"stock-transfers", StockTransferViewSet, basename="stock-transfer")
+router.register(r"purchase-import-jobs", PurchaseImportJobViewSet, basename="purchase-import-job")
 router.register(r"alerts", InventoryAlertViewSet, basename="inventory-alert")
 router.register(r"admin/categories", AdminCategoryViewSet, basename="admin-category")
 router.register(r"admin/products", AdminProductViewSet, basename="admin-product")

@@ -32,6 +32,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import WarehouseIcon from '@mui/icons-material/Warehouse';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import TranslateIcon from '@mui/icons-material/Translate';
@@ -285,6 +286,14 @@ export default function Layout() {
             selected: location.pathname.startsWith('/suppliers'),
             visible: can('inventory.view'),
             onClick: () => navigate('/suppliers'),
+          },
+          {
+            key: 'purchase-imports',
+            icon: <FileUploadIcon />,
+            label: 'Purchase Imports',
+            selected: location.pathname.startsWith('/purchase-imports'),
+            visible: can('inventory.view'),
+            onClick: () => navigate('/purchase-imports'),
           },
           {
             key: 'sync',

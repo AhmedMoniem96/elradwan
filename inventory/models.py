@@ -394,3 +394,39 @@ class DemandForecast(models.Model):
             models.Index(fields=["branch", "warehouse", "product", "snapshot_at"]),
             models.Index(fields=["branch", "projected_stockout_date"]),
         ]
+
+
+class PurchaseImportJob(models.Model):
+    class FileType(models.TextChoices):
+        CSV = "csv", "CSV"
+        PDF = "pdf", "PDF"
+
+    class State(models.TextChoices):
+        UPLOADED = "uploaded", "Uploaded"
+        PARSED = "parsed", "Parsed"
+        REVIEW = "review", "Review"
+        APPLIED = "applied", "Applied"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    uploaded_by = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True)
+    source_file = models.FileField(upload_to="purchase-imports/")
+    source_filename = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=8, choices=FileType.choices)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.UPLOADED)
+    parse_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    detected_columns = models.JSONField(default=list, blank=True)
+    column_mapping = models.JSONField(default=dict, blank=True)
+    parsed_rows = models.JSONField(default=list, blank=True)
+    row_actions = models.JSONField(default=dict, blank=True)
+    apply_summary = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["branch", "state", "created_at"]),
+            models.Index(fields=["branch", "file_type", "created_at"]),
+        ]

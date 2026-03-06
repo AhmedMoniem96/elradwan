@@ -1,5 +1,7 @@
+import csv
 import uuid
 from datetime import datetime, time, timedelta
+from io import StringIO
 
 from decimal import Decimal
 
@@ -25,6 +27,7 @@ from inventory.models import (
     InventoryAlert,
     Product,
     ProductBundle,
+    PurchaseImportJob,
     PurchaseOrder,
     StockMove,
     StockTransfer,
@@ -40,6 +43,9 @@ from inventory.serializers import (
     InventoryAlertSerializer,
     ProductBundleSerializer,
     ProductSerializer,
+    PurchaseImportJobApplySerializer,
+    PurchaseImportJobCreateSerializer,
+    PurchaseImportJobSerializer,
     PurchaseOrderSerializer,
     StockTransferSerializer,
     SupplierContactSerializer,
@@ -714,3 +720,140 @@ class ReorderSuggestionExportView(APIView):
         response = HttpResponse(csv_data, content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="reorder-suggestions.csv"'
         return response
+
+
+class PurchaseImportJobViewSet(viewsets.ModelViewSet):
+    queryset = PurchaseImportJob.objects.order_by("-created_at", "id")
+    serializer_class = PurchaseImportJobSerializer
+    permission_classes = [IsAuthenticated, RoleCapabilityPermission]
+    permission_action_map = {
+        "list": "inventory.view",
+        "retrieve": "inventory.view",
+        "create": "inventory.view",
+        "update": "inventory.view",
+        "partial_update": "inventory.view",
+        "apply": "inventory.view",
+    }
+
+    def get_queryset(self):
+        return scoped_queryset_for_user(super().get_queryset(), self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PurchaseImportJobCreateSerializer
+        if self.action == "apply":
+            return PurchaseImportJobApplySerializer
+        return PurchaseImportJobSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        source_file = serializer.validated_data["source_file"]
+        filename = source_file.name or "upload"
+        extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if extension not in (PurchaseImportJob.FileType.CSV, PurchaseImportJob.FileType.PDF):
+            raise ValidationError({"source_file": "Only CSV or PDF files are supported."})
+
+        job = PurchaseImportJob.objects.create(
+            branch_id=request.user.branch_id,
+            uploaded_by_id=getattr(request.user, "device_id", None),
+            source_file=source_file,
+            source_filename=filename,
+            file_type=extension,
+            column_mapping=serializer.validated_data.get("column_mapping") or {},
+        )
+
+        try:
+            self._parse_job(job)
+        except Exception as exc:
+            job.state = PurchaseImportJob.State.FAILED
+            job.error_message = str(exc)
+            job.save(update_fields=["state", "error_message", "updated_at"])
+
+        output = PurchaseImportJobSerializer(job, context=self.get_serializer_context())
+        headers = self.get_success_headers(output.data)
+        return Response(output.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def _parse_job(self, job):
+        if job.file_type == PurchaseImportJob.FileType.CSV:
+            content = job.source_file.read().decode("utf-8", errors="ignore")
+            reader = csv.DictReader(StringIO(content))
+            detected_columns = reader.fieldnames or []
+            parsed_rows = []
+            for index, row in enumerate(reader):
+                parsed_rows.append({
+                    "row_index": index + 1,
+                    "sku": (row.get("sku") or row.get("SKU") or "").strip(),
+                    "name": (row.get("name") or row.get("product_name") or "").strip(),
+                    "quantity": row.get("quantity") or row.get("qty") or "",
+                    "price": row.get("price") or row.get("unit_price") or "",
+                    "raw": row,
+                })
+            next_state = PurchaseImportJob.State.REVIEW if parsed_rows else PurchaseImportJob.State.PARSED
+            job.detected_columns = detected_columns
+            job.parsed_rows = parsed_rows
+            job.parse_confidence = Decimal("100.00")
+            job.state = next_state
+            job.error_message = ""
+            job.save(update_fields=["detected_columns", "parsed_rows", "parse_confidence", "state", "error_message", "updated_at"])
+            return
+
+        content = job.source_file.read().decode("utf-8", errors="ignore")
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        parsed_rows = []
+        for index, line in enumerate(lines[:200]):
+            parts = [part.strip() for part in line.split(",") if part.strip()]
+            parsed_rows.append({
+                "row_index": index + 1,
+                "name": parts[0] if parts else line[:80],
+                "sku": parts[1] if len(parts) > 1 else "",
+                "quantity": parts[2] if len(parts) > 2 else "",
+                "price": parts[3] if len(parts) > 3 else "",
+                "raw_text": line,
+            })
+
+        job.detected_columns = ["name", "sku", "quantity", "price"]
+        job.parsed_rows = parsed_rows
+        job.parse_confidence = Decimal("72.50")
+        job.state = PurchaseImportJob.State.REVIEW if parsed_rows else PurchaseImportJob.State.PARSED
+        job.error_message = ""
+        job.save(update_fields=["detected_columns", "parsed_rows", "parse_confidence", "state", "error_message", "updated_at"])
+
+    @action(detail=True, methods=["post"], url_path="apply")
+    def apply(self, request, pk=None):
+        job = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        row_actions = serializer.validated_data.get("row_actions") or {}
+
+        created = 0
+        matched = 0
+        skipped = 0
+
+        rows_by_index = {str(row.get("row_index")): row for row in job.parsed_rows or []}
+        for row_key, action_name in row_actions.items():
+            row = rows_by_index.get(str(row_key), {})
+            if action_name == "create_product":
+                name = row.get("name") or f"Imported Product {row_key}"
+                sku = (row.get("sku") or "").strip() or None
+                if sku and Product.objects.filter(branch_id=job.branch_id, sku=sku).exists():
+                    matched += 1
+                    continue
+                Product.objects.create(
+                    branch_id=job.branch_id,
+                    name=name[:255],
+                    sku=sku,
+                    price=Decimal(str(row.get("price") or "0") or "0"),
+                )
+                created += 1
+            elif action_name == "match_sku":
+                matched += 1
+            else:
+                skipped += 1
+
+        job.row_actions = row_actions
+        job.apply_summary = {"created_products": created, "matched_existing": matched, "skipped": skipped}
+        job.state = PurchaseImportJob.State.APPLIED
+        job.save(update_fields=["row_actions", "apply_summary", "state", "updated_at"])
+        return Response(PurchaseImportJobSerializer(job, context=self.get_serializer_context()).data)
