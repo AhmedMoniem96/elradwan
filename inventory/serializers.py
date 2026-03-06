@@ -561,8 +561,10 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "column_mapping",
             "format_signature",
             "parsed_rows",
+            "draft_receipt",
             "row_actions",
             "apply_summary",
+            "supplier_invoice_reference",
             "error_message",
             "created_at",
             "updated_at",
@@ -579,7 +581,9 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "detected_columns",
             "format_signature",
             "parsed_rows",
+            "draft_receipt",
             "apply_summary",
+            "supplier_invoice_reference",
             "error_message",
             "created_at",
             "updated_at",
@@ -595,3 +599,5 @@ class PurchaseImportJobCreateSerializer(serializers.ModelSerializer):
 
 class PurchaseImportJobApplySerializer(serializers.Serializer):
     row_actions = serializers.JSONField(required=False)
+    confirm = serializers.BooleanField(required=False, default=False)
+    supplier_invoice_reference = serializers.CharField(required=False, allow_blank=True, max_length=128)
