@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -9,7 +10,7 @@ from rest_framework.test import APIClient
 
 from core.models import Branch
 from sync.models import SyncOutbox
-from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseOrder, StockMove, StockTransfer, Supplier, Warehouse
+from inventory.models import DemandForecast, InventoryAlert, Product, PurchaseImportJob, PurchaseOrder, StockMove, StockTransfer, Supplier, SupplierImportResolvedMapping, Warehouse
 
 
 class BranchScopedInventoryTests(TestCase):
@@ -654,3 +655,88 @@ class ForecastingApiTests(TestCase):
 
     def test_refresh_forecasts_command_runs(self):
         call_command("refresh_forecasts", branch_id=str(self.branch.id), lookback_days=30)
+
+
+class PurchaseImportMatchingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        self.branch = Branch.objects.create(code="IMP", name="Imports")
+        self.admin = self.user_model.objects.create_user(
+            username="import-admin",
+            password="pass1234",
+            is_staff=True,
+            role="admin",
+            branch=self.branch,
+        )
+        self.supplier = Supplier.objects.create(branch=self.branch, name="Acme", code="ACME")
+
+        self.client.force_authenticate(user=self.admin)
+
+    def _upload_csv(self, text):
+        file = SimpleUploadedFile("supplier.csv", text.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(
+            "/api/v1/purchase-import-jobs/",
+            {"source_file": file, "supplier": str(self.supplier.id)},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()
+
+    def test_matching_priority_prefers_barcode(self):
+        barcode_product = Product.objects.create(
+            branch=self.branch,
+            name="Barcode Winner",
+            sku="INT-111",
+            barcode="BAR-999",
+            price=Decimal("12.00"),
+        )
+        Product.objects.create(
+            branch=self.branch,
+            name="Name Match",
+            sku="INT-222",
+            price=Decimal("15.00"),
+        )
+
+        payload = self._upload_csv("name,barcode,sku,quantity,price\nWidget,BAR-999,INT-222,2,9.5\n")
+
+        self.assertEqual(payload["state"], PurchaseImportJob.State.REVIEW)
+        self.assertEqual(len(payload["parsed_rows"]), 1)
+        row = payload["parsed_rows"][0]
+        self.assertEqual(row["match_strategy"], "barcode")
+        self.assertEqual(row["suggested_product_id"], str(barcode_product.id))
+        self.assertFalse(row["low_confidence"])
+
+    def test_multiple_matches_require_selection_and_apply_saves_mapping(self):
+        first = Product.objects.create(branch=self.branch, name="Shared Name", sku="S-1", price=Decimal("10.00"))
+        Product.objects.create(branch=self.branch, name="Shared Name", sku="S-2", price=Decimal("11.00"))
+
+        payload = self._upload_csv("name,supplier_sku,quantity,price\nShared Name,SUP-42,1,4\n")
+        job_id = payload["id"]
+        row = payload["parsed_rows"][0]
+        self.assertTrue(row["requires_selection"])
+
+        invalid_apply = self.client.post(
+            f"/api/v1/purchase-import-jobs/{job_id}/apply/",
+            {"row_actions": {"1": {"action": "match_existing"}}},
+            format="json",
+        )
+        self.assertEqual(invalid_apply.status_code, 400)
+
+        valid_apply = self.client.post(
+            f"/api/v1/purchase-import-jobs/{job_id}/apply/",
+            {"row_actions": {"1": {"action": "match_existing", "product_id": str(first.id)}}},
+            format="json",
+        )
+        self.assertEqual(valid_apply.status_code, 200)
+
+        self.assertTrue(
+            SupplierImportResolvedMapping.objects.filter(
+                branch=self.branch,
+                supplier=self.supplier,
+                key_type=SupplierImportResolvedMapping.MatchKeyType.SUPPLIER_SKU,
+                key_value="SUP-42",
+                product=first,
+            ).exists()
+        )

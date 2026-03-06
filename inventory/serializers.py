@@ -551,6 +551,7 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "id",
             "branch",
             "uploaded_by",
+            "supplier",
             "source_file",
             "source_filename",
             "file_type",
@@ -558,6 +559,7 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "parse_confidence",
             "detected_columns",
             "column_mapping",
+            "format_signature",
             "parsed_rows",
             "row_actions",
             "apply_summary",
@@ -569,11 +571,13 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
             "id",
             "branch",
             "uploaded_by",
+            "supplier",
             "source_filename",
             "file_type",
             "state",
             "parse_confidence",
             "detected_columns",
+            "format_signature",
             "parsed_rows",
             "apply_summary",
             "error_message",
@@ -585,9 +589,9 @@ class PurchaseImportJobSerializer(serializers.ModelSerializer):
 class PurchaseImportJobCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseImportJob
-        fields = ["id", "source_file", "column_mapping"]
+        fields = ["id", "source_file", "supplier", "column_mapping"]
         read_only_fields = ["id"]
 
 
 class PurchaseImportJobApplySerializer(serializers.Serializer):
-    row_actions = serializers.DictField(child=serializers.ChoiceField(choices=["create_product", "match_sku", "skip"]))
+    row_actions = serializers.JSONField(required=False)
