@@ -23,6 +23,7 @@ export const ROLE_CAPABILITY_MATRIX = {
     'stock.transfer.complete',
     'supplier.payment.create',
     'supplier.payment.approve',
+    'sales.pricing_mode.override',
   ],
   admin: [
     'sales.dashboard.view',
@@ -42,6 +43,7 @@ export const ROLE_CAPABILITY_MATRIX = {
     'stock.transfer.complete',
     'supplier.payment.create',
     'supplier.payment.approve',
+    'sales.pricing_mode.override',
   ],
 };
 

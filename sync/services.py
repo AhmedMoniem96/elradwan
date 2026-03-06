@@ -17,6 +17,7 @@ ALLOWED_REJECT_CODES = {
 
 from inventory.models import Product, StockMove, StockTransfer, StockTransferLine, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment
+from common.permissions import user_has_capability
 from common.utils import emit_outbox
 
 
@@ -144,6 +145,9 @@ def _handle_customer_upsert(sync_event):
         "name": payload["name"],
         "phone": payload.get("phone"),
         "email": payload.get("email"),
+        "pricing_mode": payload.get("pricing_mode") or Customer.PricingMode.UNIT,
+        "allow_unit_override": bool(payload.get("allow_unit_override", False)),
+        "allow_package_override": bool(payload.get("allow_package_override", False)),
     }
     customer, _ = Customer.objects.update_or_create(id=customer_id, defaults=defaults)
 
@@ -157,6 +161,9 @@ def _handle_customer_upsert(sync_event):
             "name": customer.name,
             "phone": customer.phone,
             "email": customer.email,
+            "pricing_mode": customer.pricing_mode,
+            "allow_unit_override": customer.allow_unit_override,
+            "allow_package_override": customer.allow_package_override,
         },
     )
 
@@ -449,6 +456,9 @@ def _handle_invoice_create(sync_event):
                 "name": customer_payload.get("name") or "Unnamed Customer",
                 "phone": customer_payload.get("phone"),
                 "email": customer_payload.get("email"),
+                "pricing_mode": customer_payload.get("pricing_mode") or Customer.PricingMode.UNIT,
+                "allow_unit_override": bool(customer_payload.get("allow_unit_override", False)),
+                "allow_package_override": bool(customer_payload.get("allow_package_override", False)),
             },
         )
 
@@ -497,11 +507,20 @@ def _handle_invoice_create(sync_event):
         unit_price = Decimal(str(line["unit_price"]))
         discount = Decimal(str(line.get("discount", "0")))
         tax_rate = Decimal(str(line.get("tax_rate", "0")))
+        quantity_mode = line.get("quantity_mode") or (customer.pricing_mode if customer else Customer.PricingMode.UNIT)
+        if (
+            customer
+            and quantity_mode == Customer.PricingMode.UNIT
+            and customer.pricing_mode == Customer.PricingMode.PACKAGE
+            and (not customer.allow_unit_override or not user_has_capability(sync_event.user, "sales.pricing_mode.override"))
+        ):
+            raise EventRejectError(REJECT_CODE_FORBIDDEN, {"lines.quantity_mode": "Customer pricing mode requires package pricing."})
         line_total = (quantity * unit_price) - discount
 
         InvoiceLine.objects.create(
             invoice=invoice,
             product=product,
+            quantity_mode=quantity_mode,
             quantity=quantity,
             unit_price=unit_price,
             discount=discount,

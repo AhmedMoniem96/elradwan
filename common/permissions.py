@@ -24,6 +24,7 @@ ROLE_CAPABILITY_MATRIX = {
     "stock.transfer.complete": {User.Role.SUPERVISOR, User.Role.ADMIN},
     "supplier.payment.create": {User.Role.SUPERVISOR, User.Role.ADMIN},
     "supplier.payment.approve": {User.Role.SUPERVISOR, User.Role.ADMIN},
+    "sales.pricing_mode.override": {User.Role.SUPERVISOR, User.Role.ADMIN},
 }
 
 

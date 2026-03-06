@@ -6,6 +6,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
 
+from common.permissions import user_has_capability
 from inventory.models import StockMove, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, Refund, Return, ReturnLine
 
@@ -100,7 +101,18 @@ class RecentActivityItemSerializer(serializers.Serializer):
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
-        fields = ["id", "branch", "name", "phone", "email", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "branch",
+            "name",
+            "phone",
+            "email",
+            "pricing_mode",
+            "allow_unit_override",
+            "allow_package_override",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "branch", "created_at", "updated_at"]
 
 
@@ -111,6 +123,7 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             "id",
             "invoice",
             "product",
+            "quantity_mode",
             "quantity",
             "unit_price",
             "discount",
@@ -432,6 +445,7 @@ class PosInvoiceLineInputSerializer(serializers.Serializer):
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
     discount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False, default=Decimal("0.00"))
     tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
+    quantity_mode = serializers.ChoiceField(choices=Customer.PricingMode.choices, required=False)
 
 
 class PosInvoiceCreateSerializer(serializers.Serializer):
@@ -469,6 +483,9 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
             if customer is None:
                 raise serializers.ValidationError({"customer_id": "Customer must belong to your branch."})
 
+        pricing_mode = customer.pricing_mode if customer else Customer.PricingMode.UNIT
+        can_override_pricing_mode = bool(customer and customer.allow_unit_override and user_has_capability(user, "sales.pricing_mode.override"))
+
         lines = attrs.get("lines") or []
         if not lines:
             raise serializers.ValidationError({"lines": "At least one line item is required."})
@@ -489,6 +506,17 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
             unit_price = _to_money(line["unit_price"])
             discount = _to_money(line.get("discount") or Decimal("0.00"))
             tax_rate = Decimal(str(line.get("tax_rate") or Decimal("0.0000")))
+            line_quantity_mode = line.get("quantity_mode") or pricing_mode
+
+            if customer and line_quantity_mode != pricing_mode:
+                if line_quantity_mode == Customer.PricingMode.UNIT and not can_override_pricing_mode:
+                    raise serializers.ValidationError(
+                        {"lines": {idx: {"quantity_mode": "Customer pricing mode does not allow unit pricing for this user."}}}
+                    )
+                if line_quantity_mode == Customer.PricingMode.PACKAGE and not customer.allow_package_override:
+                    raise serializers.ValidationError(
+                        {"lines": {idx: {"quantity_mode": "Customer pricing mode does not allow package override."}}}
+                    )
 
             line_subtotal = _to_money((quantity * unit_price) - discount)
             if line_subtotal < 0:
@@ -505,6 +533,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                     "discount": discount,
                     "tax_rate": tax_rate,
                     "line_total": line_subtotal,
+                    "quantity_mode": line_quantity_mode,
                 }
             )
 
@@ -519,6 +548,8 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         attrs["_subtotal"] = _to_money(subtotal)
         attrs["_tax_total"] = _to_money(tax_total)
         attrs["_discount_total"] = _to_money(computed_total - requested_total)
+        attrs["_pricing_mode"] = pricing_mode
+        attrs["_can_override_pricing_mode"] = can_override_pricing_mode
         return attrs
 
     @transaction.atomic
