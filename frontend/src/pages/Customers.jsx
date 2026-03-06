@@ -2,19 +2,17 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
-  Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
-  Typography,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
   IconButton,
+  Stack,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -27,6 +25,7 @@ import EmptyState from '../components/EmptyState';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
 import { DataTableCard, PageHeader, PageShell } from '../components/PageLayout';
+import { SharedFormSection, SharedTable, TableActionCell } from '../components/ui/patterns';
 import { normalizeCollectionResponse } from '../utils/api';
 
 export default function Customers() {
@@ -53,8 +52,8 @@ export default function Customers() {
       const response = await axios.get('/api/v1/customers/');
       setCustomers(normalizeCollectionResponse(response.data));
       setError('');
-    } catch (error) {
-      console.error('Error fetching customers:', error);
+    } catch (fetchError) {
+      console.error('Error fetching customers:', fetchError);
       setError('مش قادرين نحمل العملاء دلوقتي. جرّب تاني.');
     } finally {
       setIsLoading(false);
@@ -93,8 +92,8 @@ export default function Customers() {
       await pullNow();
       await fetchCustomers();
       handleClose();
-    } catch (error) {
-      console.error('Error saving customer:', error);
+    } catch (saveError) {
+      console.error('Error saving customer:', saveError);
       handleClose();
     }
   };
@@ -111,8 +110,8 @@ export default function Customers() {
         await pushNow();
         await pullNow();
         await fetchCustomers();
-      } catch (error) {
-        console.error('Error deleting customer:', error);
+      } catch (deleteError) {
+        console.error('Error deleting customer:', deleteError);
       }
     }
   };
@@ -165,65 +164,66 @@ export default function Customers() {
           </Box>
         )}
         {!error && !isLoading && customers.length > 0 && (
-        <TableContainer>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('name')}</TableCell>
-              <TableCell>{t('phone')}</TableCell>
-              <TableCell>{t('email')}</TableCell>
-              <TableCell align="right">{t('actions')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {customers.map((customer) => (
-              <TableRow key={customer.id}>
-                <TableCell>{customer.name}</TableCell>
-                <TableCell>{customer.phone}</TableCell>
-                <TableCell>{customer.email}</TableCell>
-                <TableCell align="right">
-                  <IconButton onClick={() => handleOpen(customer)} color="primary">
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(customer.id)} color="error">
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
+          <SharedTable>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('name')}</TableCell>
+                <TableCell>{t('phone')}</TableCell>
+                <TableCell>{t('email')}</TableCell>
+                <TableCell align="right">{t('actions')}</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        </TableContainer>
+            </TableHead>
+            <TableBody>
+              {customers.map((customer) => (
+                <TableRow key={customer.id} hover>
+                  <TableCell>{customer.name}</TableCell>
+                  <TableCell>{customer.phone}</TableCell>
+                  <TableCell>{customer.email}</TableCell>
+                  <TableCell align="right">
+                    <TableActionCell sx={{ minWidth: 90 }}>
+                      <IconButton onClick={() => handleOpen(customer)} color="primary" size="small">
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(customer.id)} color="error" size="small">
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </TableActionCell>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </SharedTable>
         )}
       </DataTableCard>
 
-      <Dialog open={open} onClose={handleClose}>
+      <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
         <DialogTitle>{isEditing ? t('edit') : t('add_customer')}</DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('name')}
-            fullWidth
-            value={currentCustomer.name}
-            onChange={(e) => setCurrentCustomer({ ...currentCustomer, name: e.target.value })}
-          />
-          <TextField
-            margin="dense"
-            label={t('phone')}
-            fullWidth
-            value={currentCustomer.phone}
-            onChange={(e) => setCurrentCustomer({ ...currentCustomer, phone: e.target.value })}
-          />
-          <TextField
-            margin="dense"
-            label={t('email')}
-            fullWidth
-            value={currentCustomer.email}
-            onChange={(e) => setCurrentCustomer({ ...currentCustomer, email: e.target.value })}
-          />
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <SharedFormSection title={t('customers')}>
+              <TextField
+                autoFocus
+                label={t('name')}
+                fullWidth
+                value={currentCustomer.name}
+                onChange={(e) => setCurrentCustomer({ ...currentCustomer, name: e.target.value })}
+              />
+              <TextField
+                label={t('phone')}
+                fullWidth
+                value={currentCustomer.phone}
+                onChange={(e) => setCurrentCustomer({ ...currentCustomer, phone: e.target.value })}
+              />
+              <TextField
+                label={t('email')}
+                fullWidth
+                value={currentCustomer.email}
+                onChange={(e) => setCurrentCustomer({ ...currentCustomer, email: e.target.value })}
+              />
+            </SharedFormSection>
+          </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleClose}>{t('cancel')}</Button>
           <Button onClick={handleSave} variant="contained">
             {t('save')}

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
   Chip,
   Dialog,
@@ -9,24 +8,22 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
-  Paper,
   Snackbar,
   Stack,
   Switch,
-  Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
-  Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { PageHeader, PageShell, DataTableCard } from '../components/PageLayout';
+import { SharedFormSection, SharedTable, TableActionCell } from '../components/ui/patterns';
 import { formatFieldErrors, normalizeCollectionResponse, parseApiError } from '../utils/api';
 
 const initialForm = {
@@ -145,22 +142,24 @@ export default function Warehouses() {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">{t('warehouses')}</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          {t('warehouses_add_warehouse')}
-        </Button>
-      </Box>
+    <PageShell>
+      <PageHeader
+        title={t('warehouses')}
+        action={(
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+            {t('warehouses_add_warehouse')}
+          </Button>
+        )}
+      />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="error" onClose={() => setError('')}>
           {error}
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
+      <DataTableCard>
+        <SharedTable>
           <TableHead>
             <TableRow>
               <TableCell>{t('name')}</TableCell>
@@ -188,7 +187,7 @@ export default function Warehouses() {
                   />
                 </TableCell>
                 <TableCell align="right">
-                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                  <TableActionCell>
                     <Button
                       size="small"
                       variant="outlined"
@@ -207,7 +206,7 @@ export default function Warehouses() {
                     >
                       {deletingId === warehouse.id ? t('deleting') : t('delete')}
                     </Button>
-                  </Stack>
+                  </TableActionCell>
                 </TableCell>
               </TableRow>
             ))}
@@ -226,41 +225,45 @@ export default function Warehouses() {
               </TableRow>
             )}
           </TableBody>
-        </Table>
-      </TableContainer>
+        </SharedTable>
+      </DataTableCard>
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('name')}
-            value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-            fullWidth
-          />
-          <FormControlLabel
-            control={(
-              <Switch
-                checked={form.is_primary}
-                onChange={(e) => setForm((prev) => ({ ...prev, is_primary: e.target.checked }))}
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <SharedFormSection title={t('warehouses')}>
+              <TextField
+                autoFocus
+                label={t('name')}
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                fullWidth
               />
-            )}
-            label={t('warehouses_primary')}
-            sx={{ mt: 1 }}
-          />
-          <FormControlLabel
-            control={(
-              <Switch
-                checked={form.is_active}
-                onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+            </SharedFormSection>
+            <SharedFormSection title={t('status')} dense>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={form.is_primary}
+                    onChange={(e) => setForm((prev) => ({ ...prev, is_primary: e.target.checked }))}
+                  />
+                )}
+                label={t('warehouses_primary')}
               />
-            )}
-            label={t('active')}
-          />
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={form.is_active}
+                    onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+                  />
+                )}
+                label={t('active')}
+              />
+            </SharedFormSection>
+          </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseDialog}>{t('cancel')}</Button>
           <Button onClick={handleSubmit} disabled={saving} variant="contained">
             {saving ? t('saving') : t('save')}
@@ -278,6 +281,6 @@ export default function Warehouses() {
           {success}
         </Alert>
       </Snackbar>
-    </Box>
+    </PageShell>
   );
 }

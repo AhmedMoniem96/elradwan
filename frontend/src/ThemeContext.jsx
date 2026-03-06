@@ -94,6 +94,31 @@ export const ThemeContextProvider = ({ children }) => {
         },
         typography: {
           fontFamily: direction === 'rtl' ? 'Arial, sans-serif' : 'Roboto, sans-serif',
+          h4: {
+            fontSize: '1.75rem',
+            fontWeight: 700,
+            lineHeight: 1.25,
+            letterSpacing: '-0.01em',
+          },
+          h6: {
+            fontSize: '1.125rem',
+            fontWeight: 600,
+            lineHeight: 1.35,
+          },
+          body1: {
+            fontSize: '0.95rem',
+            lineHeight: 1.6,
+          },
+          body2: {
+            fontSize: '0.9rem',
+            lineHeight: 1.5,
+          },
+          caption: {
+            fontSize: '0.8rem',
+            fontWeight: 500,
+            lineHeight: 1.4,
+            letterSpacing: '0.01em',
+          },
           pageTitle: {
             fontSize: '1.75rem',
             fontWeight: 700,
@@ -251,10 +276,17 @@ export const ThemeContextProvider = ({ children }) => {
             styleOverrides: {
               root: {
                 borderRadius: 10,
+                marginBottom: 4,
                 paddingTop: tokens.spacing.control * 8,
                 paddingBottom: tokens.spacing.control * 8,
+                transition: 'background-color 140ms ease, border-color 140ms ease',
+                border: '1px solid transparent',
                 '&.Mui-selected': {
                   backgroundColor: isDark ? 'rgba(126, 169, 255, 0.2)' : 'rgba(30, 91, 184, 0.14)',
+                  borderColor: isDark ? 'rgba(126, 169, 255, 0.42)' : 'rgba(30, 91, 184, 0.28)',
+                },
+                '&:hover': {
+                  backgroundColor: isDark ? 'rgba(126, 169, 255, 0.14)' : 'rgba(30, 91, 184, 0.08)',
                 },
               },
             },
@@ -277,6 +309,7 @@ export const ThemeContextProvider = ({ children }) => {
               root: {
                 paddingTop: tokens.spacing.control * 8,
                 paddingBottom: tokens.spacing.control * 8,
+                borderBottom: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.18)' : 'rgba(52, 79, 132, 0.14)'}`,
               },
               head: {
                 fontWeight: 600,
@@ -284,6 +317,18 @@ export const ThemeContextProvider = ({ children }) => {
                 letterSpacing: '0.02em',
                 textTransform: 'uppercase',
                 color: isDark ? '#BFCBE5' : '#4A5B7D',
+                backgroundColor: isDark ? alpha('#0B1220', 0.7) : alpha('#F5F7FB', 0.92),
+                borderBottom: `1px solid ${isDark ? 'rgba(187, 201, 230, 0.28)' : 'rgba(52, 79, 132, 0.22)'}`,
+              },
+            },
+          },
+          MuiTableRow: {
+            styleOverrides: {
+              root: {
+                minHeight: 48,
+                '&:hover': {
+                  backgroundColor: isDark ? alpha('#7EA9FF', 0.06) : alpha('#1E5BB8', 0.04),
+                },
               },
             },
           },

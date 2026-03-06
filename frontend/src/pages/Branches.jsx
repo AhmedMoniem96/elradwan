@@ -1,24 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Paper,
   Snackbar,
   Stack,
-  Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TextField,
-  Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -26,6 +21,8 @@ import ToggleOnIcon from '@mui/icons-material/ToggleOn';
 import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
+import { PageHeader, PageShell, DataTableCard } from '../components/PageLayout';
+import { SharedFormSection, SharedTable, TableActionCell } from '../components/ui/patterns';
 import { formatFieldErrors, normalizeCollectionResponse, parseApiError } from '../utils/api';
 
 const initialForm = {
@@ -143,22 +140,24 @@ export default function Branches() {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">{t('branches')}</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
-          {t('branches_add_branch')}
-        </Button>
-      </Box>
+    <PageShell>
+      <PageHeader
+        title={t('branches')}
+        action={(
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+            {t('branches_add_branch')}
+          </Button>
+        )}
+      />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="error" onClose={() => setError('')}>
           {error}
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
+      <DataTableCard>
+        <SharedTable>
           <TableHead>
             <TableRow>
               <TableCell>{t('code')}</TableCell>
@@ -182,7 +181,7 @@ export default function Branches() {
                   />
                 </TableCell>
                 <TableCell align="right">
-                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                  <TableActionCell>
                     <Button
                       size="small"
                       variant="outlined"
@@ -200,7 +199,7 @@ export default function Branches() {
                     >
                       {branch.is_active ? t('deactivate') : t('reactivate')}
                     </Button>
-                  </Stack>
+                  </TableActionCell>
                 </TableCell>
               </TableRow>
             ))}
@@ -219,36 +218,37 @@ export default function Branches() {
               </TableRow>
             )}
           </TableBody>
-        </Table>
-      </TableContainer>
+        </SharedTable>
+      </DataTableCard>
 
       <Dialog open={dialogOpen} onClose={handleCloseDialog} fullWidth maxWidth="sm">
         <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('code')}
-            value={form.code}
-            onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
-            fullWidth
-          />
-          <TextField
-            margin="dense"
-            label={t('name')}
-            value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-            fullWidth
-          />
-          <TextField
-            margin="dense"
-            label={t('timezone')}
-            value={form.timezone}
-            onChange={(e) => setForm((prev) => ({ ...prev, timezone: e.target.value }))}
-            fullWidth
-          />
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <SharedFormSection title={t('branches')} caption={t('branches_required_fields_error')}>
+              <TextField
+                autoFocus
+                label={t('code')}
+                value={form.code}
+                onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
+                fullWidth
+              />
+              <TextField
+                label={t('name')}
+                value={form.name}
+                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                fullWidth
+              />
+              <TextField
+                label={t('timezone')}
+                value={form.timezone}
+                onChange={(e) => setForm((prev) => ({ ...prev, timezone: e.target.value }))}
+                fullWidth
+              />
+            </SharedFormSection>
+          </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleCloseDialog}>{t('cancel')}</Button>
           <Button onClick={handleSubmit} disabled={saving} variant="contained">
             {saving ? t('saving') : t('save')}
@@ -266,6 +266,6 @@ export default function Branches() {
           {success}
         </Alert>
       </Snackbar>
-    </Box>
+    </PageShell>
   );
 }
