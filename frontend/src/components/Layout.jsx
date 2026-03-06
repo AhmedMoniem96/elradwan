@@ -217,11 +217,8 @@ export default function Layout() {
         position="absolute"
         open={open}
         sx={{
-          backdropFilter: 'blur(16px)',
           borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-          background: (theme) => theme.palette.mode === 'dark'
-            ? 'linear-gradient(120deg, rgba(16, 26, 43, 0.9) 0%, rgba(36, 28, 63, 0.85) 100%)'
-            : 'linear-gradient(120deg, rgba(255, 255, 255, 0.85) 0%, rgba(239, 245, 255, 0.9) 100%)',
+          backgroundColor: (theme) => theme.palette.background.paper,
           color: (theme) => theme.palette.text.primary,
         }}
       >
@@ -407,10 +404,7 @@ export default function Layout() {
         sx={{
           '& .MuiDrawer-paper': {
             borderRight: (theme) => `1px solid ${theme.palette.divider}`,
-            backgroundImage: (theme) => theme.palette.mode === 'dark'
-              ? 'linear-gradient(180deg, rgba(16, 26, 43, 0.9) 0%, rgba(16, 22, 33, 0.92) 100%)'
-              : 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 248, 255, 0.88) 100%)',
-            backdropFilter: 'blur(14px)',
+            backgroundColor: (theme) => theme.palette.background.paper,
           },
         }}
       >
@@ -514,9 +508,7 @@ export default function Layout() {
       <Box
         component="main"
         sx={{
-          background: (theme) => theme.palette.mode === 'dark'
-            ? 'radial-gradient(circle at top right, rgba(78, 124, 210, 0.18), transparent 45%), radial-gradient(circle at 0% 0%, rgba(107, 70, 193, 0.16), transparent 40%), #0B1220'
-            : 'radial-gradient(circle at top right, rgba(30, 91, 184, 0.1), transparent 48%), radial-gradient(circle at 0% 0%, rgba(107, 70, 193, 0.08), transparent 42%), #EEF3FF',
+          backgroundColor: (theme) => theme.palette.background.default,
           flexGrow: 1,
           height: '100vh',
           overflow: 'auto',

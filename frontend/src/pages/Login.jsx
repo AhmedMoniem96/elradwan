@@ -84,9 +84,7 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: (theme) => theme.palette.mode === 'dark'
-          ? 'radial-gradient(circle at top, rgba(78, 124, 210, 0.35) 0%, #0B1220 46%, #090D16 100%)'
-          : 'radial-gradient(circle at top, rgba(30, 91, 184, 0.18) 0%, #EEF3FF 44%, #E8EEFF 100%)',
+        backgroundColor: 'background.default',
         py: 6,
       }}
     >
@@ -96,11 +94,10 @@ export default function Login() {
           elevation={0}
           sx={{
             p: 4,
-            borderRadius: 3,
-            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 26, 43, 0.82)' : 'rgba(255, 255, 255, 0.86)',
+            borderRadius: (theme) => theme.shape.cardRadius || 16,
+            backgroundColor: 'background.paper',
             border: (theme) => `1px solid ${theme.palette.divider}`,
             boxShadow: (theme) => theme.customElevation.cardShadow,
-            backdropFilter: 'blur(14px)',
           }}
         >
           <Box
