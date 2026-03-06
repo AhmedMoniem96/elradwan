@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import re
 import uuid
 from datetime import datetime, time, timedelta
 from io import StringIO
@@ -6,7 +8,7 @@ from io import StringIO
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import F, Sum
+from django.db.models import F, Q, Sum
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -29,6 +31,7 @@ from inventory.models import (
     ProductBundle,
     PurchaseImportJob,
     PurchaseOrder,
+    SupplierImportResolvedMapping,
     StockMove,
     StockTransfer,
     Supplier,
@@ -755,9 +758,14 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         if extension not in (PurchaseImportJob.FileType.CSV, PurchaseImportJob.FileType.PDF):
             raise ValidationError({"source_file": "Only CSV or PDF files are supported."})
 
+        supplier_id = serializer.validated_data.get("supplier_id")
+        if supplier_id and not Supplier.objects.filter(id=supplier_id, branch_id=request.user.branch_id).exists():
+            raise ValidationError({"supplier": "Supplier must belong to your branch."})
+
         job = PurchaseImportJob.objects.create(
             branch_id=request.user.branch_id,
             uploaded_by_id=getattr(request.user, "device_id", None),
+            supplier_id=supplier_id,
             source_file=source_file,
             source_filename=filename,
             file_type=extension,
@@ -785,18 +793,27 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                 parsed_rows.append({
                     "row_index": index + 1,
                     "sku": (row.get("sku") or row.get("SKU") or "").strip(),
+                    "internal_sku": (row.get("internal_sku") or row.get("sku") or row.get("SKU") or "").strip(),
+                    "supplier_sku": (row.get("supplier_sku") or row.get("vendor_sku") or "").strip(),
+                    "barcode": (row.get("barcode") or row.get("Barcode") or "").strip(),
                     "name": (row.get("name") or row.get("product_name") or "").strip(),
                     "quantity": row.get("quantity") or row.get("qty") or "",
                     "price": row.get("price") or row.get("unit_price") or "",
                     "raw": row,
                 })
             next_state = PurchaseImportJob.State.REVIEW if parsed_rows else PurchaseImportJob.State.PARSED
+            job.format_signature = self._compute_format_signature(
+                file_type=job.file_type,
+                detected_columns=detected_columns,
+                column_mapping=job.column_mapping,
+            )
             job.detected_columns = detected_columns
             job.parsed_rows = parsed_rows
+            job.parsed_rows = self._decorate_parsed_rows_with_matches(job)
             job.parse_confidence = Decimal("100.00")
             job.state = next_state
             job.error_message = ""
-            job.save(update_fields=["detected_columns", "parsed_rows", "parse_confidence", "state", "error_message", "updated_at"])
+            job.save(update_fields=["detected_columns", "parsed_rows", "format_signature", "parse_confidence", "state", "error_message", "updated_at"])
             return
 
         content = job.source_file.read().decode("utf-8", errors="ignore")
@@ -808,17 +825,26 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                 "row_index": index + 1,
                 "name": parts[0] if parts else line[:80],
                 "sku": parts[1] if len(parts) > 1 else "",
+                "internal_sku": parts[1] if len(parts) > 1 else "",
+                "supplier_sku": "",
+                "barcode": "",
                 "quantity": parts[2] if len(parts) > 2 else "",
                 "price": parts[3] if len(parts) > 3 else "",
                 "raw_text": line,
             })
 
         job.detected_columns = ["name", "sku", "quantity", "price"]
+        job.format_signature = self._compute_format_signature(
+            file_type=job.file_type,
+            detected_columns=job.detected_columns,
+            column_mapping=job.column_mapping,
+        )
         job.parsed_rows = parsed_rows
+        job.parsed_rows = self._decorate_parsed_rows_with_matches(job)
         job.parse_confidence = Decimal("72.50")
         job.state = PurchaseImportJob.State.REVIEW if parsed_rows else PurchaseImportJob.State.PARSED
         job.error_message = ""
-        job.save(update_fields=["detected_columns", "parsed_rows", "parse_confidence", "state", "error_message", "updated_at"])
+        job.save(update_fields=["detected_columns", "parsed_rows", "format_signature", "parse_confidence", "state", "error_message", "updated_at"])
 
     @action(detail=True, methods=["post"], url_path="apply")
     def apply(self, request, pk=None):
@@ -832,8 +858,11 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         skipped = 0
 
         rows_by_index = {str(row.get("row_index")): row for row in job.parsed_rows or []}
-        for row_key, action_name in row_actions.items():
+        for row_key, action_payload in row_actions.items():
             row = rows_by_index.get(str(row_key), {})
+            action_name = action_payload.get("action") if isinstance(action_payload, dict) else action_payload
+            selected_product_id = action_payload.get("product_id") if isinstance(action_payload, dict) else None
+
             if action_name == "create_product":
                 name = row.get("name") or f"Imported Product {row_key}"
                 sku = (row.get("sku") or "").strip() or None
@@ -847,8 +876,34 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
                     price=Decimal(str(row.get("price") or "0") or "0"),
                 )
                 created += 1
-            elif action_name == "match_sku":
+            elif action_name == "match_existing":
+                selected = selected_product_id or row.get("suggested_product_id")
+                if row.get("requires_selection") and not selected:
+                    raise ValidationError({"row_actions": f"Row {row_key} requires selecting a product before apply."})
+                if not selected:
+                    skipped += 1
+                    continue
                 matched += 1
+
+                if job.supplier_id and job.format_signature:
+                    mapping_keys = [
+                        (SupplierImportResolvedMapping.MatchKeyType.BARCODE, row.get("barcode")),
+                        (SupplierImportResolvedMapping.MatchKeyType.SUPPLIER_SKU, row.get("supplier_sku")),
+                        (SupplierImportResolvedMapping.MatchKeyType.INTERNAL_SKU, row.get("internal_sku") or row.get("sku")),
+                        (SupplierImportResolvedMapping.MatchKeyType.NORMALIZED_NAME, row.get("normalized_name")),
+                    ]
+                    for key_type, key_value in mapping_keys:
+                        token = str(key_value or "").strip()
+                        if not token:
+                            continue
+                        SupplierImportResolvedMapping.objects.update_or_create(
+                            branch_id=job.branch_id,
+                            supplier_id=job.supplier_id,
+                            format_signature=job.format_signature,
+                            key_type=key_type,
+                            key_value=token,
+                            defaults={"product_id": selected, "confidence": Decimal(str(row.get("match_confidence") or 0)) * 100},
+                        )
             else:
                 skipped += 1
 
@@ -857,3 +912,93 @@ class PurchaseImportJobViewSet(viewsets.ModelViewSet):
         job.state = PurchaseImportJob.State.APPLIED
         job.save(update_fields=["row_actions", "apply_summary", "state", "updated_at"])
         return Response(PurchaseImportJobSerializer(job, context=self.get_serializer_context()).data)
+    @staticmethod
+    def _normalize_text(value):
+        token = str(value or "").strip().lower()
+        token = re.sub(r"\s+", " ", token)
+        return token
+
+    def _compute_format_signature(self, *, file_type, detected_columns, column_mapping):
+        raw = f"{file_type}|{'|'.join(sorted([self._normalize_text(col) for col in detected_columns or []]))}|{sorted((column_mapping or {}).items())}"
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _match_candidates_for_row(self, *, job, row):
+        barcode = str(row.get("barcode") or "").strip()
+        supplier_sku = str(row.get("supplier_sku") or "").strip()
+        internal_sku = str(row.get("internal_sku") or row.get("sku") or "").strip()
+        normalized_name = self._normalize_text(row.get("name"))
+
+        candidates = []
+        seen = set()
+
+        def append_candidate(product, strategy, confidence):
+            key = str(product.id)
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append({
+                "product_id": key,
+                "product_name": product.name,
+                "product_sku": product.sku,
+                "strategy": strategy,
+                "confidence": confidence,
+            })
+
+        if barcode:
+            for product in Product.objects.filter(branch_id=job.branch_id, barcode=barcode).order_by("name")[:5]:
+                append_candidate(product, "barcode", 1.0)
+
+        if supplier_sku and job.supplier_id and job.format_signature:
+            mappings = SupplierImportResolvedMapping.objects.filter(
+                branch_id=job.branch_id,
+                supplier_id=job.supplier_id,
+                format_signature=job.format_signature,
+                key_type=SupplierImportResolvedMapping.MatchKeyType.SUPPLIER_SKU,
+                key_value=supplier_sku,
+            ).select_related("product")[:5]
+            for mapping in mappings:
+                append_candidate(mapping.product, "supplier_sku", 0.96)
+
+        if internal_sku:
+            for product in Product.objects.filter(branch_id=job.branch_id, sku=internal_sku).order_by("name")[:5]:
+                append_candidate(product, "internal_sku", 0.92)
+
+        if normalized_name:
+            exact_name_qs = Product.objects.filter(branch_id=job.branch_id, name__iexact=row.get("name") or "")[:5]
+            for product in exact_name_qs:
+                append_candidate(product, "normalized_name", 0.70)
+
+            if not candidates:
+                fuzzy_qs = Product.objects.filter(
+                    branch_id=job.branch_id,
+                ).filter(Q(name__icontains=row.get("name") or "") | Q(brand__icontains=row.get("name") or "")).order_by("name")[:5]
+                for product in fuzzy_qs:
+                    append_candidate(product, "normalized_name", 0.55)
+
+        candidates = sorted(candidates, key=lambda item: item["confidence"], reverse=True)
+        top = candidates[0] if candidates else None
+        requires_selection = len(candidates) > 1
+        confidence = float(top["confidence"]) if top else 0.0
+        suggested_action = "create_product" if not top else "match_existing"
+
+        return {
+            "barcode": barcode,
+            "supplier_sku": supplier_sku,
+            "internal_sku": internal_sku,
+            "normalized_name": normalized_name,
+            "match_candidates": candidates,
+            "suggested_product_id": top["product_id"] if top and not requires_selection else None,
+            "match_strategy": top["strategy"] if top else None,
+            "match_confidence": round(confidence, 2),
+            "low_confidence": confidence < 0.75,
+            "requires_selection": requires_selection,
+            "suggested_action": suggested_action,
+        }
+
+    def _decorate_parsed_rows_with_matches(self, job):
+        rows = []
+        for row in job.parsed_rows or []:
+            row_copy = dict(row)
+            row_copy.update(self._match_candidates_for_row(job=job, row=row_copy))
+            rows.append(row_copy)
+        return rows

@@ -410,6 +410,7 @@ class PurchaseImportJob(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    supplier = models.ForeignKey("Supplier", on_delete=models.SET_NULL, null=True, blank=True)
     uploaded_by = models.ForeignKey(Device, on_delete=models.SET_NULL, null=True, blank=True)
     source_file = models.FileField(upload_to="purchase-imports/")
     source_filename = models.CharField(max_length=255)
@@ -418,6 +419,7 @@ class PurchaseImportJob(models.Model):
     parse_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     detected_columns = models.JSONField(default=list, blank=True)
     column_mapping = models.JSONField(default=dict, blank=True)
+    format_signature = models.CharField(max_length=128, blank=True, default="")
     parsed_rows = models.JSONField(default=list, blank=True)
     row_actions = models.JSONField(default=dict, blank=True)
     apply_summary = models.JSONField(default=dict, blank=True)
@@ -429,4 +431,36 @@ class PurchaseImportJob(models.Model):
         indexes = [
             models.Index(fields=["branch", "state", "created_at"]),
             models.Index(fields=["branch", "file_type", "created_at"]),
+            models.Index(fields=["branch", "supplier", "format_signature"]),
+        ]
+
+
+class SupplierImportResolvedMapping(models.Model):
+    class MatchKeyType(models.TextChoices):
+        BARCODE = "barcode", "Barcode"
+        SUPPLIER_SKU = "supplier_sku", "Supplier SKU"
+        INTERNAL_SKU = "internal_sku", "Internal SKU"
+        NORMALIZED_NAME = "normalized_name", "Normalized Name"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.PROTECT)
+    supplier = models.ForeignKey("Supplier", on_delete=models.PROTECT)
+    format_signature = models.CharField(max_length=128)
+    key_type = models.CharField(max_length=32, choices=MatchKeyType.choices)
+    key_value = models.CharField(max_length=255)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    confidence = models.DecimalField(max_digits=5, decimal_places=2, default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "supplier", "format_signature", "key_type", "key_value"],
+                name="uniq_supplier_import_resolved_mapping",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["branch", "supplier", "format_signature"]),
+            models.Index(fields=["branch", "supplier", "key_type", "key_value"]),
         ]
