@@ -303,7 +303,7 @@ function CustomerSearchPanel({ t, isRTL, customerQuery, setCustomerQuery, select
   );
 }
 
-function CartPanel({ t, isRTL, cart, updateQuantity }) {
+function CartPanel({ t, isRTL, cart, updateQuantity, updateLineOverrideMeta, linePolicyWarnings }) {
   return (
     <SectionCard title={t('cart')} subtitle={t('pos_cart_empty')} accent="warning.main">
       <Box sx={{ maxHeight: { xs: '30vh', md: '50vh' }, overflowY: 'auto' }}>
@@ -317,6 +317,16 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" fontWeight={700} noWrap>{item.name}</Typography>
                     <Typography variant="caption" color="text.secondary">{t('pos_sku_label')}: {item.sku || t('none')} • {item.selectedUnitName || t('unit')}</Typography>
+                    <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                      {(linePolicyWarnings[item.cartKey || item.id] || []).map((warning) => (
+                        <Chip
+                          key={`${item.cartKey || item.id}-${warning.type}`}
+                          size="small"
+                          color="warning"
+                          label={warning.type === 'min_margin' ? t('pos_warning_margin_threshold') : t('pos_warning_discount_threshold')}
+                        />
+                      ))}
+                    </Stack>
                   </Box>
                   <Typography variant="caption" color="text.secondary">{formatCurrency(item.displayUnitPrice)}</Typography>
                   <ButtonGroup size="small" sx={{ direction: isRTL ? 'rtl' : 'ltr', '& .MuiButton-root': { minWidth: 28 } }}>
@@ -326,6 +336,23 @@ function CartPanel({ t, isRTL, cart, updateQuantity }) {
                   </ButtonGroup>
                   <Typography variant="body2" fontWeight={700} sx={{ minWidth: 72, textAlign: 'right' }}>{formatCurrency(item.displayQuantity * item.displayUnitPrice)}</Typography>
                 </Stack>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ mt: 1 }}>
+                  <TextField
+                    size="small"
+                    label={t('pos_supervisor_token')}
+                    value={item.supervisor_approval_token || ''}
+                    onChange={(event) => updateLineOverrideMeta(item.cartKey || item.id, 'supervisor_approval_token', event.target.value)}
+                    fullWidth
+                  />
+                  <TextField
+                    size="small"
+                    label={t('pos_override_reason')}
+                    value={item.override_reason || ''}
+                    onChange={(event) => updateLineOverrideMeta(item.cartKey || item.id, 'override_reason', event.target.value)}
+                    fullWidth
+                  />
+                </Stack>
+
               </Paper>
             ))}
           </Stack>
@@ -590,6 +617,7 @@ export default function POS() {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [actionFeedback, setActionFeedback] = useState({ severity: '', message: '' });
+  const [linePolicyWarnings, setLinePolicyWarnings] = useState({});
 
   const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [receipts, setReceipts] = useState([]);
@@ -835,6 +863,8 @@ export default function POS() {
         quantity: item.baseQuantity,
         quantity_mode: item.quantity_mode || customerPricingMode,
         unit_price: Number(item.baseUnitPrice.toFixed(2)),
+        supervisor_approval_token: item.supervisor_approval_token || undefined,
+        override_reason: item.override_reason || undefined,
       })),
     }),
     [cart, customerPricingMode, parsedInvoiceTotal, selectedCustomer],
@@ -982,6 +1012,10 @@ export default function POS() {
     setCart((prev) => prev.map((item) => ({ ...item, quantity_mode: pricingMode || 'unit' })));
   };
 
+  const updateLineOverrideMeta = (cartKey, field, value) => {
+    setCart((prev) => prev.map((item) => ((item.cartKey || item.id) === cartKey ? { ...item, [field]: value } : item)));
+  };
+
   const updateQuantity = (cartKey, delta) => {
     setCart((prev) => {
       const nextCart = prev
@@ -1029,6 +1063,33 @@ export default function POS() {
       message: t('pos_payment_recorded'),
     });
   };
+
+  useEffect(() => {
+    const fetchWarnings = async () => {
+      if (!cart.length) {
+        setLinePolicyWarnings({});
+        return;
+      }
+      try {
+        const response = await axios.put('/api/v1/pos/invoices/', {
+          customer_id: selectedCustomer?.id,
+          lines: invoicePayload.lines,
+        });
+        const grouped = (response.data?.warnings || []).reduce((acc, warning) => {
+          const line = cart[warning.index];
+          if (!line) return acc;
+          const key = line.cartKey || line.id;
+          acc[key] = [...(acc[key] || []), warning];
+          return acc;
+        }, {});
+        setLinePolicyWarnings(grouped);
+      } catch (error) {
+        setLinePolicyWarnings({});
+      }
+    };
+
+    fetchWarnings();
+  }, [cart, invoicePayload.lines, selectedCustomer]);
 
   const handleCompleteSale = async () => {
     if (!cart.length || remaining > 0 || isCompletingSale) {

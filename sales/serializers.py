@@ -2,15 +2,23 @@ import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models, transaction
+from django.db.models import Q
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
 
 from common.permissions import user_has_capability
 from inventory.models import ProductBundle, StockMove, Warehouse
+from core.models import User
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, PriceList, PriceListItem, Refund, Return, ReturnLine
 
 MONEY_QUANT = Decimal("0.01")
+RISK_MARGIN_BY_MODE = {Customer.PricingMode.UNIT: Decimal("8.00"), Customer.PricingMode.PACKAGE: Decimal("12.00")}
+MAX_DISCOUNT_BY_ROLE = {
+    User.Role.CASHIER: Decimal("5.00"),
+    User.Role.SUPERVISOR: Decimal("15.00"),
+    User.Role.ADMIN: Decimal("30.00"),
+}
 
 
 def _to_money(value):
@@ -53,6 +61,22 @@ def _resolve_price_for_line(*, customer, product, quantity_mode, requested_unit_
             return _to_money(item.price), source
 
     return _to_money(product.price), InvoiceLine.PriceSource.DEFAULT
+
+
+def _pct(value, base):
+    if base <= 0:
+        return Decimal("0.00")
+    return (Decimal(str(value)) / Decimal(str(base)) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _resolve_supervisor_by_token(*, branch_id, token):
+    if not token:
+        return None
+    token_value = str(token).strip()
+    if not token_value:
+        return None
+    return User.objects.filter(branch_id=branch_id, role=User.Role.SUPERVISOR).filter(Q(username__iexact=token_value) | Q(id__iexact=token_value)).first()
+
 
 def refresh_invoice_payment_status(invoice):
     total_paid = invoice.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0")
@@ -167,6 +191,14 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
             "product_bundle",
             "margin_warning",
             "price_source",
+            "min_margin_pct_applied",
+            "max_discount_pct_allowed",
+            "discount_pct",
+            "risk_flag",
+            "override_applied",
+            "override_reason",
+            "override_approver",
+            "override_approved_at",
         ]
         read_only_fields = ["id"]
 
@@ -320,6 +352,7 @@ class ReturnSerializer(serializers.ModelSerializer):
 
         invoice = attrs["invoice"]
         line_calculations = []
+        line_warnings = []
         subtotal = Decimal("0")
         tax_total = Decimal("0")
         total = Decimal("0")
@@ -490,6 +523,8 @@ class PosInvoiceLineInputSerializer(serializers.Serializer):
     discount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"), required=False, default=Decimal("0.00"))
     tax_rate = serializers.DecimalField(max_digits=6, decimal_places=4, min_value=Decimal("0.00"), required=False, default=Decimal("0.0000"))
     quantity_mode = serializers.ChoiceField(choices=Customer.PricingMode.choices, required=False)
+    override_reason = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    supervisor_approval_token = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
     def validate(self, attrs):
@@ -499,6 +534,20 @@ class PosInvoiceLineInputSerializer(serializers.Serializer):
             raise serializers.ValidationError("Use product_id or product_bundle_id, not both.")
         return attrs
 
+
+
+
+class PosInvoicePolicyPreviewSerializer(serializers.Serializer):
+    customer_id = serializers.UUIDField(required=False, allow_null=True)
+    lines = PosInvoiceLineInputSerializer(many=True)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        payload = {"customer_id": attrs.get("customer_id"), "total": Decimal("0.01"), "lines": attrs.get("lines", []), "device_id": None}
+        base = PosInvoiceCreateSerializer(data=payload, context={"request": request})
+        base.is_valid(raise_exception=True)
+        attrs["warnings"] = base.validated_data.get("_line_warnings", [])
+        return attrs
 
 class PosInvoiceCreateSerializer(serializers.Serializer):
     customer_id = serializers.UUIDField(required=False, allow_null=True)
@@ -550,6 +599,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         bundles_by_id = {bundle.id: bundle for bundle in bundles}
 
         line_calculations = []
+        line_warnings = []
         subtotal = Decimal("0.00")
         tax_total = Decimal("0.00")
         has_margin_warning = False
@@ -593,6 +643,10 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"lines": {idx: {"discount": "Discount cannot exceed line subtotal."}}})
             line_tax = _to_money(line_subtotal * tax_rate)
 
+            gross_before_discount = _to_money(quantity * unit_price)
+            discount_pct = _pct(discount, gross_before_discount)
+            role_discount_limit = MAX_DISCOUNT_BY_ROLE.get(getattr(user, "role", User.Role.CASHIER), Decimal("0.00"))
+
             component_cost_total = Decimal("0.00")
             if bundle is not None:
                 if not bundle.lines.exists():
@@ -600,14 +654,40 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                 for bundle_line in bundle.lines.all():
                     component_cost_total += Decimal(str(bundle_line.quantity)) * Decimal(str(bundle_line.component_product.cost or Decimal("0.00")))
                 component_cost_total = _to_money(component_cost_total * quantity)
-                margin_warning = line_subtotal < component_cost_total
             else:
                 component_cost_total = _to_money(quantity * Decimal(str(product.cost or Decimal("0.00"))) if product else Decimal("0.00"))
-                margin_warning = False
 
-            has_margin_warning = has_margin_warning or margin_warning
+            margin_warning = bool(bundle is not None and line_subtotal < component_cost_total)
+            gross_margin_value = line_subtotal - component_cost_total
+            margin_pct = _pct(gross_margin_value, line_subtotal)
+            min_margin_threshold = RISK_MARGIN_BY_MODE.get(line_quantity_mode, Decimal("0.00"))
+            below_margin_threshold = margin_pct < min_margin_threshold
+            above_discount_threshold = discount_pct > role_discount_limit
+            requires_override = below_margin_threshold or above_discount_threshold
+
+            override_reason = (line.get("override_reason") or "").strip()
+            supervisor_token = line.get("supervisor_approval_token")
+            approver = _resolve_supervisor_by_token(branch_id=user.branch_id, token=supervisor_token)
+            override_applied = False
+            override_approved_at = None
+
+            if requires_override:
+                if approver is None:
+                    raise serializers.ValidationError({"lines": {idx: {"approval": "Line violates margin/discount policy and requires supervisor approval token."}}})
+                if not override_reason:
+                    raise serializers.ValidationError({"lines": {idx: {"override_reason": "Override reason is required when supervisor approval is used."}}})
+                override_applied = True
+                override_approved_at = timezone.now()
+
+            risk_flag = requires_override
+            has_margin_warning = has_margin_warning or margin_warning or below_margin_threshold
             subtotal += line_subtotal
             tax_total += line_tax
+            if below_margin_threshold:
+                line_warnings.append({"index": idx, "type": "min_margin", "threshold_pct": str(min_margin_threshold), "actual_pct": str(margin_pct)})
+            if above_discount_threshold:
+                line_warnings.append({"index": idx, "type": "max_discount", "threshold_pct": str(role_discount_limit), "actual_pct": str(discount_pct)})
+
             line_calculations.append(
                 {
                     "product": pricing_product,
@@ -620,6 +700,14 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
                     "quantity_mode": line_quantity_mode,
                     "margin_warning": margin_warning,
                     "price_source": price_source,
+                    "min_margin_pct_applied": min_margin_threshold,
+                    "max_discount_pct_allowed": role_discount_limit,
+                    "discount_pct": discount_pct,
+                    "risk_flag": risk_flag,
+                    "override_applied": override_applied,
+                    "override_reason": override_reason or None,
+                    "override_approver": approver,
+                    "override_approved_at": override_approved_at,
                 }
             )
 
@@ -637,6 +725,7 @@ class PosInvoiceCreateSerializer(serializers.Serializer):
         attrs["_pricing_mode"] = pricing_mode
         attrs["_can_override_pricing_mode"] = can_override_pricing_mode
         attrs["_has_margin_warning"] = has_margin_warning
+        attrs["_line_warnings"] = line_warnings
         return attrs
 
     @transaction.atomic

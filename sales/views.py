@@ -24,6 +24,7 @@ from sales.serializers import (
     CustomerSerializer,
     InvoiceSerializer,
     PosInvoiceCreateSerializer,
+    PosInvoicePolicyPreviewSerializer,
     PaymentSerializer,
     RecentActivityItemSerializer,
     ReturnSerializer,
@@ -435,6 +436,11 @@ class PosInvoiceCreateView(APIView):
     permission_classes = [IsAuthenticated, RoleCapabilityPermission]
     permission_action_map = {"post": "sales.pos.access"}
 
+    def put(self, request):
+        serializer = PosInvoicePolicyPreviewSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        return Response({"warnings": serializer.validated_data.get("warnings", [])})
+
     def post(self, request):
         serializer = PosInvoiceCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -458,6 +464,27 @@ class PosInvoiceCreateView(APIView):
             branch=invoice.branch,
             device=invoice.device,
         )
+
+        for line in invoice.lines.select_related("override_approver"):
+            if not line.override_applied:
+                continue
+            create_audit_log_from_request(
+                request,
+                action="invoice.override.applied",
+                entity="invoice_line",
+                entity_id=line.id,
+                after_snapshot={
+                    "invoice_id": str(invoice.id),
+                    "invoice_line_id": str(line.id),
+                    "reason": line.override_reason,
+                    "approver": getattr(line.override_approver, "username", None),
+                    "approved_at": line.override_approved_at.isoformat() if line.override_approved_at else None,
+                    "risk_flag": line.risk_flag,
+                },
+                event_id=invoice.event_id,
+                branch=invoice.branch,
+                device=invoice.device,
+            )
 
         return Response(invoice_payload, status=status.HTTP_201_CREATED)
 

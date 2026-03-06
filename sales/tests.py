@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from core.models import Branch, Device
+from core.models import AuditLog, Branch, Device
 from inventory.models import Product, ProductBundle, ProductBundleLine, StockMove, Warehouse
 from sales.models import CashShift, Customer, Invoice, InvoiceLine, Payment, PriceChangeAudit, PriceList, PriceListItem, Return
 
@@ -987,6 +987,91 @@ class PosInvoiceCreateTests(TestCase):
         self.assertEqual(component_moves.get(product=self.product).quantity, Decimal("-1.00"))
         self.assertEqual(component_moves.get(product=self.component_b).quantity, Decimal("-1.00"))
 
+
+    def test_line_below_margin_requires_supervisor_token(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "total": "6.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "unit_price": "10.00",
+                        "discount": "4.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("approval", str(response.json()).lower())
+
+    def test_supervisor_override_is_saved_and_audited(self):
+        supervisor = self.user_model.objects.create_user(
+            username="override-supervisor",
+            password="pass1234",
+            branch=self.branch,
+            role="supervisor",
+        )
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.post(
+            "/api/v1/pos/invoices/",
+            {
+                "total": "6.00",
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "unit_price": "10.00",
+                        "discount": "4.00",
+                        "supervisor_approval_token": supervisor.username,
+                        "override_reason": "Approved loyalty exception",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        line = InvoiceLine.objects.get(invoice_id=response.json()["id"])
+        self.assertTrue(line.override_applied)
+        self.assertEqual(line.override_reason, "Approved loyalty exception")
+        self.assertEqual(line.override_approver_id, supervisor.id)
+        self.assertTrue(line.risk_flag)
+
+        audit = AuditLog.objects.filter(action="invoice.override.applied", entity_id=line.id).first()
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.after_snapshot["approver"], supervisor.username)
+
+    def test_pos_invoice_policy_preview_returns_warning_badges(self):
+        CashShift.objects.create(branch=self.branch, cashier=self.cashier, device=self.device, opening_amount=Decimal("50.00"))
+        self.client.force_authenticate(user=self.cashier)
+
+        response = self.client.put(
+            "/api/v1/pos/invoices/",
+            {
+                "lines": [
+                    {
+                        "product_id": str(self.product.id),
+                        "quantity": "1.00",
+                        "unit_price": "10.00",
+                        "discount": "4.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["warnings"])
+        self.assertEqual(response.json()["warnings"][0]["type"], "min_margin")
 
     def test_pos_invoice_uses_direct_customer_price_list_before_segment_fallback(self):
         fallback_list = PriceList.objects.create(branch=self.branch, name="Retail fallback", segment=Customer.Segment.RETAIL)
