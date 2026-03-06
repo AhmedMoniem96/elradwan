@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import MuiAppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import List from '@mui/material/List';
+import ListSubheader from '@mui/material/ListSubheader';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
@@ -225,136 +226,184 @@ export default function Layout() {
   const pageTitle = t('app_title');
   const isDesktopDrawerExpanded = isDesktop && desktopOpen;
 
-  const navItems = React.useMemo(() => {
-    const items = [
+  const navSections = React.useMemo(() => {
+    const sections = [
       {
-        key: 'dashboard',
-        icon: <DashboardIcon />,
+        key: 'operations',
         label: t('dashboard'),
-        selected: location.pathname === '/',
-        visible: true,
-        onClick: () => navigate('/'),
-      },
-      {
-        key: 'pos',
-        icon: <ShoppingCartIcon />,
-        label: t('pos'),
-        selected: location.pathname.startsWith('/pos'),
-        visible: can('sales.pos.access'),
-        onClick: () => navigate('/pos'),
-      },
-      {
-        key: 'customers',
-        icon: <PeopleIcon />,
-        label: t('customers'),
-        selected: location.pathname.startsWith('/customers'),
-        visible: can('sales.customers.view'),
-        onClick: () => navigate('/customers'),
+        items: [
+          {
+            key: 'dashboard',
+            icon: <DashboardIcon />,
+            label: t('dashboard'),
+            selected: location.pathname === '/',
+            visible: true,
+            onClick: () => navigate('/'),
+          },
+          {
+            key: 'pos',
+            icon: <ShoppingCartIcon />,
+            label: t('pos'),
+            selected: location.pathname.startsWith('/pos'),
+            visible: can('sales.pos.access'),
+            onClick: () => navigate('/pos'),
+          },
+          {
+            key: 'customers',
+            icon: <PeopleIcon />,
+            label: t('customers'),
+            selected: location.pathname.startsWith('/customers'),
+            visible: can('sales.customers.view'),
+            onClick: () => navigate('/customers'),
+          },
+          {
+            key: 'reports',
+            icon: <AssessmentIcon />,
+            label: t('reports'),
+            selected: location.pathname.startsWith('/reports'),
+            visible: can('sales.dashboard.view'),
+            onClick: () => navigate('/reports'),
+          },
+        ],
       },
       {
         key: 'inventory',
-        icon: <BarChartIcon />,
         label: t('inventory'),
-        selected: location.pathname.startsWith('/inventory'),
-        visible: can('inventory.view'),
-        onClick: () => navigate('/inventory'),
+        items: [
+          {
+            key: 'inventory',
+            icon: <BarChartIcon />,
+            label: t('inventory'),
+            selected: location.pathname.startsWith('/inventory'),
+            visible: can('inventory.view'),
+            onClick: () => navigate('/inventory'),
+          },
+          {
+            key: 'suppliers',
+            icon: <LocalShippingIcon />,
+            label: t('suppliers'),
+            selected: location.pathname.startsWith('/suppliers'),
+            visible: can('inventory.view'),
+            onClick: () => navigate('/suppliers'),
+          },
+          {
+            key: 'sync',
+            icon: (
+              <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
+                <LayersIcon />
+              </Badge>
+            ),
+            label: t('sync_status'),
+            secondary: failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running'),
+            selected: location.pathname.startsWith('/sync'),
+            visible: can('sync.view'),
+            onClick: () => navigate('/sync'),
+          },
+        ],
       },
       {
-        key: 'suppliers',
-        icon: <LocalShippingIcon />,
-        label: t('suppliers'),
-        selected: location.pathname.startsWith('/suppliers'),
-        visible: can('inventory.view'),
-        onClick: () => navigate('/suppliers'),
-      },
-      {
-        key: 'reports',
-        icon: <AssessmentIcon />,
-        label: t('reports'),
-        selected: location.pathname.startsWith('/reports'),
-        visible: can('sales.dashboard.view'),
-        onClick: () => navigate('/reports'),
-      },
-      {
-        key: 'branches',
-        icon: <AccountTreeIcon />,
-        label: t('branches'),
-        selected: location.pathname.startsWith('/branches'),
-        visible: can('admin.records.manage'),
-        onClick: () => navigate('/branches'),
-      },
-      {
-        key: 'warehouses',
-        icon: <WarehouseIcon />,
-        label: t('warehouses'),
-        selected: location.pathname.startsWith('/warehouses'),
-        visible: can('admin.records.manage'),
-        onClick: () => navigate('/warehouses'),
-      },
-      {
-        key: 'audit-logs',
-        icon: <ManageSearchIcon />,
-        label: t('audit_logs'),
-        selected: location.pathname.startsWith('/audit-logs'),
-        visible: can('admin.records.manage'),
-        onClick: () => navigate('/audit-logs'),
-      },
-      {
-        key: 'sync',
-        icon: (
-          <Badge color={failedEvents.length > 0 ? 'error' : 'warning'} badgeContent={outbox.length}>
-            <LayersIcon />
-          </Badge>
-        ),
-        label: t('sync_status'),
-        secondary: failedEvents.length > 0 ? t('sync_nav_attention') : t('sync_nav_running'),
-        selected: location.pathname.startsWith('/sync'),
-        visible: can('sync.view'),
-        onClick: () => navigate('/sync'),
+        key: 'admin',
+        label: t('settings'),
+        items: [
+          {
+            key: 'branches',
+            icon: <AccountTreeIcon />,
+            label: t('branches'),
+            selected: location.pathname.startsWith('/branches'),
+            visible: can('admin.records.manage'),
+            onClick: () => navigate('/branches'),
+          },
+          {
+            key: 'warehouses',
+            icon: <WarehouseIcon />,
+            label: t('warehouses'),
+            selected: location.pathname.startsWith('/warehouses'),
+            visible: can('admin.records.manage'),
+            onClick: () => navigate('/warehouses'),
+          },
+          {
+            key: 'audit-logs',
+            icon: <ManageSearchIcon />,
+            label: t('audit_logs'),
+            selected: location.pathname.startsWith('/audit-logs'),
+            visible: can('admin.records.manage'),
+            onClick: () => navigate('/audit-logs'),
+          },
+        ],
       },
     ];
 
-    return items.filter((item) => item.visible);
-  }, [
-    can,
-    failedEvents.length,
-    location.pathname,
-    navigate,
-    outbox.length,
-    t,
-  ]);
+    return sections
+      .map((section) => ({ ...section, items: section.items.filter((item) => item.visible) }))
+      .filter((section) => section.items.length > 0);
+  }, [can, failedEvents.length, location.pathname, navigate, outbox.length, t]);
 
   const renderNavList = (expanded) => (
-    <List component="nav" aria-label={t('app_title')}>
-      {navItems.map((item) => (
-        <ListItemButton
-          key={item.key}
-          selected={item.selected}
-          onClick={() => {
-            item.onClick();
-            closeTemporaryDrawer();
-          }}
-          sx={{
-            minHeight: 48,
-            justifyContent: expanded ? 'initial' : 'center',
-            px: 2.5,
-          }}
-        >
-          <ListItemIcon
-            sx={{
-              minWidth: 0,
-              mr: expanded ? 3 : 'auto',
-              justifyContent: 'center',
-            }}
-          >
-            {item.icon}
-          </ListItemIcon>
-          <ListItemText
-            primary={item.label}
-            secondary={item.secondary}
-            sx={{ opacity: expanded ? 1 : 0 }}
-          />
-        </ListItemButton>
+    <List component="nav" aria-label={t('app_title')} sx={{ px: 1, py: 1 }}>
+      {navSections.map((section) => (
+        <Box key={section.key} sx={{ mb: 1.5 }}>
+          {expanded ? (
+            <ListSubheader
+              disableGutters
+              sx={{
+                bgcolor: 'transparent',
+                px: 1.5,
+                mb: 0.5,
+                color: 'text.secondary',
+                fontSize: '0.72rem',
+                lineHeight: 1.2,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
+              {section.label}
+            </ListSubheader>
+          ) : null}
+          {section.items.map((item) => (
+            <ListItemButton
+              key={item.key}
+              selected={item.selected}
+              onClick={() => {
+                item.onClick();
+                closeTemporaryDrawer();
+              }}
+              sx={{
+                minHeight: 48,
+                justifyContent: expanded ? 'initial' : 'center',
+                px: expanded ? 1.5 : 1,
+                position: 'relative',
+                '&.Mui-selected::before': {
+                  content: '""',
+                  position: 'absolute',
+                  left: 0,
+                  top: 8,
+                  bottom: 8,
+                  width: 3,
+                  borderRadius: 99,
+                  bgcolor: 'primary.main',
+                },
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  minWidth: expanded ? 34 : 0,
+                  mr: expanded ? 1.5 : 'auto',
+                  justifyContent: 'center',
+                  color: item.selected ? 'primary.main' : 'inherit',
+                }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText
+                primary={item.label}
+                secondary={item.secondary}
+                primaryTypographyProps={{ sx: (theme) => theme.typography.body1 }}
+                secondaryTypographyProps={{ sx: (theme) => theme.typography.caption }}
+                sx={{ opacity: expanded ? 1 : 0 }}
+              />
+            </ListItemButton>
+          ))}
+        </Box>
       ))}
     </List>
   );
